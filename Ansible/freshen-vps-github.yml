@@ -1,5 +1,5 @@
 - name: Freshen GitHub for metrics user in VPs
-  hosts: new_vps, c00
+  hosts: vps, c00
   remote_user: "{{ superuser }}"
   become_user: metrics
   become: yes
