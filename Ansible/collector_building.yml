@@ -48,7 +48,7 @@
       name: metrics
       role_attr_flags: CREATEDB,NOSUPERUSER
 - name: Set up transfer user
-  hosts: new_vps
+  hosts: vps
   remote_user: "{{ superuser }}"
   become_user: transfer
   become: yes
@@ -143,6 +143,10 @@
     copy:
       src: ../root-ds.txt
       dest: /home/metrics/Target/root-ds.txt
+  - name: Pull or freshen the Github repo
+    git:
+      repo: 'https://github.com/icann/root-metrics.git'
+      dest: /home/metrics/repo
   - name: Give the crontab entry for get_root_zone.py
     cron:   # [mba] [wca]
       name: Get the new root zone
@@ -221,8 +225,4 @@
       - is_correct boolean
       - failure_reason text
       - source_pickle bytea
-
-# To nuke all the tables in psql: drop table correctness_info ; drop table files_gotten ; drop table route_info ; drop table soa_info ;
-# To nuke just the records: delete from correctness_info; delete from files_gotten; delete from route_info; delete from soa_info;
-# select (id, file_prefix, date_derived, vp, rsi, internet, transport, recent_soa, is_correct, failure_reason) from correctness_info;
 

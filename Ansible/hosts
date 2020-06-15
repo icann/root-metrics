@@ -1,14 +1,8 @@
-[new_vps]
-040.mtric.net superuser=root
+[vps]
+# Many things will go here, such as:
+# ddd.mtric.net superuser=root
 
 [c00]
-c00.mtric.net superuser=root
-
-# Regions
-# Africa 010
-# Asia/Australia/Pacific 020
-# Europe 030
-# Latin America/Caribbean Islands 040
-#   040, Uruguay minubeantel.uy
-# North America 050
+# One thing will go here, such as:
+# c00.mtric.net superuser=root
 

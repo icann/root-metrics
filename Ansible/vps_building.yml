@@ -1,5 +1,5 @@
 - name: Set up the machine as root
-  hosts: new_vps  
+  hosts: vps  
   remote_user: "{{ superuser }}"
   tasks:
   - name: Initialize apt
@@ -42,7 +42,7 @@
       home: /home/metrics
       shell: /bin/bash
 - name: Set up transfer user
-  hosts: new_vps
+  hosts: vps
   remote_user: "{{ superuser }}"
   become_user: transfer
   become: yes
@@ -62,7 +62,7 @@
       mode: go+w
       state: directory
 - name: Set up metrics user
-  hosts: new_vps
+  hosts: vps
   remote_user: "{{ superuser }}"
   become_user: metrics
   become: yes
@@ -102,7 +102,7 @@
       creates: /home/metrics/Target/bin/dig
   - name: Pull or freshen the Github repo
     git:
-      repo: 'https://github.com/paulehoffman/early-metrics.git'
+      repo: 'https://github.com/icann/root-metrics.git'
       dest: /home/metrics/repo
   - name: Give the crontab entry for vantage_point_metrics.py
     cron:   # [mba] [wca]

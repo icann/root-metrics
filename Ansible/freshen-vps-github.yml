@@ -6,5 +6,5 @@
   tasks:
   - name: Freshen GitHub for metrics user in VPs
     git:
-      repo: "https://github.com/paulehoffman/early-metrics.git"
+      repo: "https://github.com/icann/root-metrics.git"
       dest: /home/metrics/repo
