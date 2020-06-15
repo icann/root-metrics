@@ -1,0 +1,228 @@
+- name: Set up the machine as root
+  hosts: c00.mtric.net  
+  remote_user: "{{ superuser }}"
+  tasks:
+  - name: Initialize apt
+    apt:
+      update_cache: true
+  - name: Do the apt upgrade
+    apt:
+      upgrade: full
+      force: true
+  - name: Install all the needed packages
+    apt:
+      pkg: [build-essential, curl, git, libcap-dev, libgetdns-dev, libidn11-dev, libldns-dev, libssl-dev, libtool, libtool-bin, libunbound-dev, libuv1-dev,
+        man, pkg-config, postgresql, pyflakes3, python-ply, python-psycopg2, python3-psycopg2, python3-paramiko, rsync, unzip]
+  - name: Put .bashrc for root
+    copy:
+      src: ../bashrc-for-metrics-and-root
+      dest: /root/.bashrc
+  - name: Make /sftp for transfer user
+    file:
+      path: /sftp
+      state: directory
+      mode: go-w
+  - name: Replace sshd_config
+    copy:
+      src: ../etc_sshd_config_shorter
+      dest: /etc/ssh/sshd_config
+  - name: Restart sshd after changing the config
+    systemd:
+      state: restarted
+      name: sshd.service
+      daemon_reload: yes      
+  - name: Make user 'transfer'
+    user:
+      name: transfer
+      home: /sftp/transfer
+      shell: /bin/bash
+  - name: Make user 'metrics'
+    user: 
+      name: metrics
+      home: /home/metrics
+      shell: /bin/bash
+  - name: Initialize Postgres for metrics
+    become_user: postgres
+    become: true
+    postgresql_user:
+      name: metrics
+      role_attr_flags: CREATEDB,NOSUPERUSER
+- name: Set up transfer user
+  hosts: new_vps
+  remote_user: "{{ superuser }}"
+  become_user: transfer
+  become: yes
+  tasks:
+  - name: Create Output/
+    file:
+      path: /sftp/transfer/Output
+      mode: go+w
+      state: directory
+- name: Install things as metrics
+  hosts: c00.mtric.net  
+  remote_user: "{{ superuser }}"
+  become: true
+  become_user: metrics
+  tasks:
+  - name: Put .bashrc for metrics
+    template:
+      src: ../bashrc-for-metrics-and-root
+      dest: /home/metrics/.bashrc
+  - name: Make .ssh for metrics
+    file:
+      path: /home/metrics/.ssh
+      state: directory
+      mode: go-rwx
+  - name: Copy public key for transfer
+    copy:
+      src: ../Local/transfer-id_rsa.pub
+      dest: /home/metrics/.ssh/id_rsa.pub
+      mode: go-rwx
+  - name: Copy private key for transfer
+    copy:
+      src: ../Local/transfer-id_rsa
+      dest: /home/metrics/.ssh/id_rsa
+      mode: go-rwx
+  - name: Turn off hashing of names in known_hosts
+    copy:
+      src: ../home_ssh_config
+      dest: /home/metrics/.ssh/ssh_config
+      mode: go-rwx
+  - name: Get our version of known_hosts
+    copy:
+      src: ../vp_known_hosts
+      dest: /home/metrics/.ssh/known_hosts
+      mode: go-rwx
+  - name: make Source/
+    file:
+      path: /home/metrics/Source
+      mode: u+wrx,go+rx
+      state: directory
+  - name: make Target/
+    file:
+      path: /home/metrics/Target
+      mode: u+wrx,go+rx
+      state: directory
+  - name: make Incoming/
+    file:
+      path: /home/metrics/Incoming
+      state: directory
+  - name: make Originals/
+    file:
+      path: /home/metrics/Originals
+      state: directory
+  - name: Put local BIND tarball and expand it
+    unarchive: 
+      src: ../bind-9.16.3.tar.xz
+      dest: /home/metrics/Source
+      creates: /home/metrics/Source/bind-9.16.3
+  - name: Make BIND
+    shell:
+      chdir: /home/metrics/Source/bind-9.16.3
+      cmd: "./configure --prefix=/home/metrics/Target; make install"
+      creates: /home/metrics/Target/bin/dig
+  - name: Put vp_list.txt
+    copy:
+      src: ../vp_list.txt
+      dest: /home/metrics/vp_list.txt
+  - name: Put the source for getdns_validate
+    copy:
+      src: ../getdns_validate.c
+      dest: /home/metrics/Source/getdns_validate.c
+  - name: Make getdns_validate 1
+    shell:
+      chdir: /home/metrics
+      cmd: "gcc -g -O2 -Wall -I. -I/usr/include -std=c99 -c /home/metrics/Source/getdns_validate.c -o /home/metrics/Target/getdns_validate.o"
+      creates: /home/metrics/Target/getdns_validate.o
+  - name: Make getdns_validate 2
+    shell:
+      chdir: /home/metrics
+      cmd: "libtool --tag=CC --mode=link gcc -g -O2 -Wall -I. -I/usr/include -std=c99 -L/usr/lib -lgetdns -lgetdns_ext_event -lunbound -lidn -lldns -o /home/metrics/Target/getdns_validate /home/metrics/Target/getdns_validate.o"
+      creates: /home/metrics/Target/getdns_validate
+  - name: Put root-ds.txt
+    copy:
+      src: ../root-ds.txt
+      dest: /home/metrics/Target/root-ds.txt
+  - name: Give the crontab entry for get_root_zone.py
+    cron:   # [mba] [wca]
+      name: Get the new root zone
+      minute: "0,15,30,45"
+      job: "/home/metrics/repo/get_root_zone.py >>/home/metrics/Logs/cron-alert.txt 2>&1"
+  - name: Give the crontab entry for collector_processing.py
+    cron:
+      name: Do all the processing
+      minute: "4,34"
+      job: "/home/metrics/repo/collector_processing.py >>/home/metrics/Logs/cron-alert.txt 2>&1"
+- name: Do Postgres stuff
+  hosts: c00.mtric.net  
+  remote_user: "{{ superuser }}"
+  become: true
+  become_user: metrics
+  tasks:
+  - name: Create first database
+    postgresql_db:
+      login_user: metrics
+      name: metrics
+  - name: Create table for files gotten
+    postgresql_table:
+      login_user: metrics
+      db: metrics
+      name: files_gotten
+      columns:
+      - id integer generated always as identity
+      - filename_full text
+      - retrieved_at timestamp
+      - processed_at timestamp
+      - version int
+      - delay int
+      - elapsed int
+  - name: Create table for route information
+    postgresql_table:
+      login_user: metrics
+      db: metrics
+      name: route_info
+      columns:
+      - id integer generated always as identity
+      - file_prefix text
+      - date_derived timestamp
+      - vp text
+      - route_string text
+  - name: Create table for SOA records
+    postgresql_table:
+      login_user: metrics
+      db: metrics
+      name: soa_info
+      columns:
+      - id integer generated always as identity
+      - file_prefix text
+      - date_derived timestamp
+      - vp text
+      - rsi text
+      - internet text
+      - transport text
+      - prog_elapsed real
+      - dig_elapsed real
+      - timeout boolean
+      - soa text
+  - name: Create table for correctness records
+    postgresql_table:
+      login_user: metrics
+      db: metrics
+      name: correctness_info
+      columns:
+      - id integer generated always as identity
+      - file_prefix text
+      - date_derived timestamp without time zone
+      - vp text
+      - rsi text
+      - internet text
+      - transport text
+      - recent_soa text[]
+      - is_correct boolean
+      - failure_reason text
+      - source_pickle bytea
+
+# To nuke all the tables in psql: drop table correctness_info ; drop table files_gotten ; drop table route_info ; drop table soa_info ;
+# To nuke just the records: delete from correctness_info; delete from files_gotten; delete from route_info; delete from soa_info;
+# select (id, file_prefix, date_derived, vp, rsi, internet, transport, recent_soa, is_correct, failure_reason) from correctness_info;
+

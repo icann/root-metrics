@@ -1,0 +1,4 @@
+# For metrics user
+PS1='`whoami|tr a-z A-Z`:\h:`pwd`# '
+alias dir='ls -lah '
+export LESS='-X'

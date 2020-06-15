@@ -1,0 +1,16 @@
+# From orignal sshd_config
+ChallengeResponseAuthentication no
+UsePAM yes
+PrintMotd no
+AcceptEnv LANG LC_*
+Subsystem sftp  /usr/lib/openssh/sftp-server
+PasswordAuthentication no
+
+# New for transfer user
+Match User transfer
+ForceCommand internal-sftp
+ChrootDirectory /sftp
+PermitTunnel no
+AllowAgentForwarding no
+AllowTcpForwarding no
+X11Forwarding no
