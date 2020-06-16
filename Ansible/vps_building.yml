@@ -90,9 +90,14 @@
       path: /home/metrics/Target
       mode: u+wrx,go+rx
       state: directory
+  - name: Get BIND tarball
+    get_url:
+      url: https://downloads.isc.org/isc/bind9/9.16.3/bind-9.16.3.tar.xz
+      dest: /home/metrics/Source/bind-9.16.3.tar.xz
   - name: Put local BIND tarball and expand it
-    unarchive: 
-      src: ../bind-9.16.3.tar.xz
+    unarchive:
+      remote_src: yes
+      src: /home/metrics/Source/bind-9.16.3.tar.xz
       dest: /home/metrics/Source
       creates: /home/metrics/Source/bind-9.16.3
   - name: Make BIND
