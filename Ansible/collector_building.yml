@@ -1,5 +1,5 @@
 - name: Set up the machine as root
-  hosts: c00.mtric.net  
+  hosts: c01 
   remote_user: "{{ superuser }}"
   tasks:
   - name: Initialize apt
@@ -47,19 +47,8 @@
     postgresql_user:
       name: metrics
       role_attr_flags: CREATEDB,NOSUPERUSER
-- name: Set up transfer user
-  hosts: vps
-  remote_user: "{{ superuser }}"
-  become_user: transfer
-  become: yes
-  tasks:
-  - name: Create Output/
-    file:
-      path: /sftp/transfer/Output
-      mode: go+w
-      state: directory
 - name: Install things as metrics
-  hosts: c00.mtric.net  
+  hosts: c01  
   remote_user: "{{ superuser }}"
   become: true
   become_user: metrics
@@ -111,9 +100,14 @@
     file:
       path: /home/metrics/Originals
       state: directory
-  - name: Put local BIND tarball and expand it
-    unarchive: 
-      src: ../bind-9.16.3.tar.xz
+  - name: Get BIND tarball
+    get_url:
+      url: https://downloads.isc.org/isc/bind9/9.16.3/bind-9.16.3.tar.xz
+      dest: /home/metrics/Source/bind-9.16.3.tar.xz
+  - name: Expand BIND tarball
+    unarchive:
+      remote_src: yes
+      src: /home/metrics/Source/bind-9.16.3.tar.xz
       dest: /home/metrics/Source
       creates: /home/metrics/Source/bind-9.16.3
   - name: Make BIND
@@ -158,7 +152,7 @@
       minute: "4,34"
       job: "/home/metrics/repo/collector_processing.py >>/home/metrics/Logs/cron-alert.txt 2>&1"
 - name: Do Postgres stuff
-  hosts: c00.mtric.net  
+  hosts: c01
   remote_user: "{{ superuser }}"
   become: true
   become_user: metrics

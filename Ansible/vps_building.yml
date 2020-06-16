@@ -94,7 +94,7 @@
     get_url:
       url: https://downloads.isc.org/isc/bind9/9.16.3/bind-9.16.3.tar.xz
       dest: /home/metrics/Source/bind-9.16.3.tar.xz
-  - name: Put local BIND tarball and expand it
+  - name: Expand BIND tarball
     unarchive:
       remote_src: yes
       src: /home/metrics/Source/bind-9.16.3.tar.xz
