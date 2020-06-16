@@ -100,6 +100,10 @@
     file:
       path: /home/metrics/Originals
       state: directory
+  - name: make Logs/
+    file:
+      path: /home/metrics/Logs
+      state: directory
   - name: Get BIND tarball
     get_url:
       url: https://downloads.isc.org/isc/bind9/9.16.3/bind-9.16.3.tar.xz
