@@ -77,7 +77,7 @@
       src: ../home_ssh_config
       dest: /home/metrics/.ssh/ssh_config
       mode: go-rwx
-  - name: Get our version of known_hosts
+  - name: Get our empty version of known_hosts; it will be added to as VPs are added
     copy:
       src: ../vp_known_hosts
       dest: /home/metrics/.ssh/known_hosts

@@ -21,7 +21,16 @@ def get_files_from_one_vp(this_vp):
 	try:
 		p = subprocess.run("sftp -b {} transfer@{}".format(dir_batch_filename, this_vp), shell=True, capture_output=True, text=True, check=True)
 	except Exception as e:
-		die("Getting directory for {} ended with '{}'".format(dir_batch_filename, e))
+		# Might be because this is a new VP that is not yet in .ssh/known_hosts
+		try:
+			subprocess.run("ssh-keyscan -4 -t rsa {} >> ~/.ssh/known_hosts".format(this_vp), shell=True)
+		except Exception as inner_e:
+			die("Could not run ssh-keyscan on {}: {}".format(this_vp, inner_e))
+		# And try again
+		try:
+			p = subprocess.run("sftp -b {} transfer@{}".format(dir_batch_filename, this_vp), shell=True, capture_output=True, text=True, check=True)
+		except Exception as e:
+			die("Getting directory for {}, even after ssh-keyscan, ended with '{}'".format(dir_batch_filename, e))
 	dir_lines = p.stdout.splitlines()
 	# Get the filenames that end in .gz; some lines will be other cruft such as ">"
 	for this_filename in dir_lines:
