@@ -21,16 +21,7 @@ def get_files_from_one_vp(this_vp):
 	try:
 		p = subprocess.run("sftp -b {} transfer@{}".format(dir_batch_filename, this_vp), shell=True, capture_output=True, text=True, check=True)
 	except Exception as e:
-		# Might be because this is a new VP that is not yet in .ssh/known_hosts
-		try:
-			subprocess.run("ssh-keyscan -4 -t rsa {} >> ~/.ssh/known_hosts".format(this_vp), shell=True)
-		except Exception as inner_e:
-			die("Could not run ssh-keyscan on {}: {}".format(this_vp, inner_e))
-		# And try again
-		try:
-			p = subprocess.run("sftp -b {} transfer@{}".format(dir_batch_filename, this_vp), shell=True, capture_output=True, text=True, check=True)
-		except Exception as e:
-			die("Getting directory for {}, even after ssh-keyscan, ended with '{}'".format(dir_batch_filename, e))
+		die("Getting directory for {} ended with '{}'".format(dir_batch_filename, e))
 	dir_lines = p.stdout.splitlines()
 	# Get the filenames that end in .gz; some lines will be other cruft such as ">"
 	for this_filename in dir_lines:
@@ -735,6 +726,18 @@ if __name__ == "__main__":
 	except Exception as e:
 		die("Could not open {} and split the lines: '{}'".format(vp_list_filename, e))
 
+	# Make sure we have trusted each one
+	known_hosts_set = set()
+	known_host_lines = open(os.path.expanduser("~/.ssh/known_hosts"), mode="rt").readlines()
+	for this_line in known_host_lines:
+		known_hosts_set.add(this_line.split(" ")[0])
+	for this_vp in all_vps:
+		if not this_vp in known_hosts_set:
+			try:
+				subprocess.run("ssh-keyscan -4 -t rsa {} >> ~/.ssh/known_hosts".format(this_vp), shell=True, capture_output=True, check=True)
+				log("Added {} got known_hosts".format(this_vp))
+			except Exception as e:
+				die("Could not run ssh-keyscan on {}: {}".format(this_vp, e))
 	total_pulled = 0
 	with futures.ProcessPoolExecutor() as executor:
 		for (this_vp, pulled_count) in zip(all_vps, executor.map(get_files_from_one_vp, all_vps)):
