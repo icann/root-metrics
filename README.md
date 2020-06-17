@@ -1,15 +1,16 @@
-# Metrics Work Plan
+# RSSAC047 Initial Implementation
 
-- Use mtric.net as domain name for RSSAC work
-- Each vantage point (VP) is named `nnn`.mtric.net where `nnn` is a three-digit number
-- Collector is named c00.mtric.net
+This repository represents an initial implementation of [RSSAC047](https://www.icann.org/en/system/files/files/rssac-047-12mar20-en.pdf) prepared by ICANN org.
+This implementation is still in _early development_, and is presented here so that the community can see how RSSAC047 might be implemented, to get suggestions and code contributions for this code, and to help the [RSSAC Caucus](https://www.icann.org/groups/rssac-caucus) evaluate RSSAC047 for possible future changes.
+
+The repo has a Markdown version of excerpts of RSSAC047, (rssac-047.md). In this file, every requirement is marked with a unique three-letter code in square brackets, and that same code appears in the source code as well as this document. The purpose of doing this it to verify that all requirements from RSSAC047 are implemented, and for readers to be able to more easily find where the requirements are reflected in the implementation.
 
 ## Deployment
 
 - Deployed with Ansible
 	- In `Ansible` directory in the repo
 	- Files that are not part of the distribution are on `Local` directory in the repo
-	- Create VPs first with `vps_building.yml`, then create collector with `collector_building.yml`
+	- Create VPs first with vps_building.yml, then create collector with collector_building.yml
 	- Creates users on collector with names transfer-xxx to receive files from the VPs
 
 ## Logging and alerts
@@ -25,7 +26,7 @@
 - All are running latest Debian
 	- Thus automatically running NTP  `[ugt]`
 - All programs run as "metrics" user
-- Also has "tranfer" user for for the collector to copy data
+- Also has "transfer" user for for the collector to copy data
 
 - `vantage_point_metrics.py`
 	- Is run from cron job every 5 minutes on 0, 5, ... `[wyn]` `[mba]` `[wca]`
@@ -53,7 +54,7 @@
 - Running Debian 10
 	- Thus automatically running NTP  `[ugt]`
 - All programs run as "metrics" user
-- Also has "tranfer" user for others to copy data
+- Also has "transfer" user for others to copy data
 
 - `get_root_zone.py`
 	- Run from cron job every 15 minutes
