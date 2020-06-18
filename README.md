@@ -61,7 +61,7 @@ The repo has a Markdown version of excerpts of [RSSAC047](rssac-047.md) as the f
 	- Stores zones in ~/Output/RootZones for every SOA seen
 
 - `collector_processing.py`
-	- Run from cron job every hour
+	- Run from cron job twice every hour
 	- Use sftp to pull from all VPs to ~/Incoming
 	- For each .gz file in ~/Incoming
 		- Open file, store results in the database
@@ -69,15 +69,22 @@ The repo has a Markdown version of excerpts of [RSSAC047](rssac-047.md) as the f
 	- Find records in the correctness table that have not been checked, and check them
 	- Reports why any failure happens
 
-- `make_tests.py`
-	- Tests are run manually, probably once, to check whether the correctness tests in `collector_processing.py` is correct
-	- Go to repo/Tests/, run `make_tests.py` to make all the negative tests
-	- Run `collector_processing.py --test` to execute the tests
-	- See the output in repo/Tests/results.txt
-
 - `produce_reports.py`
 	- Run from cron job every week, and on the first of each month
 	- `--debug` to add debugging info to the report
 	- `--force` to recreate a report that already exists
 	- `--test_date` to pretend that it is a different date in order to make earlier reports
+
+## Correctness testing
+
+- `collector_processing.py` contains a twisty maze of code to check the correctness of queries to the root servers from Section 5.3 of RSSAC047
+- Clearly, this part needs test cases
+- In Tests/, `make_tests.py` makes the set of positive and negative test responses for correctness
+- Tests are run manually to check whether the correctness tests in `collector_processing.py` are correct
+- In a local setup (not on the root metrics system):
+	- Use `make_tests.py --addr` to get test vectors from a server under test
+	= Use `make_tests.py --bin_prefix` to indicate where "dig" is
+- After setting up the test cases, run `collector_processing.py --test` to execute the tests
+	- This doesn't use the normal logging, but instead uses "print" statements
+	- See the full output in Tests/results.txt
 
