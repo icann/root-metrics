@@ -11,7 +11,7 @@
       force: true
   - name: Install all the needed packages
     apt:
-      pkg: [build-essential, curl, git, libcap-dev, libgetdns-dev, libidn11-dev, libldns-dev, libssl-dev, libtool, libtool-bin, libunbound-dev, libuv1-dev,
+      pkg: [acl, build-essential, curl, git, libcap-dev, libgetdns-dev, libidn11-dev, libldns-dev, libssl-dev, libtool, libtool-bin, libunbound-dev, libuv1-dev,
         man, pkg-config, postgresql, pyflakes3, python-ply, python-psycopg2, python3-psycopg2, python3-paramiko, rsync, unzip]
   - name: Put .bashrc for root
     copy:

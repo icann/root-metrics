@@ -1,6 +1,8 @@
 - name: Set up the machine as root
   hosts: vps  
   remote_user: "{{ superuser }}"
+  become_user: root
+  become: yes
   tasks:
   - name: Initialize apt
     apt:
@@ -11,8 +13,8 @@
       force: true
   - name: Install all the needed packages
     apt:
-      pkg: [build-essential, curl, git, libcap-dev, libssl-dev, libuv1-dev, man, pkg-config,
-        pyflakes3, python-ply, python3-requests, rsync, scamper, traceroute, unzip]
+      pkg: [acl, build-essential, curl, git, libcap-dev, libssl-dev, libuv1-dev, man, pkg-config,
+        pyflakes3, python-ply, python3-requests, rsync, scamper, sudo, traceroute, unzip]
   - name: Put .bashrc for root
     copy:
       src: ../bashrc-for-metrics-and-root
