@@ -633,7 +633,7 @@ if __name__ == "__main__":
 	opts = this_parser.parse_args()
 
 	# Where to put the SFTP batch files
-	batch_dir = os.path.expanduser("~/{}/Batches".format(log_dir))
+	batch_dir = os.path.expanduser("{}/Batches".format(log_dir))
 	if not os.path.exists(batch_dir):
 		os.mkdir(batch_dir)
 	# Where to get the incoming files
