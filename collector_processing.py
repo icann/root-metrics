@@ -13,7 +13,7 @@ def get_files_from_one_vp(this_vp):
 	# Used to pull files from VPs under multiprocessing; retuns the number of files pulled from this VP
 	pulled_count = 0
 	# Make a batch file for sftp that gets the directory
-	dir_batch_filename = "{}/dirbatchfile.txt".format(log_dir)
+	dir_batch_filename = "{}/{}-dirbatchfile.txt".format(batch_dir, this_vp)
 	dir_f = open(dir_batch_filename, mode="wt")
 	dir_f.write("cd transfer/Output\ndir -1\n")
 	dir_f.close()
@@ -28,7 +28,7 @@ def get_files_from_one_vp(this_vp):
 		if not this_filename.endswith(".gz"):
 			continue
 		# Create an sftp batch file for each file to get
-		get_batch_filename = "{}/getbatchfile.txt".format(log_dir)
+		get_batch_filename = "{}/{}-getbatchfile.txt".format(batch_dir, this_vp)
 		get_f = open(get_batch_filename, mode="wt")
 		# Get the file
 		get_cmd = "get transfer/Output/{} {}\n".format(this_filename, incoming_dir)
@@ -39,7 +39,7 @@ def get_files_from_one_vp(this_vp):
 		except Exception as e:
 			die("Running get for {} ended with '{}'".format(this_filename, e))
 		# Create an sftp batch file for each file to move
-		move_batch_filename = "{}/getbatchfile.txt".format(log_dir)
+		move_batch_filename = "{}/{}-movebatchfile.txt".format(batch_dir, this_vp)
 		move_f = open(move_batch_filename, mode="wt")
 		# Get the file
 		move_cmd = "rename transfer/Output/{0} transfer/AlreadySeen/{0}\n".format(this_filename)
@@ -632,6 +632,10 @@ if __name__ == "__main__":
 		help="Run tests on requests; must be run in the Tests directory")
 	opts = this_parser.parse_args()
 
+	# Where to put the SFTP batch files
+	batch_dir = os.path.expanduser("~/{}/Batches".format(log_dir))
+	if not os.path.exists(batch_dir):
+		os.mkdir(batch_dir)
 	# Where to get the incoming files
 	incoming_dir = os.path.expanduser("~/Incoming")
 	if not os.path.exists(incoming_dir):
