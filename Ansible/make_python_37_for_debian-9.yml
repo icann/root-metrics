@@ -20,5 +20,6 @@
   shell:
     chdir: /root/Source/Python-3.7.8
     cmd: "./configure ; make ; make install"
-
-
+- name: Install things again after making Python 3.7.8
+  shell:
+    cmd: "pip3 install requests pyflakes"

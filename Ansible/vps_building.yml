@@ -123,3 +123,8 @@
       name: Get measurements
       minute: "0-59/5"
       job: "/home/metrics/repo/vantage_point_metrics.py >>/home/metrics/Logs/cron-alert.txt 2>&1"
+  - name: Update the crontab to use /usr/local first
+    cron:
+      name: PATH
+      env: yes
+      value: "/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin"
