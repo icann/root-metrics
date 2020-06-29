@@ -1,0 +1,24 @@
+- name: Make Source/
+  file:
+    path: /root/Source
+    mode: u+wrx,go+rx
+    state: directory
+- name: Get Python 3.7 tarball
+  get_url:
+    url: https://www.python.org/ftp/python/3.7.8/Python-3.7.8.tgz
+    dest: /root/Source/Python-3.7.8.tgz
+- name: Expand Python 3.7 tarball
+  unarchive:
+    remote_src: yes
+    src: /root/Source/Python-3.7.8.tgz
+    dest: /root/Source
+    creates: /root/Source/Python-3.7.8
+- name: Install all the needed packages
+  apt:
+    pkg: [build-essential, zlib1g-dev, libncurses5-dev, libgdbm-dev, libnss3-dev, libssl-dev, libreadline-dev, libffi-dev, curl, libbz2-dev]
+- name: Make Python 3.7
+  shell:
+    chdir: /root/Source/Python-3.7.8
+    cmd: "./configure ; make ; make install"
+
+

@@ -43,6 +43,13 @@
       name: metrics
       home: /home/metrics
       shell: /bin/bash
+  - name: Check Python version
+    shell: python3 --version | grep "Python 3.7"  
+    register: python_version  # grep will exit with 1 when no results found. 
+    ignore_errors: true
+  - name: Make Python 3.7 if needed
+    when: python_version is failed
+    import_tasks: make_python_37_for_debian-9.yml
 - name: Set up transfer user
   hosts: vps
   remote_user: "{{ superuser }}"

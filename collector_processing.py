@@ -739,7 +739,7 @@ if __name__ == "__main__":
 		if not this_vp in known_hosts_set:
 			try:
 				subprocess.run("ssh-keyscan -4 -t rsa {} >> ~/.ssh/known_hosts".format(this_vp), shell=True, capture_output=True, check=True)
-				log("Added {} got known_hosts".format(this_vp))
+				log("Added {} to known_hosts".format(this_vp))
 			except Exception as e:
 				die("Could not run ssh-keyscan on {}: {}".format(this_vp, e))
 	total_pulled = 0
