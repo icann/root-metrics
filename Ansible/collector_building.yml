@@ -106,17 +106,17 @@
       state: directory
   - name: Get BIND tarball
     get_url:
-      url: https://downloads.isc.org/isc/bind9/9.16.4/bind-9.16.4.tar.xz
-      dest: /home/metrics/Source/bind-9.16.4.tar.xz
+      url: https://downloads.isc.org/isc/bind9/9.16.5/bind-9.16.5.tar.xz
+      dest: /home/metrics/Source/bind-9.16.5.tar.xz
   - name: Expand BIND tarball
     unarchive:
       remote_src: yes
-      src: /home/metrics/Source/bind-9.16.4.tar.xz
+      src: /home/metrics/Source/bind-9.16.5.tar.xz
       dest: /home/metrics/Source
-      creates: /home/metrics/Source/bind-9.16.4
+      creates: /home/metrics/Source/bind-9.16.5
   - name: Make BIND
     shell:
-      chdir: /home/metrics/Source/bind-9.16.4
+      chdir: /home/metrics/Source/bind-9.16.5
       cmd: "./configure --prefix=/home/metrics/Target; make install"
       creates: /home/metrics/Target/bin/dig
   - name: Put vp_list.txt
