@@ -21,7 +21,8 @@ def get_files_from_one_vp(this_vp):
 	try:
 		p = subprocess.run("sftp -b {} transfer@{}".format(dir_batch_filename, this_vp), shell=True, capture_output=True, text=True, check=True)
 	except Exception as e:
-		die("Getting directory for {} ended with '{}'".format(dir_batch_filename, e))
+		log("Getting directory for {} ended with '{}'".format(dir_batch_filename, e))
+		return pulled_count
 	dir_lines = p.stdout.splitlines()
 	# Get the filenames that end in .gz; some lines will be other cruft such as ">"
 	for this_filename in dir_lines:
