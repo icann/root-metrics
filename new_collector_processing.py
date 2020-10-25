@@ -645,31 +645,27 @@ if __name__ == "__main__":
 	batch_dir = os.path.expanduser("{}/Batches".format(log_dir))
 	if not os.path.exists(batch_dir):
 		os.mkdir(batch_dir)
-	# Where to get the incoming files
+	# Where to store the incoming files comeing from the vantage points
 	incoming_dir = os.path.expanduser("~/Incoming")
 	if not os.path.exists(incoming_dir):
 		os.mkdir(incoming_dir)
-	# Where to put the processed files files
+	# Where to put the processed vantage point files after processing them; they are segregated by month
 	originals_dir = os.path.expanduser("~/Originals")
 	if not os.path.exists(originals_dir):
 		os.mkdir(originals_dir)
-	# Where to save things long-term
-	output_dir = os.path.expanduser("~/Output")
-	if not os.path.exists(output_dir):
-		os.mkdir(output_dir)
-	# Subdirectories of ~/Output for root zones
-	saved_root_zone_dir = "{}/RootZones".format(output_dir)
+	# Subdirectories of log directory for root zones
+	saved_root_zone_dir = "{}/RootZones".format(log_dir)
 	if not os.path.exists(saved_root_zone_dir):
 		os.mkdir(saved_root_zone_dir)
-	saved_matching_dir = "{}/RootMatching".format(output_dir)
+	saved_matching_dir = "{}/RootMatching".format(log_dir)
 	if not os.path.exists(saved_matching_dir):
 		os.mkdir(saved_matching_dir)
 
 	###############################################################
 
-	# Tests can be run outside the normal cron job. Output is to the terminal, not logging. Exits when done
+	# Tests can be run outside the normal cron job. Exits when done
 	if opts.test:
-		print("Running tests instead of a real run")
+		log("Running tests instead of a real run")
 		# Sanity check that you are in the Tests directory
 		for this_check in [ "make_tests.py", "p-dot-soa", "root_name_and_types.pickle" ]:
 			if not os.path.exists(this_check):
@@ -682,7 +678,7 @@ if __name__ == "__main__":
 			this_resp_pickle = pickle.dumps(yaml.load(open(this_test_file, mode="rb")))
 			this_response = (process_one_correctness_array([this_id, [ "test" ], this_resp_pickle]))
 			if this_response:
-				print("Expected pass, but got failure, on {}\n{}\n".format(this_id, this_response))
+				log("Expected pass, but got failure, on {}\n{}\n".format(this_id, this_response))
 		# Test the negatives
 		n_count = 0
 		# Collect the negative responses to put in a file
@@ -696,17 +692,18 @@ if __name__ == "__main__":
 			this_resp_pickle = pickle.dumps(yaml.load(open(this_test_file, mode="rt")))
 			this_response = (process_one_correctness_array([this_id, [ "test" ], this_resp_pickle]))
 			if not this_response:
-				print("Expected failure, but got pass, on {}".format(this_id))
+				log("Expected failure, but got pass, on {}".format(this_id))
 			else:
 				n_responses[this_id]["resp"] = this_response
-		print("Finished testing {} positive and {} negative tests".format(p_count, n_count))
-		out_f = open("results.txt", mode="wt")
+		log("Finished testing {} positive and {} negative tests".format(p_count, n_count))
+		tests_results_file = "results.txt"
+		out_f = open(tests_results_file, mode="wt")
 		for this_id in n_responses:
 			out_f.write("\n{}\n".format(n_responses[this_id]["desc"]))
 			for this_line in n_responses[this_id]["resp"].splitlines():
 				out_f.write("{}\n".format(this_line))
 		out_f.close()
-		exit()
+		die("Wrote out testing log as {}".format(tests_results_file))
 
 	###############################################################
 
@@ -728,7 +725,7 @@ if __name__ == "__main__":
 	
 	###############################################################
 
-	# For each VP, find the files in /sftp/transfer/Output and get them one by one
+	# On each VP, find the files in /sftp/transfer/Output and get them one by one
 	#   For each file, after getting, move it to /sftp/transfer/AlreadySeen
 
 	# Get the list of VPs
@@ -761,7 +758,7 @@ if __name__ == "__main__":
 	###############################################################
 
 	# Go through the files in ~/Incoming
-	log("Started going through Incoming")
+	log("Started going through ~/Incoming")
 	all_files = list(glob.glob("{}/*".format(incoming_dir)))
 	with futures.ProcessPoolExecutor() as executor:
 		for (this_file, _) in zip(all_files, executor.map(process_one_incoming_file, all_files)):
