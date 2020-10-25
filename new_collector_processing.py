@@ -10,6 +10,9 @@ from concurrent import futures
 ###############################################################
 
 def get_files_from_one_vp(this_vp):
+	##################### Remove this before deploying #####################
+	die("Was about to get_files_from_one_vp for {}".format(this_vp))
+	########################################################################
 	# Used to pull files from VPs under multiprocessing; retuns the number of files pulled from this VP
 	pulled_count = 0
 	# Make a batch file for sftp that gets the directory
@@ -140,23 +143,28 @@ def process_one_incoming_file(full_file):
 	for this_resp in in_obj["r"]:
 		response_count += 1
 		# Get it out of YAML and do basic sanity checks
-		#   But first, look for AAAA records that end in ":", which they should not
-		#   This is due to a bug in BIND up to 9.16.3
-		yaml_fixed = ""
-		yaml_in_text_lines = this_resp[6].splitlines()
-		for this_line in yaml_in_text_lines:
-			if "IN AAAA" in this_line and this_line.endswith(":"):
-				yaml_fixed += this_line + "0" + "\n"
-			else:
-				yaml_fixed += this_line + "\n"
+		# If what was supposed to be YAML is an empty string, it means that dig could not get a route to the server
+		#   In this case, make it a timeout, fill the data as best possible, and return
+		if len(this_resp[6]) == 0:
+			this_timeout = True
+			this_dig_elapsed = None
+			this_soa = None
+			# Log this truncated SOA information
+			update_string = "insert into soa_info (file_prefix, date_derived, vp, rsi, internet, transport, prog_elapsed, dig_elapsed, timeout, soa) "\
+				+ "values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
+			update_vales = (short_file, file_date, file_vp, None, None, None, None, None, True, None) 
+			try:
+				cur.execute(update_string, update_vales)
+			except Exception as e:
+				alert("Could not insert into soa_info for {}: '{}'".format(short_file, e))
+			cur.close()
+			conn.close()
+			return
+		#   Stuff saved as "YAML fix" would go here
 		try:
-			this_resp_obj = yaml.load(yaml_fixed)
+			this_resp_obj = yaml.load(this_resp[6])
 		except:
 			alert("Could not interpret YAML from {} of {}".format(response_count, full_file))
-			continue
-		# Sanity check the structure of the object
-		if not this_resp_obj:
-			alert("Found no object in record {} of {}".format(response_count, full_file))
 			continue
 		if not this_resp_obj[0].get("type"):
 			alert("Found no dig type in record {} of {}".format(response_count, full_file))
@@ -795,4 +803,17 @@ if __name__ == "__main__":
 
 # rsync -av -e "ssh -l root -i /home/metrics/.ssh/metrics_id_rsa" root@c01.mtric.net:/home/metrics/Originals/ /home/metrics/Originals
 
-
+"""
+		# YAML fix removed 2020-10-25
+		#   But first, look for AAAA records that end in ":", which they should not
+		#   This is due to a bug in BIND up to 9.16.3
+		yaml_fixed = ""
+		yaml_in_text_lines = this_resp[6].splitlines()
+		for this_line in yaml_in_text_lines:
+			if "IN AAAA" in this_line and this_line.endswith(":"):
+				yaml_fixed += this_line + "0" + "\n"
+			else:
+				yaml_fixed += this_line + "\n"
+		try:
+			this_resp_obj = yaml.load(yaml_fixed)
+"""
