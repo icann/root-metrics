@@ -791,3 +791,6 @@ if __name__ == "__main__":
 	conn.close()
 	log("Finished overall collector processing")	
 	exit()
+
+
+# rsync -av -e "ssh -l root -i /home/metrics/.ssh/metrics_id_rsa" root@c01.mtric.net:/home/metrics/Originals/ /home/metrics/Originals
