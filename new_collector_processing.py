@@ -733,9 +733,8 @@ if __name__ == "__main__":
 	
 	if opts.source == "c01":
 		log("Running rsync from c01")
-		# rsync -av -e "ssh -l root -i /home/metrics/.ssh/metrics_id_rsa" root@c01.mtric.net:/home/metrics/Originals/ /home/metrics/Originals
 		rsync_start = time.time()
-		rsync_files_cmd = 'rsync -av -e "ssh -l root -i /home/metrics/.ssh/metrics_id_rsa" root@c01.mtric.net:/home/metrics/Originals/ /home/metrics/Originals'
+		rsync_files_cmd = 'rsync -av -e "ssh -l root -i /home/metrics/.ssh/metrics_id_rsa" root@c01.mtric.net:/home/metrics/Originals/ /home/metrics/Incoming'
 		rsync_actual = subprocess.run(rsync_files_cmd, shell=True, capture_output=True)
 		pickle_count = 0
 		for this_line in rsync_actual.stdout.splitlines():
