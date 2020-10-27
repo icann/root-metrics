@@ -735,7 +735,7 @@ if __name__ == "__main__":
 		log("Running rsync from c01")
 		rsync_start = time.time()
 		rsync_files_cmd = 'rsync -av -e "ssh -l root -i /home/metrics/.ssh/metrics_id_rsa" root@c01.mtric.net:/home/metrics/Originals/ /home/metrics/Incoming'
-		rsync_actual = subprocess.run(rsync_files_cmd, shell=True, capture_output=True)
+		rsync_actual = subprocess.run(rsync_files_cmd, shell=True, capture_output=True, text=True)
 		pickle_count = 0
 		for this_line in rsync_actual.stdout.splitlines():
 			if ".pickle.gz" in this_line:
@@ -744,7 +744,7 @@ if __name__ == "__main__":
 		# Get the RootMatching files
 		rsync_start = time.time()
 		rsync_matching_cmd = 'rsync -av -e "ssh -l root -i /home/metrics/.ssh/metrics_id_rsa" root@c01.mtric.net:/home/metrics/Logs/RootMatching/ /home/metrics/Logs/RootMatching'
-		rsync_root_matching = subprocess.run(rsync_matching_cmd, shell=True, capture_output=True)
+		rsync_root_matching = subprocess.run(rsync_matching_cmd, shell=True, capture_output=True, text=True)
 		pickle_count = 0
 		for this_line in rsync_root_matching.stdout.splitlines():
 			if ".matching.pickle" in this_line:
@@ -753,7 +753,7 @@ if __name__ == "__main__":
 		# Get the RootZones files
 		rsync_start = time.time()
 		rsync_zones_cmd = 'rsync -av -e "ssh -l root -i /home/metrics/.ssh/metrics_id_rsa" root@c01.mtric.net:/home/metrics/Logs/RootZones/ /home/metrics/Logs/RootZones'
-		rsync_root_zones = subprocess.run(rsync_zones_cmd, shell=True, capture_output=True)
+		rsync_root_zones = subprocess.run(rsync_zones_cmd, shell=True, capture_output=True, text=True)
 		pickle_count = 0
 		for this_line in rsync_root_zones.stdout.splitlines():
 			if ".root.txt" in this_line:
