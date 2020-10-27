@@ -83,8 +83,8 @@ The repo has a Markdown version of excerpts of [RSSAC047](rssac-047.md) as the f
 - Tests are run manually to check whether the correctness tests in `collector_processing.py` are correct
 - In a local setup (not on the root metrics system):
 	- Use `make_tests.py --addr` to get test vectors from a server under test
-	= Use `make_tests.py --bin_prefix` to indicate where "dig" is
+	- Use `make_tests.py --bin_prefix` to indicate where "dig" is
 - After setting up the test cases, run `collector_processing.py --test` to execute the tests
-	- This doesn't use the normal logging, but instead uses "print" statements
+	- This uses the normal logging
 	- See the full output in Tests/results.txt
 
