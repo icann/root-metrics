@@ -4,8 +4,52 @@
 # Run as the metrics user
 # Three-letter items in square brackets (such as [xyz]) refer to parts of rssac-047.md
 
-import argparse, datetime, glob, gzip, logging, os, pickle, psycopg2, socket, subprocess, shutil, tempfile, yaml
+import argparse, datetime, glob, gzip, logging, os, pickle, psycopg2, socket, subprocess, shutil, tempfile, time, yaml
 from concurrent import futures
+
+###############################################################
+
+def run_tests_only():
+	# Used to run local tests, then exit.
+	log("Running tests instead of a real run")
+	# Sanity check that you are in the Tests directory
+	for this_check in [ "make_tests.py", "p-dot-soa", "root_name_and_types.pickle" ]:
+		if not os.path.exists(this_check):
+			exit("Did not find {} for running under --test. Exiting.".format(this_check))
+	# Test the positives
+	p_count = 0
+	for this_test_file in sorted(glob.glob("p-*")):
+		p_count += 1
+		this_id = os.path.basename(this_test_file)
+		this_resp_pickle = pickle.dumps(yaml.load(open(this_test_file, mode="rb")))
+		this_response = (process_one_correctness_array([this_id, [ "test" ], this_resp_pickle]))
+		if this_response:
+			log("Expected pass, but got failure, on {}\n{}\n".format(this_id, this_response))
+	# Test the negatives
+	n_count = 0
+	# Collect the negative responses to put in a file
+	n_responses = {}
+	for this_test_file in sorted(glob.glob("n-*")):
+		n_count += 1
+		this_id = os.path.basename(this_test_file)
+		in_lines = open(this_test_file, mode="rt").read().splitlines()
+		n_responses[this_id] = {}
+		n_responses[this_id]["desc"] = in_lines[0]
+		this_resp_pickle = pickle.dumps(yaml.load(open(this_test_file, mode="rt")))
+		this_response = (process_one_correctness_array([this_id, [ "test" ], this_resp_pickle]))
+		if not this_response:
+			log("Expected failure, but got pass, on {}".format(this_id))
+		else:
+			n_responses[this_id]["resp"] = this_response
+	log("Finished testing {} positive and {} negative tests".format(p_count, n_count))
+	tests_results_file = "results.txt"
+	out_f = open(tests_results_file, mode="wt")
+	for this_id in n_responses:
+		out_f.write("\n{}\n".format(n_responses[this_id]["desc"]))
+		for this_line in n_responses[this_id]["resp"].splitlines():
+			out_f.write("{}\n".format(this_line))
+	out_f.close()
+	die("Wrote out testing log as {}".format(tests_results_file))
 
 ###############################################################
 
@@ -633,14 +677,19 @@ if __name__ == "__main__":
 		log("Died with '{}'".format(error_message))
 		exit()
 	
-	# Where the binaries are
-	target_dir = "/home/metrics/Target"
-	
 	this_parser = argparse.ArgumentParser()
 	this_parser.add_argument("--test", action="store_true", dest="test",
 		help="Run tests on requests; must be run in the Tests directory")
+	this_parser.add_argument("--source", action="store", dest="source", default="c01",
+		help="Specify 'vps' or 'c01' to say where to pull recent files")
 	opts = this_parser.parse_args()
 
+	# Make sure opts.source is "vps" or "c01"
+	if not opts.source in ("vps", "c01"):
+		die('The value for --source must be "vps" or "c01"')
+
+	# Where the binaries are
+	target_dir = "/home/metrics/Target"	
 	# Where to put the SFTP batch files
 	batch_dir = os.path.expanduser("{}/Batches".format(log_dir))
 	if not os.path.exists(batch_dir):
@@ -663,52 +712,92 @@ if __name__ == "__main__":
 
 	###############################################################
 
-	# Tests can be run outside the normal cron job. Exits when done
+	# Tests can be run outside the normal cron job. Exits when done.
+	#   This is only run from the command line, not from cron.
 	if opts.test:
-		log("Running tests instead of a real run")
-		# Sanity check that you are in the Tests directory
-		for this_check in [ "make_tests.py", "p-dot-soa", "root_name_and_types.pickle" ]:
-			if not os.path.exists(this_check):
-				exit("Did not find {} for running under --test. Exiting.".format(this_check))
-		# Test the positives
-		p_count = 0
-		for this_test_file in sorted(glob.glob("p-*")):
-			p_count += 1
-			this_id = os.path.basename(this_test_file)
-			this_resp_pickle = pickle.dumps(yaml.load(open(this_test_file, mode="rb")))
-			this_response = (process_one_correctness_array([this_id, [ "test" ], this_resp_pickle]))
-			if this_response:
-				log("Expected pass, but got failure, on {}\n{}\n".format(this_id, this_response))
-		# Test the negatives
-		n_count = 0
-		# Collect the negative responses to put in a file
-		n_responses = {}
-		for this_test_file in sorted(glob.glob("n-*")):
-			n_count += 1
-			this_id = os.path.basename(this_test_file)
-			in_lines = open(this_test_file, mode="rt").read().splitlines()
-			n_responses[this_id] = {}
-			n_responses[this_id]["desc"] = in_lines[0]
-			this_resp_pickle = pickle.dumps(yaml.load(open(this_test_file, mode="rt")))
-			this_response = (process_one_correctness_array([this_id, [ "test" ], this_resp_pickle]))
-			if not this_response:
-				log("Expected failure, but got pass, on {}".format(this_id))
-			else:
-				n_responses[this_id]["resp"] = this_response
-		log("Finished testing {} positive and {} negative tests".format(p_count, n_count))
-		tests_results_file = "results.txt"
-		out_f = open(tests_results_file, mode="wt")
-		for this_id in n_responses:
-			out_f.write("\n{}\n".format(n_responses[this_id]["desc"]))
-			for this_line in n_responses[this_id]["resp"].splitlines():
-				out_f.write("{}\n".format(this_line))
-		out_f.close()
-		die("Wrote out testing log as {}".format(tests_results_file))
+		run_tests_only()
+		exit()
 
 	###############################################################
 
 	log("Started overall collector processing")
 	
+	###############################################################
+	
+	# First active step is to copy new files to the collector
+	#   opts.source is either c01 (to rsync from c01.mtric.net) or vps (to pull from vps)
+
+	# This was checked above but, sure, check again
+	if not opts.source in ("vps", "c01"):
+		die('The value for --source must be "vps" or "c01"')
+	
+	if opts.source == "c01":
+		log("Running rsync from c01")
+		# rsync -av -e "ssh -l root -i /home/metrics/.ssh/metrics_id_rsa" root@c01.mtric.net:/home/metrics/Originals/ /home/metrics/Originals
+		rsync_start = time.time()
+		rsync_files_cmd = 'rsync -av -e "ssh -l root -i /home/metrics/.ssh/metrics_id_rsa" root@c01.mtric.net:/home/metrics/Originals/ /home/metrics/Originals'
+		rsync_actual = subprocess.run(rsync_files_cmd, shell=True, capture_output=True)
+		pickle_count = 0
+		for this_line in rsync_actual.stdout.splitlines():
+			if ".pickle.gz" in this_line:
+				pickle_count += 1
+		log("Rsync of files returned {} in {} seconds, {} files".format(rsync_actual.returncode, int(time.time() - rsync_start), pickle_count))
+		# Get the RootMatching files
+		rsync_start = time.time()
+		rsync_matching_cmd = 'rsync -av -e "ssh -l root -i /home/metrics/.ssh/metrics_id_rsa" root@c01.mtric.net:/home/metrics/Logs/RootMatching/ /home/metrics/Logs/RootMatching'
+		rsync_root_matching = subprocess.run(rsync_matching_cmd, shell=True, capture_output=True)
+		pickle_count = 0
+		for this_line in rsync_root_matching.stdout.splitlines():
+			if ".matching.pickle" in this_line:
+				pickle_count += 1
+		log("Rsync of RootMatching returned {} in {} seconds, {} files".format(rsync_root_matching.returncode, int(time.time() - rsync_start), pickle_count))
+		# Get the RootZones files
+		rsync_start = time.time()
+		rsync_zones_cmd = 'rsync -av -e "ssh -l root -i /home/metrics/.ssh/metrics_id_rsa" root@c01.mtric.net:/home/metrics/Logs/RootZones/ /home/metrics/Logs/RootZones'
+		rsync_root_zones = subprocess.run(rsync_zones_cmd, shell=True, capture_output=True)
+		pickle_count = 0
+		for this_line in rsync_root_zones.stdout.splitlines():
+			if ".root.txt" in this_line:
+				pickle_count += 1
+		log("Rsync of RootZones returned {} in {} seconds, {} files".format(rsync_root_zones.returncode, int(time.time() - rsync_start), pickle_count))
+		######################################### Remove this
+		die("Finished doing rsync, then stopped")
+		#########################################
+				
+	elif opts.source == "vps":
+		# On each VP, find the files in /sftp/transfer/Output and get them one by one
+		#   For each file, after getting, move it to /sftp/transfer/AlreadySeen
+		# Get the list of VPs
+		log("Started pulling from VPs")
+		vp_list_filename = os.path.expanduser("~/vp_list.txt")
+		try:
+			all_vps = open(vp_list_filename, mode="rt").read().splitlines()
+		except Exception as e:
+			die("Could not open {} and split the lines: '{}'".format(vp_list_filename, e))
+		# Make sure we have trusted each one
+		known_hosts_set = set()
+		known_host_lines = open(os.path.expanduser("~/.ssh/known_hosts"), mode="rt").readlines()
+		for this_line in known_host_lines:
+			known_hosts_set.add(this_line.split(" ")[0])
+		for this_vp in all_vps:
+			if not this_vp in known_hosts_set:
+				try:
+					subprocess.run("ssh-keyscan -4 -t rsa {} >> ~/.ssh/known_hosts".format(this_vp), shell=True, capture_output=True, check=True)
+					log("Added {} to known_hosts".format(this_vp))
+				except Exception as e:
+					die("Could not run ssh-keyscan on {}: {}".format(this_vp, e))
+		total_pulled = 0
+		with futures.ProcessPoolExecutor() as executor:
+			for (this_vp, pulled_count) in zip(all_vps, executor.map(get_files_from_one_vp, all_vps)):
+				if pulled_count:
+					total_pulled += pulled_count
+		log("Finished pulling from VPs; got {} files from {} VPs".format(total_pulled, len(all_vps)))
+		######################################### Remove this
+		die("Finished pulling from VPs, then stopped")
+		#########################################
+
+	###############################################################
+
 	# Connect to the database
 	try:
 		conn = psycopg2.connect(dbname="metrics", user="metrics")
@@ -723,38 +812,6 @@ if __name__ == "__main__":
 	except Exception as e:
 		die("Unable to get set autocommit: '{}'".format(e))
 	
-	###############################################################
-
-	# On each VP, find the files in /sftp/transfer/Output and get them one by one
-	#   For each file, after getting, move it to /sftp/transfer/AlreadySeen
-
-	# Get the list of VPs
-	log("Started pulling from VPs")
-	vp_list_filename = os.path.expanduser("~/vp_list.txt")
-	try:
-		all_vps = open(vp_list_filename, mode="rt").read().splitlines()
-	except Exception as e:
-		die("Could not open {} and split the lines: '{}'".format(vp_list_filename, e))
-
-	# Make sure we have trusted each one
-	known_hosts_set = set()
-	known_host_lines = open(os.path.expanduser("~/.ssh/known_hosts"), mode="rt").readlines()
-	for this_line in known_host_lines:
-		known_hosts_set.add(this_line.split(" ")[0])
-	for this_vp in all_vps:
-		if not this_vp in known_hosts_set:
-			try:
-				subprocess.run("ssh-keyscan -4 -t rsa {} >> ~/.ssh/known_hosts".format(this_vp), shell=True, capture_output=True, check=True)
-				log("Added {} to known_hosts".format(this_vp))
-			except Exception as e:
-				die("Could not run ssh-keyscan on {}: {}".format(this_vp, e))
-	total_pulled = 0
-	with futures.ProcessPoolExecutor() as executor:
-		for (this_vp, pulled_count) in zip(all_vps, executor.map(get_files_from_one_vp, all_vps)):
-			if pulled_count:
-				total_pulled += pulled_count
-	log("Finished pulling from VPs; got {} files from {} VPs".format(total_pulled, len(all_vps)))
-
 	###############################################################
 
 	# Go through the files in ~/Incoming
@@ -797,8 +854,6 @@ if __name__ == "__main__":
 	log("Finished overall collector processing")	
 	exit()
 
-
-# rsync -av -e "ssh -l root -i /home/metrics/.ssh/metrics_id_rsa" root@c01.mtric.net:/home/metrics/Originals/ /home/metrics/Originals
 
 """
 		# YAML fix removed 2020-10-25
