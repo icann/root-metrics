@@ -155,9 +155,28 @@ def process_one_incoming_file(full_file):
 	except Exception as e:
 			die("Could not move {} to {}: '{}'".format(full_file, original_dir_target, e))
 
-	# Log the metadata
+	# See if this file has already been processed
+	this_pickle_gz = short_file + ".pickle.gz"
+	try:
+		cur.execute("select count(*) from files_gotten where filename_full=%s", (this_pickle_gz, ))
+	except Exception as e:
+		alert("Could not search in files_gotten: '{}'".format(e))
+	# See if this file has already been processed
+	files_gotten_check = cur.fetchone()
+	if files_gotten_check[0] > 1:
+		alert("Found mulitple instances of {} in files_gotten; ignoring this new one".format(short_file))
+		return
+	# Check if the file is not there, probably due to rsyncing from c01
+	if files_gotten_check[0] == 0:
+		try:
+			insert_string = "insert into files_gotten (filename_full, retrieved_at) values (%s, %s);"
+			insert_values = (this_pickle_gz, datetime.datetime.now(datetime.timezone.utc))
+			cur.execute(insert_string, insert_values)
+		except:
+			alert("Could not insert {} in files_gotten: '{}'".format(short_file, e))
+	# Update the metadata
 	update_string = "update files_gotten set processed_at=%s, version=%s, delay=%s, elapsed=%s where filename_full=%s"
-	update_vales = (datetime.datetime.now(datetime.timezone.utc), in_obj["v"], in_obj["d"], in_obj["e"], short_file+".pickle.gz") 
+	update_vales = (datetime.datetime.now(datetime.timezone.utc), in_obj["v"], in_obj["d"], in_obj["e"], this_pickle_gz) 
 	try:
 		cur.execute(update_string, update_vales)
 	except Exception as e:
@@ -734,13 +753,13 @@ if __name__ == "__main__":
 	if opts.source == "c01":
 		log("Running rsync from c01")
 		rsync_start = time.time()
-		rsync_files_cmd = 'rsync -av -e "ssh -l root -i /home/metrics/.ssh/metrics_id_rsa" root@c01.mtric.net:/home/metrics/Originals/ /home/metrics/Incoming'
+		rsync_files_cmd = 'rsync -av -e "ssh -l root -i /home/metrics/.ssh/metrics_id_rsa" root@c01.mtric.net:/home/metrics/Originals/ /home/metrics/FromC01'
 		rsync_actual = subprocess.run(rsync_files_cmd, shell=True, capture_output=True, text=True)
 		pickle_count = 0
 		for this_line in rsync_actual.stdout.splitlines():
 			if ".pickle.gz" in this_line:
 				pickle_count += 1
-		log("Rsync of files returned {} in {} seconds, {} files".format(rsync_actual.returncode, int(time.time() - rsync_start), pickle_count))
+		log("Rsync of vantage point files got {} files in {} seconds, return code {}".format(pickle_count, int(time.time() - rsync_start), rsync_actual.returncode))
 		# Get the RootMatching files
 		rsync_start = time.time()
 		rsync_matching_cmd = 'rsync -av -e "ssh -l root -i /home/metrics/.ssh/metrics_id_rsa" root@c01.mtric.net:/home/metrics/Logs/RootMatching/ /home/metrics/Logs/RootMatching'
@@ -749,7 +768,7 @@ if __name__ == "__main__":
 		for this_line in rsync_root_matching.stdout.splitlines():
 			if ".matching.pickle" in this_line:
 				pickle_count += 1
-		log("Rsync of RootMatching returned {} in {} seconds, {} files".format(rsync_root_matching.returncode, int(time.time() - rsync_start), pickle_count))
+		log("Rsync of RootMatching got {} files in {} seconds, return code {}".format(pickle_count, int(time.time() - rsync_start), rsync_root_matching.returncode))
 		# Get the RootZones files
 		rsync_start = time.time()
 		rsync_zones_cmd = 'rsync -av -e "ssh -l root -i /home/metrics/.ssh/metrics_id_rsa" root@c01.mtric.net:/home/metrics/Logs/RootZones/ /home/metrics/Logs/RootZones'
@@ -758,10 +777,7 @@ if __name__ == "__main__":
 		for this_line in rsync_root_zones.stdout.splitlines():
 			if ".root.txt" in this_line:
 				pickle_count += 1
-		log("Rsync of RootZones returned {} in {} seconds, {} files".format(rsync_root_zones.returncode, int(time.time() - rsync_start), pickle_count))
-		######################################### Remove this
-		die("Finished doing rsync, then stopped")
-		#########################################
+		log("Rsync of RootZones got {} files in {} seconds, return code {}".format(pickle_count, int(time.time() - rsync_start), rsync_root_zones.returncode))
 				
 	elif opts.source == "vps":
 		# On each VP, find the files in /sftp/transfer/Output and get them one by one
