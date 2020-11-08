@@ -121,9 +121,19 @@ def process_one_incoming_file(full_file):
 		conn.set_session(autocommit=True)
 	except Exception as e:
 		die("Could not open database in process_one_incoming_file: {}".format(e))
+
+	# Insert records into one of the two databases
+	def insert_from_template(this_update_cmd_string, this_update_values):
+		try:
+			cur.execute(this_update_cmd_string, this_update_values)
+		except Exception as e:
+			alert("Could not insert with '{}' / '{}': '{}'".format(this_update_cmd_string, this_update_values, e))
+
 	# Check for bad file
 	if not full_file.endswith(".pickle.gz"):
 		alert("Found {} that did not end in .pickle.gz".format(full_file))
+		cur.close()
+		conn.close()
 		return
 	short_file = os.path.basename(full_file).replace(".pickle.gz", "")
 	# Ungz it
@@ -165,22 +175,20 @@ def process_one_incoming_file(full_file):
 	files_gotten_check = cur.fetchone()
 	if files_gotten_check[0] > 1:
 		alert("Found mulitple instances of {} in files_gotten; ignoring this new one".format(short_file))
+		cur.close()
+		conn.close()
 		return
+
 	# Check if the file is not there, probably due to rsyncing from c01
 	if files_gotten_check[0] == 0:
-		try:
-			insert_string = "insert into files_gotten (filename_full, retrieved_at) values (%s, %s);"
-			insert_values = (this_pickle_gz, datetime.datetime.now(datetime.timezone.utc))
-			cur.execute(insert_string, insert_values)
-		except:
-			alert("Could not insert {} in files_gotten: '{}'".format(short_file, e))
+		insert_string = "insert into files_gotten (filename_full, retrieved_at) values (%s, %s);"
+		insert_values = (this_pickle_gz, datetime.datetime.now(datetime.timezone.utc))
+		insert_from_template(insert_string, insert_values)
+
 	# Update the metadata
 	update_string = "update files_gotten set processed_at=%s, version=%s, delay=%s, elapsed=%s where filename_full=%s"
 	update_vales = (datetime.datetime.now(datetime.timezone.utc), in_obj["v"], in_obj["d"], in_obj["e"], this_pickle_gz) 
-	try:
-		cur.execute(update_string, update_vales)
-	except Exception as e:
-		alert("Could not update {} in files_gotten: '{}'".format(short_file, e))
+	insert_from_template(update_string, update_vales)
 
 	# Get the derived date and VP name from the file name
 	(file_date_text, file_vp) = short_file.split("-")
@@ -201,33 +209,52 @@ def process_one_incoming_file(full_file):
 		except Exception as e:
 			alert("Could not insert into route_info for {}: '{}'".format(short_file, e))
 
-	# Walk through the response items from the unpickled file
+	# Types of timeouts
+	timeout_empty_yaml = "e"
+	timeout_dig_error = "d"
+	
+	# Go throught each response item
 	response_count = 0
 	for this_resp in in_obj["r"]:
 		response_count += 1
-		# Get it out of YAML and do basic sanity checks
+		# Each record is "S" for an SOA record or "C" for a correctness test
+		#   Sanity test that the type is S or C
+		if not this_resp[4] in ("S", "C"):
+			alert("Found a response type {}, which is not S or C, in record {} of {}".format(this_resp[4], response_count, full_file))
+			continue
+
+		# Templates for S and C records
+		s_update_cmd_template = "insert into soa_info (file_prefix, date_derived, vp, rsi, internet, transport, prog_elapsed, dig_elapsed, timeout, soa) "\
+			+ "values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
+		s_update_cmd_values = [short_file, file_date, file_vp, this_resp[0], this_resp[1], this_resp[2], None, None, None, None]
+		c_update_cmd_template = "insert into correctness_info (file_prefix, date_derived, vp, rsi, internet, transport, timeout, recent_soa, "\
+			+ " is_correct, failure_reason, source_pickle) "\
+			+ "values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
+		c_update_cmd_values = [short_file, file_date, file_vp, this_resp[0], this_resp[1], this_resp[2], None, None, None, None, None]
+
 		# If what was supposed to be YAML is an empty string, it means that dig could not get a route to the server
-		#   In this case, make it a timeout, fill the data as best possible, and return
+		#   In this case, make it a timeout of type "e", fill the data as best as one can
 		if len(this_resp[6]) == 0:
-			this_timeout = True
-			this_dig_elapsed = None
-			this_soa = None
-			# Log this truncated SOA information
-			update_string = "insert into soa_info (file_prefix, date_derived, vp, rsi, internet, transport, prog_elapsed, dig_elapsed, timeout, soa) "\
-				+ "values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
-			update_vales = (short_file, file_date, file_vp, None, None, None, None, None, True, None) 
-			try:
-				cur.execute(update_string, update_vales)
-			except Exception as e:
-				alert("Could not insert into soa_info for {}: '{}'".format(short_file, e))
-			cur.close()
-			conn.close()
-			return
+			if this_resp[4] == "S":
+				this_update_cmd_string = s_update_cmd_template
+				this_update_values = s_update_cmd_values
+				this_update_values[8] = timeout_empty_yaml  # timeout
+			elif this_resp[4] == "C":
+				this_update_cmd_string = c_update_cmd_template
+				this_update_values = c_update_cmd_values
+				this_update_values[6] = timeout_empty_yaml  # timeout
+			else:
+				alert("Found a record with no YAML in record {} of {}".format(response_count, full_file))
+				continue
+			insert_from_template(this_update_cmd_string, this_update_values)
+			continue
+			
+		# Get it out of YAML and do basic sanity checks
 		#   Stuff saved as "YAML fix" would go here
 		try:
 			this_resp_obj = yaml.load(this_resp[6])
-		except:
-			alert("Could not interpret YAML from {} of {}".format(response_count, full_file))
+		except Exception as e:
+			alert("Could not interpret YAML from {} of {}: '{}'".format(response_count, full_file, e))
 			continue
 		if not this_resp_obj[0].get("type"):
 			alert("Found no dig type in record {} of {}".format(response_count, full_file))
@@ -235,59 +262,76 @@ def process_one_incoming_file(full_file):
 		if not this_resp_obj[0].get("message"):
 			alert("Found no message in record {} of {}".format(response_count, full_file))
 			continue
-		# Each record is "S" for an SOA record or "C" for a correctness test
-		if this_resp[4] == "S":
-			# Get the this_dig_elapsed, this_timeout, this_soa for the response
-			if this_resp_obj[0]["type"] == "MESSAGE":
-				if (not this_resp_obj[0]["message"].get("response_time")) or (not this_resp_obj[0]["message"].get("query_time")):
-					alert("Found a message without response_time or query_time in record {} of {}".format(response_count, full_file))
-					continue
-				dig_elapsed_as_delta = this_resp_obj[0]["message"]["response_time"] - this_resp_obj[0]["message"]["query_time"]  # [aym]
-				this_dig_elapsed = datetime.timedelta.total_seconds(dig_elapsed_as_delta)
-				this_timeout = False
-				if not this_resp_obj[0]["message"].get("response_message_data").get("ANSWER_SECTION"):
-					alert("Found a message without an answer in record {} of {}".format(response_count, full_file))
-					continue
-				this_soa_record = this_resp_obj[0]["message"]["response_message_data"]["ANSWER_SECTION"][0]
-				soa_record_parts = this_soa_record.split(" ")
-				this_soa = soa_record_parts[6]
-				# For SOA queries, if it is not NOERROR, it becomes a timeout  [ppo]
-				if not this_resp_obj[0]["message"]["response_message_data"]["status"] == "NOERROR":
-					this_timeout = True
-					this_dig_elapsed = None
-					this_soa = None
-			elif this_resp_obj[0]["type"] == "DIG_ERROR":
-				if not (("timed out" in this_resp_obj[0]["message"]) or ("communications error" in this_resp_obj[0]["message"])):
-					alert("Found unexpected dig error message '{}' in record {} of {}".format(this_resp_obj[0]["message"], response_count, full_file))
-					continue
-				this_dig_elapsed = None
-				this_timeout = True  # [yve]
-				this_soa = None
-			else:
-				alert("Found an unexpected dig type {} in record {} of {}".format(this_resp_obj[0]["type"], response_count, full_file))
-				continue
-			# Log the SOA information
-			update_string = "insert into soa_info (file_prefix, date_derived, vp, rsi, internet, transport, prog_elapsed, dig_elapsed, timeout, soa) "\
-				+ "values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
-			update_vales = (short_file, file_date, file_vp, this_resp[0], this_resp[1], this_resp[2], this_resp[5], this_dig_elapsed, this_timeout, this_soa) 
-			try:
-				cur.execute(update_string, update_vales)
-			except Exception as e:
-				alert("Could not insert into soa_info for {}: '{}'".format(short_file, e))
-		elif this_resp[4] == "C": # Records for correctness checking
-			# Here, we are writing the record out with None for the is_correct value; the correctness is check is done later in this pass
-			update_string = "insert into correctness_info (file_prefix, date_derived, vp, rsi, internet, transport, recent_soa, "\
-				+ " is_correct, failure_reason, source_pickle) "\
-				+ "values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
-			# Set is_correct to NULL because it will be evaluated later
-			update_vales = (short_file, file_date, file_vp, this_resp[0], this_resp[1], this_resp[2], [ this_soa ], None, None, pickle.dumps(this_resp_obj))
-			try:
-				cur.execute(update_string, update_vales)
-			except Exception as e:
-				alert("Could not insert into correctness_info for {}: '{}'".format(short_file, e))
-		else:
-			alert("Found a response type {}, which is not S or C, in record {} of {}".format(this_resp[4], response_count, full_file))
+
+		# All responses should be "MESSAGE" or "DIG_ERROR"
+		if not this_resp_obj[0]["type"] in ("MESSAGE", "DIG_ERROR"):
+			alert("Found an unexpected dig type {} in record {} of {}".format(this_resp_obj[0]["type"], response_count, full_file))
 			continue
+
+		# The correctness response contains the pickle of the YAML
+		c_update_cmd_values[10] = pickle.dumps(this_resp_obj)
+
+		# All DIG_ERROR responses should say "timed out" or "communications error" in the message
+		if this_resp_obj[0]["type"] == "DIG_ERROR":
+			if not (("timed out" in this_resp_obj[0]["message"]) or ("communications error" in this_resp_obj[0]["message"])):
+				alert("Found unexpected dig error message '{}' in record {} of {}".format(this_resp_obj[0]["message"], response_count, full_file))
+				continue
+			if this_resp[4] == "S":
+				this_update_cmd_string = s_update_cmd_template
+				this_update_values = s_update_cmd_values
+				this_update_values[7] = None  # dig_elapsed
+				this_update_values[8] = timeout_dig_error  # timeout
+				this_update_values[9] = None  # soa
+			else:  # Is "C"
+				this_update_cmd_string = c_update_cmd_template
+				this_update_values = c_update_cmd_values
+				this_update_values[6] = timeout_dig_error  # timeout
+			insert_from_template(this_update_cmd_string, this_update_values)
+			continue
+
+		# For S and C records, if the response code is wrong, treat it as a timeout
+		if (this_resp[4] == "S" and (not this_resp_obj[0]["message"]["response_message_data"]["status"] in ("NOERROR"))):  # [ppo]
+			this_update_cmd_string = s_update_cmd_template
+			this_update_values = s_update_cmd_values
+			this_update_values[7] = None  # dig_elapsed
+			this_update_values[8] = this_resp_obj[0]["message"]["response_message_data"]["status"]
+			this_update_values[9] = None  # soa
+			insert_from_template(this_update_cmd_string, this_update_values)
+			continue
+		if (this_resp[4] == "C" and (not this_resp_obj[0]["message"]["response_message_data"]["status"] in ("NOERROR", "NXDOMAIN"))):  # NEED NEW ERROR CODE
+			this_update_cmd_string = c_update_cmd_template
+			this_update_values = c_update_cmd_values
+			this_update_values[6] = this_resp_obj[0]["message"]["response_message_data"]["status"]
+			insert_from_template(this_update_cmd_string, this_update_values)
+			continue
+
+		# What is left is the normal responses
+		if this_resp[4] == "S":
+			this_update_cmd_string = s_update_cmd_template
+			this_update_values = s_update_cmd_values
+			if (not this_resp_obj[0]["message"].get("response_time")) or (not this_resp_obj[0]["message"].get("query_time")):
+				alert("Found a message of type 'S' without response_time or query_time in record {} of {}".format(response_count, full_file))
+				continue
+			dig_elapsed_as_delta = this_resp_obj[0]["message"]["response_time"] - this_resp_obj[0]["message"]["query_time"]  # [aym]
+			this_dig_elapsed = datetime.timedelta.total_seconds(dig_elapsed_as_delta)
+			this_update_values[6] = this_resp[5]  # prog_elaspsed
+			this_update_values[7] = this_dig_elapsed
+			this_update_values[8] = None  # timeout
+			if not this_resp_obj[0]["message"].get("response_message_data").get("ANSWER_SECTION"):
+				alert("Found a message of type 'S' without an answer in record {} of {}".format(response_count, full_file))
+				continue
+			this_soa_record = this_resp_obj[0]["message"]["response_message_data"]["ANSWER_SECTION"][0]
+			soa_record_parts = this_soa_record.split(" ")
+			this_soa = soa_record_parts[6]
+			this_update_values[9] = this_soa
+		else:  # Is "C"
+			this_update_cmd_string = c_update_cmd_template
+			this_update_values = c_update_cmd_values
+			this_update_values[6] = None  # timeout
+		insert_from_template(this_update_cmd_string, this_update_values)
+		continue
+	# End of response items loop
+
 	cur.close()
 	conn.close()
 	return
@@ -721,11 +765,15 @@ if __name__ == "__main__":
 	originals_dir = os.path.expanduser("~/Originals")
 	if not os.path.exists(originals_dir):
 		os.mkdir(originals_dir)
+	# Where to save things long-term
+	output_dir = os.path.expanduser("~/Output")
+	if not os.path.exists(output_dir):
+		os.mkdir(output_dir)
 	# Subdirectories of log directory for root zones
-	saved_root_zone_dir = "{}/RootZones".format(log_dir)
+	saved_root_zone_dir = "{}/RootZones".format(output_dir)
 	if not os.path.exists(saved_root_zone_dir):
 		os.mkdir(saved_root_zone_dir)
-	saved_matching_dir = "{}/RootMatching".format(log_dir)
+	saved_matching_dir = "{}/RootMatching".format(output_dir)
 	if not os.path.exists(saved_matching_dir):
 		os.mkdir(saved_matching_dir)
 
@@ -762,7 +810,7 @@ if __name__ == "__main__":
 		log("Rsync of vantage point files got {} files in {} seconds, return code {}".format(pickle_count, int(time.time() - rsync_start), rsync_actual.returncode))
 		# Get the RootMatching files
 		rsync_start = time.time()
-		rsync_matching_cmd = 'rsync -av -e "ssh -l root -i /home/metrics/.ssh/metrics_id_rsa" root@c01.mtric.net:/home/metrics/Logs/RootMatching/ /home/metrics/Logs/RootMatching'
+		rsync_matching_cmd = 'rsync -av -e "ssh -l root -i /home/metrics/.ssh/metrics_id_rsa" root@c01.mtric.net:/home/metrics/Output/RootMatching/ /home/metrics/Output/RootMatching'
 		rsync_root_matching = subprocess.run(rsync_matching_cmd, shell=True, capture_output=True, text=True)
 		pickle_count = 0
 		for this_line in rsync_root_matching.stdout.splitlines():
@@ -771,7 +819,7 @@ if __name__ == "__main__":
 		log("Rsync of RootMatching got {} files in {} seconds, return code {}".format(pickle_count, int(time.time() - rsync_start), rsync_root_matching.returncode))
 		# Get the RootZones files
 		rsync_start = time.time()
-		rsync_zones_cmd = 'rsync -av -e "ssh -l root -i /home/metrics/.ssh/metrics_id_rsa" root@c01.mtric.net:/home/metrics/Logs/RootZones/ /home/metrics/Logs/RootZones'
+		rsync_zones_cmd = 'rsync -av -e "ssh -l root -i /home/metrics/.ssh/metrics_id_rsa" root@c01.mtric.net:/home/metrics/Output/RootZones/ /home/metrics/Output/RootZones'
 		rsync_root_zones = subprocess.run(rsync_zones_cmd, shell=True, capture_output=True, text=True)
 		pickle_count = 0
 		for this_line in rsync_root_zones.stdout.splitlines():
@@ -844,11 +892,18 @@ if __name__ == "__main__":
 	#   This does not log or alert; that is left for a different program checking when is_correct is not null
 
 	# Iterate over the records where is_correct is null
-	cur.execute("select id, recent_soa, source_pickle from correctness_info where is_correct is null")
+	try:
+		cur.execute("select id, recent_soa, source_pickle from correctness_info where is_correct is null")
+	except Exception as e:
+		die("Unable to start processing correctness with 'select' request: '{}'".format(e))
+	print("### Step 1 ###")
 	initial_correct_to_check = cur.fetchall()
+	print("### Step 2 ###")
 	correct_array_to_check = []
+	print("### Step 3 ###")
 	for this_tuple in initial_correct_to_check:
 		correct_array_to_check.append([this_tuple[0], this_tuple[1], bytes(this_tuple[2])])
+	print("### Step 4 ###")
 	log("Started correctness checking on {} found".format(len(correct_array_to_check)))
 	with futures.ProcessPoolExecutor() as executor:
 		for (this_correctness_tuple, _) in zip(correct_array_to_check, executor.map(process_one_correctness_array, correct_array_to_check)):
