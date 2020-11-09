@@ -6,6 +6,7 @@
 
 import argparse, datetime, glob, gzip, logging, os, pickle, psycopg2, socket, subprocess, shutil, tempfile, time, yaml
 from concurrent import futures
+from collections import namedtuple
 
 ###############################################################
 
@@ -209,9 +210,15 @@ def process_one_incoming_file(full_file):
 		except Exception as e:
 			alert("Could not insert into route_info for {}: '{}'".format(short_file, e))
 
-	# Types of timeouts
-	timeout_empty_yaml = "e"
-	timeout_dig_error = "d"
+	# Named tuple for the record templates
+	template_names_raw = "file_prefix date_derived record_number vp rsi internet transport ip_addr record_type prog_elapsed dig_elapsed timeout soa_found " \
+		+ "recent_soa is_correct failure_reason source_pickle"
+	# Change spaces to ", "
+	template_names_with_commas = template_names_raw.replace(" ", ", ")
+	# List of "%s, " for Postgres "insert" commands; remove trailing ", "
+	percent_s_string = str("%s, " * len(template_names_raw.split(" ")))[:-2]
+	# Create the template
+	insert_values_template = namedtuple("insert_values_template", field_names=template_names_with_commas)
 	
 	# Go throught each response item
 	response_count = 0
@@ -222,31 +229,18 @@ def process_one_incoming_file(full_file):
 		if not this_resp[4] in ("S", "C"):
 			alert("Found a response type {}, which is not S or C, in record {} of {}".format(this_resp[4], response_count, full_file))
 			continue
-
-		# Templates for S and C records
-		s_update_cmd_template = "insert into soa_info (file_prefix, date_derived, vp, rsi, internet, transport, prog_elapsed, dig_elapsed, timeout, soa) "\
-			+ "values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
-		s_update_cmd_values = [short_file, file_date, file_vp, this_resp[0], this_resp[1], this_resp[2], None, None, None, None]
-		c_update_cmd_template = "insert into correctness_info (file_prefix, date_derived, vp, rsi, internet, transport, timeout, recent_soa, "\
-			+ " is_correct, failure_reason, source_pickle) "\
-			+ "values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
-		c_update_cmd_values = [short_file, file_date, file_vp, this_resp[0], this_resp[1], this_resp[2], None, None, None, None, None]
+		insert_template = "insert into record_info ({}) values ({})".format(template_names_with_commas, percent_s_string)
+		# Note that the default value for is_correct is "n" so that the test for "has correctness been checked" can still be against "y" or "n", which is set below
+		insert_values = insert_values_template(file_prefix=short_file, date_derived=file_date, record_number=response_count, vp=file_vp, \
+			rsi=this_resp[0], internet=this_resp[1], transport=this_resp[2], ip_addr=this_resp[3], record_type=this_resp[4], prog_elapsed=this_resp[5], \
+			dig_elapsed=None, timeout="", soa_found="", recent_soa=[], is_correct="n", failure_reason="", source_pickle=None)
 
 		# If what was supposed to be YAML is an empty string, it means that dig could not get a route to the server
-		#   In this case, make it a timeout of type "e", fill the data as best as one can
+		#   In this case, make it a timeout, and don't fill in any other data
+		#   ######### NEED A REQUIREMENT CODE HERE ############
 		if len(this_resp[6]) == 0:
-			if this_resp[4] == "S":
-				this_update_cmd_string = s_update_cmd_template
-				this_update_values = s_update_cmd_values
-				this_update_values[8] = timeout_empty_yaml  # timeout
-			elif this_resp[4] == "C":
-				this_update_cmd_string = c_update_cmd_template
-				this_update_values = c_update_cmd_values
-				this_update_values[6] = timeout_empty_yaml  # timeout
-			else:
-				alert("Found a record with no YAML in record {} of {}".format(response_count, full_file))
-				continue
-			insert_from_template(this_update_cmd_string, this_update_values)
+			insert_values = insert_values._replace(timeout="empty_yaml")
+			insert_from_template(insert_template, insert_values)
 			continue
 			
 		# Get it out of YAML and do basic sanity checks
@@ -259,76 +253,53 @@ def process_one_incoming_file(full_file):
 		if not this_resp_obj[0].get("type"):
 			alert("Found no dig type in record {} of {}".format(response_count, full_file))
 			continue
-		if not this_resp_obj[0].get("message"):
-			alert("Found no message in record {} of {}".format(response_count, full_file))
-			continue
-
-		# All responses should be "MESSAGE" or "DIG_ERROR"
 		if not this_resp_obj[0]["type"] in ("MESSAGE", "DIG_ERROR"):
 			alert("Found an unexpected dig type {} in record {} of {}".format(this_resp_obj[0]["type"], response_count, full_file))
 			continue
-
-		# The correctness response contains the pickle of the YAML
-		c_update_cmd_values[10] = pickle.dumps(this_resp_obj)
+		if not this_resp_obj[0].get("message"):
+			alert("Found no message in record {} of {}".format(response_count, full_file))
+			continue
 
 		# All DIG_ERROR responses should say "timed out" or "communications error" in the message
 		if this_resp_obj[0]["type"] == "DIG_ERROR":
 			if not (("timed out" in this_resp_obj[0]["message"]) or ("communications error" in this_resp_obj[0]["message"])):
 				alert("Found unexpected dig error message '{}' in record {} of {}".format(this_resp_obj[0]["message"], response_count, full_file))
 				continue
-			if this_resp[4] == "S":
-				this_update_cmd_string = s_update_cmd_template
-				this_update_values = s_update_cmd_values
-				this_update_values[7] = None  # dig_elapsed
-				this_update_values[8] = timeout_dig_error  # timeout
-				this_update_values[9] = None  # soa
-			else:  # Is "C"
-				this_update_cmd_string = c_update_cmd_template
-				this_update_values = c_update_cmd_values
-				this_update_values[6] = timeout_dig_error  # timeout
-			insert_from_template(this_update_cmd_string, this_update_values)
+			insert_values = insert_values._replace(timeout="dig_error")
+			insert_from_template(insert_template, insert_values)
 			continue
 
-		# For S and C records, if the response code is wrong, treat it as a timeout
-		if (this_resp[4] == "S" and (not this_resp_obj[0]["message"]["response_message_data"]["status"] in ("NOERROR"))):  # [ppo]
-			this_update_cmd_string = s_update_cmd_template
-			this_update_values = s_update_cmd_values
-			this_update_values[7] = None  # dig_elapsed
-			this_update_values[8] = this_resp_obj[0]["message"]["response_message_data"]["status"]
-			this_update_values[9] = None  # soa
-			insert_from_template(this_update_cmd_string, this_update_values)
-			continue
-		if (this_resp[4] == "C" and (not this_resp_obj[0]["message"]["response_message_data"]["status"] in ("NOERROR", "NXDOMAIN"))):  # NEED NEW ERROR CODE
-			this_update_cmd_string = c_update_cmd_template
-			this_update_values = c_update_cmd_values
-			this_update_values[6] = this_resp_obj[0]["message"]["response_message_data"]["status"]
-			insert_from_template(this_update_cmd_string, this_update_values)
+		# If the response code is wrong, treat it as a timeout; use the response code as the timeout message
+		#   For "S" records   [ppo]
+		#   For "C" records   ######### NEED A REQUIREMENT CODE HERE ############
+		this_response_code = this_resp_obj[0]["message"]["response_message_data"]["status"]
+		if (insert_values.record_type == "S" and this_response_code in ("NOERROR")) or (insert_values.record_type == "C" and this_response_code in ("NOERROR", "NXDOMAIN")):
+			insert_values = insert_values._replace(timeout=this_response_code)
+			insert_from_template(insert_template, insert_values)
 			continue
 
 		# What is left is the normal responses
-		if this_resp[4] == "S":
-			this_update_cmd_string = s_update_cmd_template
-			this_update_values = s_update_cmd_values
-			if (not this_resp_obj[0]["message"].get("response_time")) or (not this_resp_obj[0]["message"].get("query_time")):
-				alert("Found a message of type 'S' without response_time or query_time in record {} of {}".format(response_count, full_file))
-				continue
-			dig_elapsed_as_delta = this_resp_obj[0]["message"]["response_time"] - this_resp_obj[0]["message"]["query_time"]  # [aym]
-			this_dig_elapsed = datetime.timedelta.total_seconds(dig_elapsed_as_delta)
-			this_update_values[6] = this_resp[5]  # prog_elaspsed
-			this_update_values[7] = this_dig_elapsed
-			this_update_values[8] = None  # timeout
+		#   For these, leave the timeout as None
+		if (not this_resp_obj[0]["message"].get("response_time")) or (not this_resp_obj[0]["message"].get("query_time")):
+			alert("Found a message of type 'S' without response_time or query_time in record {} of {}".format(response_count, full_file))
+			continue
+		dig_elapsed_as_delta = this_resp_obj[0]["message"]["response_time"] - this_resp_obj[0]["message"]["query_time"]  # [aym]
+		insert_values = insert_values._replace(dig_elapsed=datetime.timedelta.total_seconds(dig_elapsed_as_delta))
+		if insert_values.record_type == "S":
 			if not this_resp_obj[0]["message"].get("response_message_data").get("ANSWER_SECTION"):
 				alert("Found a message of type 'S' without an answer in record {} of {}".format(response_count, full_file))
 				continue
 			this_soa_record = this_resp_obj[0]["message"]["response_message_data"]["ANSWER_SECTION"][0]
 			soa_record_parts = this_soa_record.split(" ")
 			this_soa = soa_record_parts[6]
-			this_update_values[9] = this_soa
-		else:  # Is "C"
-			this_update_cmd_string = c_update_cmd_template
-			this_update_values = c_update_cmd_values
-			this_update_values[6] = None  # timeout
-		insert_from_template(this_update_cmd_string, this_update_values)
+			insert_values = insert_values._replace(soa_found=this_soa)
+		if insert_values.record_type == "C":
+			# The correctness response contains the pickle of the YAML; to save space, don't do this for "S" records
+			insert_values = insert_values._replace(source_pickle=pickle.dumps(this_resp_obj))
+			# Set is_correct to None so it can be checked later
+			insert_values = insert_values._replace(is_correct="?")
+		# Write out this record
+		insert_from_template(insert_template, insert_values)
 		continue
 	# End of response items loop
 
@@ -363,16 +334,16 @@ def check_for_signed_rr(list_of_records_from_section, name_of_rrtype):
 
 def process_one_correctness_array(in_array):
 	# Process one tuple of id / SOA array / pickle_of_response
-	#   Normally returns nothing because it is writing the results into the correctness_info database
+	#   Normally returns nothing because it is writing the results into the record_info database
 	# If running under opts.test, it does not write into the database but instead returns the results as text.
 	#   Also, when running under opts.test, the second argument is [ "test" ], not a list of SOAs
 	(this_id, this_recent_soa_serial_array, this_resp_pickle) = in_array
 	try:
 		this_resp_obj = pickle.loads(this_resp_pickle)
 	except Exception as e:
-		alert("Could not unpickle in correctness_info for {}: '{}'".format(this_id, e))
+		alert("Could not unpickle in record_info for {}: '{}'".format(this_id, e))
 		return
-	# See if it is a timeout; if so, set is_correct but move on [lbl]
+	# See if it is a timeout; if so, set is_correct but move on [lbl]   ############################
 	if this_resp_obj[0]["type"] == "DIG_ERROR":
 		if opts.test:
 			return "Timeout [lbl]"
@@ -381,11 +352,11 @@ def process_one_correctness_array(in_array):
 				conn = psycopg2.connect(dbname="metrics", user="metrics")
 				cur = conn.cursor()
 				conn.set_session(autocommit=True)
-				cur.execute("update correctness_info set (is_correct, failure_reason) = (%s, %s) where id = %s", (True, "", this_id))
+				cur.execute("update record_info set (is_correct, failure_reason) = (%s, %s) where id = %s", (True, "", this_id))   #############################
 				cur.close()
 				conn.close()
 			except Exception as e:
-				alert("Could not update correctness_info for timed-out {}: '{}'".format(this_id, e))
+				alert("Could not update record_info for timed-out {}: '{}'".format(this_id, e))
 			return
 	elif not this_resp_obj[0]["type"] == "MESSAGE":
 		unexpected_message = "Found an unexpected dig type '{}' in correctness_info for {}".format(this_resp_obj[0]["type"], this_id)
@@ -703,11 +674,11 @@ def process_one_correctness_array(in_array):
 			conn = psycopg2.connect(dbname="metrics", user="metrics")
 			cur = conn.cursor()
 			conn.set_session(autocommit=True)
-			cur.execute("update correctness_info set (is_correct, failure_reason) = (%s, %s) where id = %s", (make_is_correct, failure_reason_text, this_id))
+			cur.execute("update record_info set (is_correct, failure_reason) = (%s, %s) where id = %s", (make_is_correct, failure_reason_text, this_id))   ######################
 			cur.close()
 			conn.close()
 		except Exception as e:
-			alert("Could not update correctness_info after processing record {}: '{}'".format(this_id, e))
+			alert("Could not update record_info in correctness checking after processing record {}: '{}'".format(this_id, e))
 		return
 
 ###############################################################
@@ -887,23 +858,19 @@ if __name__ == "__main__":
 	
 	###############################################################
 
-	# Now that all the measurements are in, go through all records in correctness_info where is_correct is NULL
+	# Now that all the measurements are in, go through all records in record_info where is_correct is "?"
 	#   This is done separately in order to catch all earlier attempts where there was not a good root zone file to compare
 	#   This does not log or alert; that is left for a different program checking when is_correct is not null
 
 	# Iterate over the records where is_correct is null
 	try:
-		cur.execute("select id, recent_soa, source_pickle from correctness_info where is_correct is null")
+		cur.execute("select id, recent_soa, source_pickle from correctness_info where is_correct is '?'")    ###################################
 	except Exception as e:
 		die("Unable to start processing correctness with 'select' request: '{}'".format(e))
-	print("### Step 1 ###")
 	initial_correct_to_check = cur.fetchall()
-	print("### Step 2 ###")
 	correct_array_to_check = []
-	print("### Step 3 ###")
 	for this_tuple in initial_correct_to_check:
 		correct_array_to_check.append([this_tuple[0], this_tuple[1], bytes(this_tuple[2])])
-	print("### Step 4 ###")
 	log("Started correctness checking on {} found".format(len(correct_array_to_check)))
 	with futures.ProcessPoolExecutor() as executor:
 		for (this_correctness_tuple, _) in zip(correct_array_to_check, executor.map(process_one_correctness_array, correct_array_to_check)):
@@ -912,7 +879,7 @@ if __name__ == "__main__":
 	
 	###############################################################
 	
-	# STILL TO DO: Running through correctness_info where is_correct is false, using older root zones based on SOA
+	# STILL TO DO: Running through record_info where is_correct is "n", using older root zones based on SOA
 	#    Will likely use updating as in "update temp1 set b = b || '{"ThrEE"}' where a = 'one';"
 	
 	# STILL TO DO: Validation in correctness checking
@@ -923,19 +890,3 @@ if __name__ == "__main__":
 	conn.close()
 	log("Finished overall collector processing")	
 	exit()
-
-
-"""
-		# YAML fix removed 2020-10-25
-		#   But first, look for AAAA records that end in ":", which they should not
-		#   This is due to a bug in BIND up to 9.16.3
-		yaml_fixed = ""
-		yaml_in_text_lines = this_resp[6].splitlines()
-		for this_line in yaml_in_text_lines:
-			if "IN AAAA" in this_line and this_line.endswith(":"):
-				yaml_fixed += this_line + "0" + "\n"
-			else:
-				yaml_fixed += this_line + "\n"
-		try:
-			this_resp_obj = yaml.load(yaml_fixed)
-"""
