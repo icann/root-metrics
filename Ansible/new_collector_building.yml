@@ -85,7 +85,7 @@
   - name: Turn off hashing of names in known_hosts
     copy:
       src: ../home_ssh_config
-      dest: /home/metrics/.ssh/ssh_config
+      dest: /home/metrics/.ssh/config
       mode: go-rwx
   - name: Get our empty version of known_hosts; it will be added to as VPs are added
     copy:
@@ -199,36 +199,26 @@
       - date_derived timestamp
       - vp text
       - route_string text
-  - name: Create table for SOA records
+  - name: Create table for SOA and correctness records
     postgresql_table:
       login_user: metrics
       db: metrics
-      name: soa_info
+      name: record_info
       columns:
       - file_prefix text
       - date_derived timestamp
+      - record_number short
       - vp text
       - rsi text
       - internet text
       - transport text
+      - ip_addr text
+      - record_type text
       - prog_elapsed real
       - dig_elapsed real
-      - timeout boolean
-      - soa text
-  - name: Create table for correctness records
-    postgresql_table:
-      login_user: metrics
-      db: metrics
-      name: correctness_info
-      columns:
-      - file_prefix text
-      - date_derived timestamp without time zone
-      - vp text
-      - rsi text
-      - internet text
-      - transport text
+      - timeout text
+      - soa_found text
       - recent_soa text[]
-      - is_correct boolean
+      - is_correct text
       - failure_reason text
       - source_pickle bytea
-
