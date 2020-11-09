@@ -23,7 +23,7 @@ def run_tests_only():
 		p_count += 1
 		this_id = os.path.basename(this_test_file)
 		this_resp_pickle = pickle.dumps(yaml.load(open(this_test_file, mode="rb")))
-		this_response = (process_one_correctness_array([this_id, [ "test" ], this_resp_pickle]))
+		this_response = ("test", process_one_correctness_array(["", [ "test" ], this_resp_pickle]))
 		if this_response:
 			log("Expected pass, but got failure, on {}\n{}\n".format(this_id, this_response))
 	# Test the negatives
@@ -37,7 +37,7 @@ def run_tests_only():
 		n_responses[this_id] = {}
 		n_responses[this_id]["desc"] = in_lines[0]
 		this_resp_pickle = pickle.dumps(yaml.load(open(this_test_file, mode="rt")))
-		this_response = (process_one_correctness_array([this_id, [ "test" ], this_resp_pickle]))
+		this_response = ("test", process_one_correctness_array(["", [ "test" ], this_resp_pickle]))
 		if not this_response:
 			log("Expected failure, but got pass, on {}".format(this_id))
 		else:
@@ -212,7 +212,7 @@ def process_one_incoming_file(full_file):
 
 	# Named tuple for the record templates
 	template_names_raw = "file_prefix date_derived record_number vp rsi internet transport ip_addr record_type prog_elapsed dig_elapsed timeout soa_found " \
-		+ "recent_soa is_correct failure_reason source_pickle"
+		+ "recent_soas is_correct failure_reason source_pickle"
 	# Change spaces to ", "
 	template_names_with_commas = template_names_raw.replace(" ", ", ")
 	# List of "%s, " for Postgres "insert" commands; remove trailing ", "
@@ -233,11 +233,10 @@ def process_one_incoming_file(full_file):
 		# Note that the default value for is_correct is "n" so that the test for "has correctness been checked" can still be against "y" or "n", which is set below
 		insert_values = insert_values_template(file_prefix=short_file, date_derived=file_date, record_number=response_count, vp=file_vp, \
 			rsi=this_resp[0], internet=this_resp[1], transport=this_resp[2], ip_addr=this_resp[3], record_type=this_resp[4], prog_elapsed=this_resp[5], \
-			dig_elapsed=None, timeout="", soa_found="", recent_soa=[], is_correct="n", failure_reason="", source_pickle=None)
+			dig_elapsed=0.0, timeout="", soa_found="", recent_soas=[], is_correct="n", failure_reason="", source_pickle=b"")
 
 		# If what was supposed to be YAML is an empty string, it means that dig could not get a route to the server
-		#   In this case, make it a timeout, and don't fill in any other data
-		#   ######### NEED A REQUIREMENT CODE HERE ############
+		#   In this case, make it a timeout, and don't fill in any other data [dfl] [dks]
 		if len(this_resp[6]) == 0:
 			insert_values = insert_values._replace(timeout="empty_yaml")
 			insert_from_template(insert_template, insert_values)
@@ -273,13 +272,13 @@ def process_one_incoming_file(full_file):
 		#   For "S" records   [ppo]
 		#   For "C" records   ######### NEED A REQUIREMENT CODE HERE ############
 		this_response_code = this_resp_obj[0]["message"]["response_message_data"]["status"]
-		if (insert_values.record_type == "S" and this_response_code in ("NOERROR")) or (insert_values.record_type == "C" and this_response_code in ("NOERROR", "NXDOMAIN")):
+		if not ((insert_values.record_type == "S" and this_response_code in ("NOERROR")) or (insert_values.record_type == "C" and this_response_code in ("NOERROR", "NXDOMAIN"))):
 			insert_values = insert_values._replace(timeout=this_response_code)
 			insert_from_template(insert_template, insert_values)
 			continue
 
 		# What is left is the normal responses
-		#   For these, leave the timeout as None
+		#   For these, leave the timeout as ""
 		if (not this_resp_obj[0]["message"].get("response_time")) or (not this_resp_obj[0]["message"].get("query_time")):
 			alert("Found a message of type 'S' without response_time or query_time in record {} of {}".format(response_count, full_file))
 			continue
@@ -296,7 +295,7 @@ def process_one_incoming_file(full_file):
 		if insert_values.record_type == "C":
 			# The correctness response contains the pickle of the YAML; to save space, don't do this for "S" records
 			insert_values = insert_values._replace(source_pickle=pickle.dumps(this_resp_obj))
-			# Set is_correct to None so it can be checked later
+			# Set is_correct to "?" so it can be checked later
 			insert_values = insert_values._replace(is_correct="?")
 		# Write out this record
 		insert_from_template(insert_template, insert_values)
@@ -332,39 +331,51 @@ def check_for_signed_rr(list_of_records_from_section, name_of_rrtype):
 	
 ###############################################################
 
-def process_one_correctness_array(in_array):
-	# Process one tuple of id / SOA array / pickle_of_response
-	#   Normally returns nothing because it is writing the results into the record_info database
+def process_one_correctness_array(request_type, in_array):
+	# request_type is "test" or "normal"
+	# For "normal", process one file_prefix/record_number pair
+	# For "test", process one id/pickle_blob pair
+	# Normally returns nothing because it is writing the results into the record_info database
 	# If running under opts.test, it does not write into the database but instead returns the results as text.
 	#   Also, when running under opts.test, the second argument is [ "test" ], not a list of SOAs
-	(this_id, this_recent_soa_serial_array, this_resp_pickle) = in_array
+	if request_type == "normal":
+		(file_prefix, record_number) = in_array
+		reporting_id = "{}-{}".format(file_prefix, record_number)
+		conn = psycopg2.connect(dbname="metrics", user="metrics")
+		cur = conn.cursor()
+		try:
+			cur.execute("select timeout, recent_soas, source_pickle from correctness_info where file_prefix = %s and record_number = %s", (file_prefix, record_number))
+		except Exception as e:
+			alert("Unable to start check correctness on '{}': '{}'".format(reporting_id, e))
+			return
+		this_found = cur.fetchall()
+		if len(this_found) > 1:
+			alert("When checking corrrectness on '{}', found more than one record: '{}'".format(reporting_id, this_found))
+			return
+		(this_timeout, this_recent_soa_serial_array, this_resp_pickle) = this_found[0]
+	elif request_type == "test":
+		(this_timeout, this_recent_soa_serial_array, this_resp_pickle) = in_array
+	else:
+		die("While running process_one_correctness_array, got unknown first argument '{}'".format(request_type))
+
+	# Before trying to load the pickled data, first tee if it is a timeout; if so, set is_correct but move on [lbl]
+	if not this_timeout == "":
+		if opts.test:
+			return "Timeout '{}' [lbl]".format(this_timeout)
+		else:
+			try:
+				cur.execute("update record_info set (is_correct, failure_reason) = (%s, %s) where file_prefix = %s and record_number = %s", ("y", "timeout", file_prefix, record_number))
+				conn.commit()
+			except Exception as e:
+				alert("Could not update record_info for timed-out {}: '{}'".format(reporting_id, e))
+			return
+	
+	# Get the pickled object		
 	try:
 		this_resp_obj = pickle.loads(this_resp_pickle)
 	except Exception as e:
-		alert("Could not unpickle in record_info for {}: '{}'".format(this_id, e))
+		alert("Could not unpickle in record_info for {}: '{}'".format(reporting_id, e))
 		return
-	# See if it is a timeout; if so, set is_correct but move on [lbl]   ############################
-	if this_resp_obj[0]["type"] == "DIG_ERROR":
-		if opts.test:
-			return "Timeout [lbl]"
-		else:
-			try:
-				conn = psycopg2.connect(dbname="metrics", user="metrics")
-				cur = conn.cursor()
-				conn.set_session(autocommit=True)
-				cur.execute("update record_info set (is_correct, failure_reason) = (%s, %s) where id = %s", (True, "", this_id))   #############################
-				cur.close()
-				conn.close()
-			except Exception as e:
-				alert("Could not update record_info for timed-out {}: '{}'".format(this_id, e))
-			return
-	elif not this_resp_obj[0]["type"] == "MESSAGE":
-		unexpected_message = "Found an unexpected dig type '{}' in correctness_info for {}".format(this_resp_obj[0]["type"], this_id)
-		if opts.test:
-			return unexpected_message
-		else:
-			alert(unexpected_message)
-			return	
 	# Convert this_recent_soa_serial_array into root_to_check by reading the file and unpickling it
 	#   HOWEVER, if running under opts.test, this_recent_soa_serial_array is not an array at all, but instead the root to check
 	if opts.test:
@@ -377,12 +388,12 @@ def process_one_correctness_array(in_array):
 		try:
 			soa_f = open(recent_soa_pickle_filename, mode="rb")
 		except:
-			alert("Found SOA {} in correctness checking for {} for which there was no file".format(this_recent_soa_serial_array[-1], this_id))
+			alert("Found SOA {} in correctness checking for {} for which there was no file".format(this_recent_soa_serial_array[-1], reporting_id))
 			return
 		try:
 			root_to_check = pickle.load(soa_f)
 		except:
-			alert("Could not unpickle {} while processing {} for correctness".format(recent_soa_pickle_filename, this_id))
+			alert("Could not unpickle {} while processing {} for correctness".format(recent_soa_pickle_filename, reporting_id))
 			return
 	
 	# Here if it is a dig MESSAGE type
@@ -402,7 +413,7 @@ def process_one_correctness_array(in_array):
 			for this_full_record in resp[this_section_name]:
 				# There is an error in BIND 9.16.1 and .2 where this_full_record might be a dict instead of a str. If so, ignore it. #######
 				if isinstance(this_full_record, dict):
-					alert("Found record with a dict in id {} when checking responses".format(this_id))
+					alert("Found record with a dict in id {} when checking responses".format(reporting_id))
 					continue
 				(rec_qname, _, _, rec_qtype, rec_rdata) = this_full_record.split(" ", maxsplit=4)
 				if not rec_qtype == "RRSIG":  # [ygx]
@@ -470,7 +481,7 @@ def process_one_correctness_array(in_array):
 				validate_output = validate_p.stdout.splitlines()[0]
 				(validate_return, _) = validate_output.split(" ", maxsplit=1)
 				if not validate_return == "400":
-					failure_reasons.append("Validating {} in {} got error of '{}' [yds]".format(this_section_name, this_id, validate_return))
+					failure_reasons.append("Validating {} in {} got error of '{}' [yds]".format(this_section_name, reporting_id, validate_return))
 				validate_f.close()
 	
 	# Check that all the parts of the resp structure are correct, based on the type of answer
@@ -671,14 +682,11 @@ def process_one_correctness_array(in_array):
 		return failure_reason_text
 	else:
 		try:
-			conn = psycopg2.connect(dbname="metrics", user="metrics")
-			cur = conn.cursor()
-			conn.set_session(autocommit=True)
-			cur.execute("update record_info set (is_correct, failure_reason) = (%s, %s) where id = %s", (make_is_correct, failure_reason_text, this_id))   ######################
-			cur.close()
-			conn.close()
+			cur.execute("update record_info set (is_correct, failure_reason) = (%s, %s) where file_prefix = %s and record_number = %s", \
+				(make_is_correct, failure_reason_text, file_prefix, record_number))   ######################
+			conn.commit()
 		except Exception as e:
-			alert("Could not update record_info in correctness checking after processing record {}: '{}'".format(this_id, e))
+			alert("Could not update record_info in correctness checking after processing record {}: '{}'".format(reporting_id, e))
 		return
 
 ###############################################################
@@ -826,9 +834,6 @@ if __name__ == "__main__":
 				if pulled_count:
 					total_pulled += pulled_count
 		log("Finished pulling from VPs; got {} files from {} VPs".format(total_pulled, len(all_vps)))
-		######################################### Remove this
-		die("Finished pulling from VPs, then stopped")
-		#########################################
 
 	###############################################################
 
@@ -860,17 +865,17 @@ if __name__ == "__main__":
 
 	# Now that all the measurements are in, go through all records in record_info where is_correct is "?"
 	#   This is done separately in order to catch all earlier attempts where there was not a good root zone file to compare
-	#   This does not log or alert; that is left for a different program checking when is_correct is not null
+	#   This does not log or alert; that is left for a different program checking when is_correct is not "?"
 
-	# Iterate over the records where is_correct is null
+	# Iterate over the records where is_correct is "?"
 	try:
-		cur.execute("select id, recent_soa, source_pickle from correctness_info where is_correct is '?'")    ###################################
+		cur.execute("select file_prefix, record_number from correctness_info where record_type = 'C' and is_correct = '?'")
 	except Exception as e:
 		die("Unable to start processing correctness with 'select' request: '{}'".format(e))
 	initial_correct_to_check = cur.fetchall()
 	correct_array_to_check = []
 	for this_tuple in initial_correct_to_check:
-		correct_array_to_check.append([this_tuple[0], this_tuple[1], bytes(this_tuple[2])])
+		correct_array_to_check.append(("normal", [this_tuple[0], this_tuple[1]]))
 	log("Started correctness checking on {} found".format(len(correct_array_to_check)))
 	with futures.ProcessPoolExecutor() as executor:
 		for (this_correctness_tuple, _) in zip(correct_array_to_check, executor.map(process_one_correctness_array, correct_array_to_check)):
