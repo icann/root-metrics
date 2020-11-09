@@ -85,7 +85,7 @@ Both connectionless and connection-based transactions may terminate in an error.
 
 ### 4.5 Spoofing Protections
 
-Vantage points must take reasonable steps to prevent acceptance of spoofed responses. Vantage point software must use proper source port randomization, `[uym]` query id randomization, `[wsb]` optional “0x20” mixed case, `[zon]` __NOT DONE IN THE IMPLEMENTATION__ and proper query and response matching. `[doh]` DNS Cookies may be used as a lightweight DNS transaction security mechanism that provides limited protection to DNS servers and clients. `[ujj]`
+Vantage points must take reasonable steps to prevent acceptance of spoofed responses. Vantage point software must use proper source port randomization, `[uym]` query id randomization, `[wsb]` optional “0x20” mixed case, `[zon]` __Not currently implemented__ and proper query and response matching. `[doh]` DNS Cookies may be used as a lightweight DNS transaction security mechanism that provides limited protection to DNS servers and clients. `[ujj]`
 
 If vantage points detect malicious or spoofed traffic, such events should be recorded and logged so that manual inspection of measurements can be performed and disregarded if necessary. 
 
@@ -101,7 +101,9 @@ In some cases, queries and responses for one measurement are used in more than o
 
 When the collection system observes unexpected measurements or metrics, they may warrant further investigation. Examples of unexpected results may include very high response latency to some or all instances of an RSI, DNSSEC validation failures, and excessive staleness. Investigation and publication of unexpected results is most likely in the best interest of affected parties to understand the reasons for and, if possible, rectify situations that lead to such results.
 
-To aid in debugging unexpected results, all DNS query measurements shall include the Name Server Identifier Option (NSID) option. `[mgj]` Furthermore, vantage points shall record the network route to both IPv4 and IPv6 addresses of each RSI, in every measurement interval, using commonly available tools such as traceroute, tracepath, or mtr. `[vno]` This additional information helps diagnose issues with the monitoring system (for example, if a route local to the monitoring system disappears it will show up in traceroute). The collection and storage of the extra debugging information is not the primary purpose of the vantage point and must not cause interruption or disturbance to measurement gathering. 
+To aid in debugging unexpected results, all DNS query measurements shall include the Name Server Identifier Option (NSID) option. `[mgj]` Furthermore, vantage points shall record the network route to both IPv4 and IPv6 addresses of each RSI, in every measurement interval, using commonly available tools such as traceroute, tracepath, or mtr. `[vno]` This additional information helps diagnose issues with the monitoring system (for example, if a route local to the monitoring system disappears it will show up in traceroute). The collection and storage of the extra debugging information is not the primary purpose of the vantage point and must not cause interruption or disturbance to measurement gathering.
+
+__Requirements in the following four paragraphs are not currently implemented.__
 
 If, in the course of collecting and aggregating the measurements from the vantage points, one or more vantage points is clearly impacted by a software or network failure, the collection system can temporarily exclude those vantage points from the threshold calculations. `[raz]` Any such exclusion needs to be described publicly, and the times that the vantage points' data is excluded be clearly stated. `[hnr]`
 
@@ -207,6 +209,8 @@ The rationale for the query styles is:
 - It is impossible to predict situations in which an RSI might provide incorrect responses. Using randomly generated TLDs - which look like typical queries - is a reasonable choice. By examining NSEC records from queries for random names we can identify cases where incorrect data may have been inserted into the root zone.
 
 Measurements shall use a timeout value of four seconds. `[twf]` Responses in which the TC bit is set shall be retried over TCP transport and the timeout restarted. `[hjw]`
+
+__Need to add the following requirement__ Since the query should always result in an NOERROR or NXDOMAIN response, responses with any other RCODE are considered to be equivalent to a timeout. `[ote]`
 
 __Measuring Correctness.__ For a response received within the timeout value, the measurement records the result as either correct or incorrect. `[lbl]`
 
