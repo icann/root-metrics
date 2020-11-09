@@ -207,7 +207,7 @@
       columns:
       - file_prefix text
       - date_derived timestamp
-      - record_number short
+      - record_number smallint
       - vp text
       - rsi text
       - internet text
@@ -218,7 +218,7 @@
       - dig_elapsed real
       - timeout text
       - soa_found text
-      - recent_soa text[]
+      - recent_soas text[]
       - is_correct text
       - failure_reason text
       - source_pickle bytea
