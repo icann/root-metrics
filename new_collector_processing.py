@@ -270,7 +270,7 @@ def process_one_incoming_file(full_file):
 
 		# If the response code is wrong, treat it as a timeout; use the response code as the timeout message
 		#   For "S" records   [ppo]
-		#   For "C" records   ######### NEED A REQUIREMENT CODE HERE ############
+		#   For "C" records   [ote]
 		this_response_code = this_resp_obj[0]["message"]["response_message_data"]["status"]
 		if not ((insert_values.record_type == "S" and this_response_code in ("NOERROR")) or (insert_values.record_type == "C" and this_response_code in ("NOERROR", "NXDOMAIN"))):
 			insert_values = insert_values._replace(timeout=this_response_code)
