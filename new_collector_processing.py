@@ -230,10 +230,10 @@ def process_one_incoming_file(full_file):
 			alert("Found a response type {}, which is not S or C, in record {} of {}".format(this_resp[4], response_count, full_file))
 			continue
 		insert_template = "insert into record_info ({}) values ({})".format(template_names_with_commas, percent_s_string)
-		# Note that the default value for is_correct is "n" so that the test for "has correctness been checked" can still be against "y" or "n", which is set below
+		# Note that the default value for is_correct is "?" so that the test for "has correctness been checked" can still be against "y" or "n", which is set below
 		insert_values = insert_values_template(file_prefix=short_file, date_derived=file_date, record_number=response_count, vp=file_vp, \
 			rsi=this_resp[0], internet=this_resp[1], transport=this_resp[2], ip_addr=this_resp[3], record_type=this_resp[4], prog_elapsed=this_resp[5], \
-			dig_elapsed=0.0, timeout="", soa_found="", recent_soas=[], is_correct="n", failure_reason="", source_pickle=b"")
+			dig_elapsed=0.0, timeout="", soa_found="", recent_soas=[], is_correct="?", failure_reason="", source_pickle=b"")
 
 		# If what was supposed to be YAML is an empty string, it means that dig could not get a route to the server
 		#   In this case, make it a timeout, and don't fill in any other data [dfl] [dks]
@@ -331,20 +331,24 @@ def check_for_signed_rr(list_of_records_from_section, name_of_rrtype):
 	
 ###############################################################
 
-def process_one_correctness_array(request_type, in_array):
+def process_one_correctness_array(tuple_of_file_and_id):
 	# request_type is "test" or "normal"
 	# For "normal", process one file_prefix/record_number pair
 	# For "test", process one id/pickle_blob pair
 	# Normally returns nothing because it is writing the results into the record_info database
 	# If running under opts.test, it does not write into the database but instead returns the results as text.
-	#   Also, when running under opts.test, the second argument is [ "test" ], not a list of SOAs
+	try:
+		conn = psycopg2.connect(dbname="metrics", user="metrics")
+		cur = conn.cursor()
+		conn.set_session(autocommit=True)
+	except Exception as e:
+		die("Could not open database in process_one_correctness_array: {}".format(e))
+	(request_type, in_array) = tuple_of_file_and_id
 	if request_type == "normal":
 		(file_prefix, record_number) = in_array
 		reporting_id = "{}-{}".format(file_prefix, record_number)
-		conn = psycopg2.connect(dbname="metrics", user="metrics")
-		cur = conn.cursor()
 		try:
-			cur.execute("select timeout, recent_soas, source_pickle from correctness_info where file_prefix = %s and record_number = %s", (file_prefix, record_number))
+			cur.execute("select timeout, source_pickle from record_info where file_prefix = %s and record_number = %s", (file_prefix, record_number))
 		except Exception as e:
 			alert("Unable to start check correctness on '{}': '{}'".format(reporting_id, e))
 			return
@@ -352,13 +356,13 @@ def process_one_correctness_array(request_type, in_array):
 		if len(this_found) > 1:
 			alert("When checking corrrectness on '{}', found more than one record: '{}'".format(reporting_id, this_found))
 			return
-		(this_timeout, this_recent_soa_serial_array, this_resp_pickle) = this_found[0]
+		(this_timeout, this_resp_pickle) = this_found[0]
 	elif request_type == "test":
-		(this_timeout, this_recent_soa_serial_array, this_resp_pickle) = in_array
+		(this_timeout, this_resp_pickle) = in_array
 	else:
 		die("While running process_one_correctness_array, got unknown first argument '{}'".format(request_type))
 
-	# Before trying to load the pickled data, first tee if it is a timeout; if so, set is_correct but move on [lbl]
+	# Before trying to load the pickled data, first see if it is a timeout; if so, set is_correct but move on [lbl]
 	if not this_timeout == "":
 		if opts.test:
 			return "Timeout '{}' [lbl]".format(this_timeout)
@@ -376,24 +380,55 @@ def process_one_correctness_array(request_type, in_array):
 	except Exception as e:
 		alert("Could not unpickle in record_info for {}: '{}'".format(reporting_id, e))
 		return
-	# Convert this_recent_soa_serial_array into root_to_check by reading the file and unpickling it
-	#   HOWEVER, if running under opts.test, this_recent_soa_serial_array is not an array at all, but instead the root to check
+	
+	# root_to_check is one of the roots from the 48 hours preceding the record
 	if opts.test:
 		try:
 			root_to_check = pickle.load(open("root_name_and_types.pickle", mode="rb"))
 		except:
 			exit("While running under --test, could not find and unpickle 'root_name_and_types.pickle'. Exiting.")
 	else:
-		recent_soa_pickle_filename = "{}/{}.matching.pickle".format(saved_matching_dir, this_recent_soa_serial_array[-1])
+		# Get the starting date from the file name, then pick all zone files whose names have that date or the date from the two days before
+		start_date = datetime.date(int(file_prefix[0:4]), int(file_prefix[4:6]), int(file_prefix[6:8]))
+		start_date_minus_one = start_date - datetime.timedelta(days=1)
+		start_date_minus_two = start_date - datetime.timedelta(days=2)
+		soa_matching_date_files = []
+		for this_start in [start_date, start_date_minus_one, start_date_minus_two]:
+			soa_matching_date_files.extend(glob.glob("{}/{}.matching.pickle".format(saved_matching_dir, this_start)))
+		# See if any of the matching files are not listed in the recent_soas field in the record; if so, try the highest one
+		soa_matching_date_files = sorted(soa_matching_date_files, reverse=True)
 		try:
-			soa_f = open(recent_soa_pickle_filename, mode="rb")
-		except:
-			alert("Found SOA {} in correctness checking for {} for which there was no file".format(this_recent_soa_serial_array[-1], reporting_id))
+			cur.execute("select recent_soas from record_info where file_prefix = %s and record_number = %s", (file_prefix, record_number))
+		except Exception as e:
+			alert("Unable to select recent_soas in correctness on '{}': '{}'".format(reporting_id, e))
 			return
+		this_found = cur.fetchall()
+		if len(this_found) > 1:
+			alert("When checking recent_soas in corrrectness on '{}', found more than one record: '{}'".format(reporting_id, this_found))
+			return
+		found_recent_soas = this_found[0][0]
+		root_file_to_check = ""
+		for this_file in soa_matching_date_files:
+			this_soa = os.path.basename(this_file)[0:8]
+			if this_soa in found_recent_soas:
+				continue
+			else:
+				root_file_to_check = this_file
+		if root_file_to_check == "":
+			try:
+				cur.execute("update record_info set (is_correct, failure_reason) = (%s, %s) where file_prefix = %s and record_number = %s", \
+					("n", "Tried with all SOAs for 48 hours", file_prefix, record_number))
+				conn.commit()
+			except Exception as e:
+				alert("Could not update record_info after end of SOAs in correctness checking after processing record {}: '{}'".format(reporting_id, e))
+			return
+
+		# Try to read the file	
+		soa_f = open(root_file_to_check, mode="rb")
 		try:
 			root_to_check = pickle.load(soa_f)
 		except:
-			alert("Could not unpickle {} while processing {} for correctness".format(recent_soa_pickle_filename, reporting_id))
+			alert("Could not unpickle {} while processing {} for correctness".format(root_file_to_check, reporting_id))
 			return
 	
 	# Here if it is a dig MESSAGE type
@@ -454,7 +489,7 @@ def process_one_correctness_array(request_type, in_array):
 	if opts.test:
 		recent_soa_root_filename = "root_zone.txt"
 	else:
-		recent_soa_root_filename = "{}/{}.root.txt".format(saved_root_zone_dir, this_recent_soa_serial_array[-1])
+		recent_soa_root_filename = "{}/{}.root.txt".format(saved_root_zone_dir, root_file_to_check)
 	if not os.path.exists(recent_soa_root_filename):
 		alert("Could not find {} for correctness validation, so skipping".format(recent_soa_root_filename))
 	else:
@@ -683,7 +718,7 @@ def process_one_correctness_array(request_type, in_array):
 	else:
 		try:
 			cur.execute("update record_info set (is_correct, failure_reason) = (%s, %s) where file_prefix = %s and record_number = %s", \
-				(make_is_correct, failure_reason_text, file_prefix, record_number))   ######################
+				(make_is_correct, failure_reason_text, file_prefix, record_number))
 			conn.commit()
 		except Exception as e:
 			alert("Could not update record_info in correctness checking after processing record {}: '{}'".format(reporting_id, e))
@@ -722,13 +757,13 @@ if __name__ == "__main__":
 	this_parser = argparse.ArgumentParser()
 	this_parser.add_argument("--test", action="store_true", dest="test",
 		help="Run tests on requests; must be run in the Tests directory")
-	this_parser.add_argument("--source", action="store", dest="source", default="c01",
-		help="Specify 'vps' or 'c01' to say where to pull recent files")
+	this_parser.add_argument("--source", action="store", dest="source", default="skip",
+		help="Specify 'vps' or 'c01' or 'skip' to say where to pull recent files")
 	opts = this_parser.parse_args()
 
-	# Make sure opts.source is "vps" or "c01"
-	if not opts.source in ("vps", "c01"):
-		die('The value for --source must be "vps" or "c01"')
+	# Make sure opts.source is "vps" or "c01" or "skip"
+	if not opts.source in ("vps", "c01", "skip"):
+		die('The value for --source must be "vps" or "c01" or "skip"')
 
 	# Where the binaries are
 	target_dir = "/home/metrics/Target"	
@@ -773,10 +808,6 @@ if __name__ == "__main__":
 	# First active step is to copy new files to the collector
 	#   opts.source is either c01 (to rsync from c01.mtric.net) or vps (to pull from vps)
 
-	# This was checked above but, sure, check again
-	if not opts.source in ("vps", "c01"):
-		die('The value for --source must be "vps" or "c01"')
-	
 	if opts.source == "c01":
 		log("Running rsync from c01")
 		rsync_start = time.time()
@@ -834,6 +865,10 @@ if __name__ == "__main__":
 				if pulled_count:
 					total_pulled += pulled_count
 		log("Finished pulling from VPs; got {} files from {} VPs".format(total_pulled, len(all_vps)))
+	
+	elif opts.source == "skip":
+		# Don't do any source gathering
+		pass
 
 	###############################################################
 
@@ -869,16 +904,17 @@ if __name__ == "__main__":
 
 	# Iterate over the records where is_correct is "?"
 	try:
-		cur.execute("select file_prefix, record_number from correctness_info where record_type = 'C' and is_correct = '?'")
+		cur.execute("select file_prefix, record_number from record_info where record_type = 'C' and is_correct = '?'")
 	except Exception as e:
 		die("Unable to start processing correctness with 'select' request: '{}'".format(e))
 	initial_correct_to_check = cur.fetchall()
-	correct_array_to_check = []
-	for this_tuple in initial_correct_to_check:
-		correct_array_to_check.append(("normal", [this_tuple[0], this_tuple[1]]))
-	log("Started correctness checking on {} found".format(len(correct_array_to_check)))
+	# Make a list of tuples with the file_prefix and record_number
+	full_correctness_list = []
+	for this_initial_correct in initial_correct_to_check:
+		full_correctness_list.append(("normal", (this_initial_correct[0], this_initial_correct[1])))
+	log("Started correctness checking on {} found".format(len(full_correctness_list)))
 	with futures.ProcessPoolExecutor() as executor:
-		for (this_correctness_tuple, _) in zip(correct_array_to_check, executor.map(process_one_correctness_array, correct_array_to_check)):
+		for (this_correctness, _) in zip(full_correctness_list, executor.map(process_one_correctness_array, full_correctness_list, chunksize=1000)):
 			pass
 	log("Finished correctness checking")
 	
