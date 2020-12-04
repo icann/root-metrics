@@ -100,12 +100,12 @@ def get_files_from_one_vp(this_vp):
 			die("Running rename for {} ended with '{}'".format(this_filename, e))
 		pulled_count += 1
 		try:
-			conn = psycopg2.connect(dbname="metrics", user="metrics")
+			### conn = psycopg2.connect(dbname="metrics", user="metrics")
 			cur = conn.cursor()
 			cur.execute("insert into files_gotten (filename_full, retrieved_at) values (%s, %s);", (this_filename, datetime.datetime.now(datetime.timezone.utc)))
-			conn.commit()
+			### conn.commit()
 			cur.close()
-			conn.close()
+			### conn.close()
 		except Exception as e:
 			die("Could not insert '{}' into files_gotten: '{}'".format(this_filename, e))
 	return pulled_count
@@ -116,25 +116,27 @@ def process_one_incoming_file(full_file):
 	# Process an incoming file, and move it when done
 	#   Returns nothing
 	#   File-level errors cause "die", record-level errors cause "alert" and skipping the record
-	try:
-		conn = psycopg2.connect(dbname="metrics", user="metrics")
-		cur = conn.cursor()
-		conn.set_session(autocommit=True)
-	except Exception as e:
-		die("Could not open database in process_one_incoming_file: {}".format(e))
+	### try:
+		### conn = psycopg2.connect(dbname="metrics", user="metrics")
+		### cur = conn.cursor()
+		### conn.set_session(autocommit=True)
+	### except Exception as e:
+		### die("Could not open database in process_one_incoming_file: {}".format(e))
 
 	# Insert records into one of the two databases
 	def insert_from_template(this_update_cmd_string, this_update_values):
 		try:
+			cur = conn.cursor()
 			cur.execute(this_update_cmd_string, this_update_values)
+			cur.close()
 		except Exception as e:
 			alert("Could not insert with '{}' / '{}': '{}'".format(this_update_cmd_string, this_update_values, e))
 
 	# Check for bad file
 	if not full_file.endswith(".pickle.gz"):
 		alert("Found {} that did not end in .pickle.gz".format(full_file))
-		cur.close()
-		conn.close()
+		### cur.close()
+		### conn.close()
 		return
 	short_file = os.path.basename(full_file).replace(".pickle.gz", "")
 	# Ungz it
@@ -169,15 +171,17 @@ def process_one_incoming_file(full_file):
 	# See if this file has already been processed
 	this_pickle_gz = short_file + ".pickle.gz"
 	try:
+		cur = conn.cursor()
 		cur.execute("select count(*) from files_gotten where filename_full=%s", (this_pickle_gz, ))
 	except Exception as e:
 		alert("Could not search in files_gotten: '{}'".format(e))
 	# See if this file has already been processed
 	files_gotten_check = cur.fetchone()
+	cur.close()
 	if files_gotten_check[0] > 1:
 		alert("Found mulitple instances of {} in files_gotten; ignoring this new one".format(short_file))
-		cur.close()
-		conn.close()
+		### cur.close()
+		### conn.close()
 		return
 
 	# Check if the file is not there, probably due to rsyncing from c01
@@ -204,9 +208,11 @@ def process_one_incoming_file(full_file):
 		alert("File {} did not have a route information record".format(full_file))
 	else:
 		update_string = "insert into route_info (file_prefix, date_derived, vp, route_string) values (%s, %s, %s, %s)"
-		update_vales = (short_file, file_date, file_vp, in_obj["s"]) 
+		update_values = (short_file, file_date, file_vp, in_obj["s"]) 
 		try:
-			cur.execute(update_string, update_vales)
+			cur = conn.cursor()
+			cur.execute(update_string, update_values)
+			cur.close()
 		except Exception as e:
 			alert("Could not insert into route_info for {}: '{}'".format(short_file, e))
 
@@ -303,7 +309,7 @@ def process_one_incoming_file(full_file):
 	# End of response items loop
 
 	cur.close()
-	conn.close()
+	### conn.close()
 	return
 
 ###############################################################
@@ -337,22 +343,20 @@ def process_one_correctness_array(tuple_of_file_and_id):
 	# For "test", process one id/pickle_blob pair
 	# Normally returns nothing because it is writing the results into the record_info database
 	# If running under opts.test, it does not write into the database but instead returns the results as text.
-	try:
-		conn = psycopg2.connect(dbname="metrics", user="metrics")
-		cur = conn.cursor()
-		conn.set_session(autocommit=True)
-	except Exception as e:
-		die("Could not open database in process_one_correctness_array: {}".format(e))
 	(request_type, in_array) = tuple_of_file_and_id
+	log("### Started {}".format(in_array))
 	if request_type == "normal":
 		(file_prefix, record_number) = in_array
 		reporting_id = "{}-{}".format(file_prefix, record_number)
 		try:
+			cur = conn.cursor()
 			cur.execute("select timeout, source_pickle from record_info where file_prefix = %s and record_number = %s", (file_prefix, record_number))
 		except Exception as e:
 			alert("Unable to start check correctness on '{}': '{}'".format(reporting_id, e))
 			return
 		this_found = cur.fetchall()
+		cur.close()
+		log("### First step {}".format(in_array))
 		if len(this_found) > 1:
 			alert("When checking corrrectness on '{}', found more than one record: '{}'".format(reporting_id, this_found))
 			return
@@ -368,8 +372,10 @@ def process_one_correctness_array(tuple_of_file_and_id):
 			return "Timeout '{}' [lbl]".format(this_timeout)
 		else:
 			try:
+				cur = conn.cursor()
 				cur.execute("update record_info set (is_correct, failure_reason) = (%s, %s) where file_prefix = %s and record_number = %s", ("y", "timeout", file_prefix, record_number))
-				conn.commit()
+				### conn.commit()
+				cur.close()
 			except Exception as e:
 				alert("Could not update record_info for timed-out {}: '{}'".format(reporting_id, e))
 			return
@@ -380,6 +386,7 @@ def process_one_correctness_array(tuple_of_file_and_id):
 	except Exception as e:
 		alert("Could not unpickle in record_info for {}: '{}'".format(reporting_id, e))
 		return
+	log("### Second step {}".format(in_array))
 	
 	# root_to_check is one of the roots from the 48 hours preceding the record
 	if opts.test:
@@ -398,11 +405,14 @@ def process_one_correctness_array(tuple_of_file_and_id):
 		# See if any of the matching files are not listed in the recent_soas field in the record; if so, try the highest one
 		soa_matching_date_files = sorted(soa_matching_date_files, reverse=True)
 		try:
+			cur = conn.cursor()
 			cur.execute("select recent_soas from record_info where file_prefix = %s and record_number = %s", (file_prefix, record_number))
 		except Exception as e:
 			alert("Unable to select recent_soas in correctness on '{}': '{}'".format(reporting_id, e))
 			return
 		this_found = cur.fetchall()
+		cur.close()
+		log("### Third step {}".format(in_array))
 		if len(this_found) > 1:
 			alert("When checking recent_soas in corrrectness on '{}', found more than one record: '{}'".format(reporting_id, this_found))
 			return
@@ -416,9 +426,11 @@ def process_one_correctness_array(tuple_of_file_and_id):
 				root_file_to_check = this_file
 		if root_file_to_check == "":
 			try:
+				cur = conn.cursor()
 				cur.execute("update record_info set (is_correct, failure_reason) = (%s, %s) where file_prefix = %s and record_number = %s", \
 					("n", "Tried with all SOAs for 48 hours", file_prefix, record_number))
-				conn.commit()
+				### conn.commit()
+				cur.close()
 			except Exception as e:
 				alert("Could not update record_info after end of SOAs in correctness checking after processing record {}: '{}'".format(reporting_id, e))
 			return
@@ -717,9 +729,11 @@ def process_one_correctness_array(tuple_of_file_and_id):
 		return failure_reason_text
 	else:
 		try:
+			cur = conn.cursor()
 			cur.execute("update record_info set (is_correct, failure_reason) = (%s, %s) where file_prefix = %s and record_number = %s", \
 				(make_is_correct, failure_reason_text, file_prefix, record_number))
-			conn.commit()
+			### conn.commit()
+			cur.close()
 		except Exception as e:
 			alert("Could not update record_info in correctness checking after processing record {}: '{}'".format(reporting_id, e))
 		return
@@ -878,10 +892,6 @@ if __name__ == "__main__":
 	except Exception as e:
 		die("Unable to open database: '{}'".format(e))
 	try:
-		cur = conn.cursor()
-	except Exception as e:
-		die("Unable to get database cursor: '{}'".format(e))
-	try:
 		conn.set_session(autocommit=True)
 	except Exception as e:
 		die("Unable to get set autocommit: '{}'".format(e))
@@ -904,10 +914,12 @@ if __name__ == "__main__":
 
 	# Iterate over the records where is_correct is "?"
 	try:
+		cur = conn.cursor()
 		cur.execute("select file_prefix, record_number from record_info where record_type = 'C' and is_correct = '?'")
 	except Exception as e:
 		die("Unable to start processing correctness with 'select' request: '{}'".format(e))
 	initial_correct_to_check = cur.fetchall()
+	cur.close()
 	# Make a list of tuples with the file_prefix and record_number
 	full_correctness_list = []
 	for this_initial_correct in initial_correct_to_check:
@@ -915,7 +927,8 @@ if __name__ == "__main__":
 	log("Started correctness checking on {} found".format(len(full_correctness_list)))
 	with futures.ProcessPoolExecutor() as executor:
 		for (this_correctness, _) in zip(full_correctness_list, executor.map(process_one_correctness_array, full_correctness_list, chunksize=1000)):
-			pass
+			### pass
+			log("### Finished {}-{}".format(this_correctness[1][0], this_correctness[1][1]))
 	log("Finished correctness checking")
 	
 	###############################################################
