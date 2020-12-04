@@ -195,9 +195,8 @@
       db: metrics
       name: route_info
       columns:
-      - file_prefix text
+      - filename text
       - date_derived timestamp
-      - vp text
       - route_string text
   - name: Create table for SOA and correctness records
     postgresql_table:
@@ -205,10 +204,8 @@
       db: metrics
       name: record_info
       columns:
-      - file_prefix text
+      - filename_record text
       - date_derived timestamp
-      - record_number smallint
-      - vp text
       - rsi text
       - internet text
       - transport text
@@ -222,3 +219,12 @@
       - is_correct text
       - failure_reason text
       - source_pickle bytea
+  - name: Create index in metrics table
+    postgresql_idx:
+      login_user: metrics
+      db: metrics
+      table: record_info
+      columns: filename_record
+      name: filename_record_idx
+      idxtype: btree
+
