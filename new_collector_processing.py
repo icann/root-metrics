@@ -196,7 +196,7 @@ def process_one_incoming_file(full_file):
 	insert_from_template(update_string, update_vales)
 
 	# Get the derived date and VP name from the file name
-	(file_date_text, file_vp) = short_file.split("-")
+	(file_date_text, _) = short_file.split("-")
 	try:
 		file_date = datetime.datetime(int(file_date_text[0:4]), int(file_date_text[4:6]), int(file_date_text[6:8]),\
 			int(file_date_text[8:10]), int(file_date_text[10:12]))
@@ -207,8 +207,8 @@ def process_one_incoming_file(full_file):
 	if not in_obj.get("s"):
 		alert("File {} did not have a route information record".format(full_file))
 	else:
-		update_string = "insert into route_info (file_prefix, date_derived, vp, route_string) values (%s, %s, %s, %s)"
-		update_values = (short_file, file_date, file_vp, in_obj["s"]) 
+		update_string = "insert into route_info (filename, date_derived, route_string) values (%s, %s, %s)"
+		update_values = (short_file, file_date, in_obj["s"]) 
 		try:
 			cur = conn.cursor()
 			cur.execute(update_string, update_values)
@@ -217,7 +217,7 @@ def process_one_incoming_file(full_file):
 			alert("Could not insert into route_info for {}: '{}'".format(short_file, e))
 
 	# Named tuple for the record templates
-	template_names_raw = "file_prefix date_derived record_number vp rsi internet transport ip_addr record_type prog_elapsed dig_elapsed timeout soa_found " \
+	template_names_raw = "filename_record date_derived rsi internet transport ip_addr record_type prog_elapsed dig_elapsed timeout soa_found " \
 		+ "recent_soas is_correct failure_reason source_pickle"
 	# Change spaces to ", "
 	template_names_with_commas = template_names_raw.replace(" ", ", ")
@@ -237,7 +237,7 @@ def process_one_incoming_file(full_file):
 			continue
 		insert_template = "insert into record_info ({}) values ({})".format(template_names_with_commas, percent_s_string)
 		# Note that the default value for is_correct is "?" so that the test for "has correctness been checked" can still be against "y" or "n", which is set below
-		insert_values = insert_values_template(file_prefix=short_file, date_derived=file_date, record_number=response_count, vp=file_vp, \
+		insert_values = insert_values_template(filename_record="{}-{}".format(short_file, response_count), date_derived=file_date, \
 			rsi=this_resp[0], internet=this_resp[1], transport=this_resp[2], ip_addr=this_resp[3], record_type=this_resp[4], prog_elapsed=this_resp[5], \
 			dig_elapsed=0.0, timeout="", soa_found="", recent_soas=[], is_correct="?", failure_reason="", source_pickle=b"")
 
@@ -339,30 +339,28 @@ def check_for_signed_rr(list_of_records_from_section, name_of_rrtype):
 
 def process_one_correctness_array(tuple_of_file_and_id):
 	# request_type is "test" or "normal"
-	# For "normal", process one file_prefix/record_number pair
+	# For "normal", process one filename_record
 	# For "test", process one id/pickle_blob pair
 	# Normally returns nothing because it is writing the results into the record_info database
 	# If running under opts.test, it does not write into the database but instead returns the results as text.
-	(request_type, in_array) = tuple_of_file_and_id
-	log("### Started {}".format(in_array))
+	(request_type, this_filename_record) = tuple_of_file_and_id
+	log("### Started {}".format(this_filename_record))
 	if request_type == "normal":
-		(file_prefix, record_number) = in_array
-		reporting_id = "{}-{}".format(file_prefix, record_number)
 		try:
 			cur = conn.cursor()
-			cur.execute("select timeout, source_pickle from record_info where file_prefix = %s and record_number = %s", (file_prefix, record_number))
+			cur.execute("select timeout, source_pickle from record_info where filename_record = %s", (this_filename_record))
 		except Exception as e:
-			alert("Unable to start check correctness on '{}': '{}'".format(reporting_id, e))
+			alert("Unable to start check correctness on '{}': '{}'".format(this_filename_record, e))
 			return
 		this_found = cur.fetchall()
 		cur.close()
-		log("### First step {}".format(in_array))
+		log("### First step {}".format(this_filename_record))
 		if len(this_found) > 1:
-			alert("When checking corrrectness on '{}', found more than one record: '{}'".format(reporting_id, this_found))
+			alert("When checking corrrectness on '{}', found more than one record: '{}'".format(this_filename_record, this_found))
 			return
 		(this_timeout, this_resp_pickle) = this_found[0]
 	elif request_type == "test":
-		(this_timeout, this_resp_pickle) = in_array
+		(this_timeout, this_resp_pickle) = this_found[0]
 	else:
 		die("While running process_one_correctness_array, got unknown first argument '{}'".format(request_type))
 
@@ -373,20 +371,20 @@ def process_one_correctness_array(tuple_of_file_and_id):
 		else:
 			try:
 				cur = conn.cursor()
-				cur.execute("update record_info set (is_correct, failure_reason) = (%s, %s) where file_prefix = %s and record_number = %s", ("y", "timeout", file_prefix, record_number))
+				cur.execute("update record_info set (is_correct, failure_reason) = (%s, %s) where filename_record = %s", ("y", "timeout", this_filename_record))
 				### conn.commit()
 				cur.close()
 			except Exception as e:
-				alert("Could not update record_info for timed-out {}: '{}'".format(reporting_id, e))
+				alert("Could not update record_info for timed-out {}: '{}'".format(this_filename_record, e))
 			return
 	
 	# Get the pickled object		
 	try:
 		this_resp_obj = pickle.loads(this_resp_pickle)
 	except Exception as e:
-		alert("Could not unpickle in record_info for {}: '{}'".format(reporting_id, e))
+		alert("Could not unpickle in record_info for {}: '{}'".format(this_filename_record, e))
 		return
-	log("### Second step {}".format(in_array))
+	log("### Second step {}".format(this_filename_record))
 	
 	# root_to_check is one of the roots from the 48 hours preceding the record
 	if opts.test:
@@ -396,7 +394,7 @@ def process_one_correctness_array(tuple_of_file_and_id):
 			exit("While running under --test, could not find and unpickle 'root_name_and_types.pickle'. Exiting.")
 	else:
 		# Get the starting date from the file name, then pick all zone files whose names have that date or the date from the two days before
-		start_date = datetime.date(int(file_prefix[0:4]), int(file_prefix[4:6]), int(file_prefix[6:8]))
+		start_date = datetime.date(int(this_filename_record[0:4]), int(this_filename_record[4:6]), int(this_filename_record[6:8]))
 		start_date_minus_one = start_date - datetime.timedelta(days=1)
 		start_date_minus_two = start_date - datetime.timedelta(days=2)
 		soa_matching_date_files = []
@@ -406,15 +404,15 @@ def process_one_correctness_array(tuple_of_file_and_id):
 		soa_matching_date_files = sorted(soa_matching_date_files, reverse=True)
 		try:
 			cur = conn.cursor()
-			cur.execute("select recent_soas from record_info where file_prefix = %s and record_number = %s", (file_prefix, record_number))
+			cur.execute("select recent_soas from record_info where filename_record = %s", (this_filename_record))
 		except Exception as e:
-			alert("Unable to select recent_soas in correctness on '{}': '{}'".format(reporting_id, e))
+			alert("Unable to select recent_soas in correctness on '{}': '{}'".format(this_filename_record, e))
 			return
 		this_found = cur.fetchall()
 		cur.close()
-		log("### Third step {}".format(in_array))
+		log("### Third step {}".format(this_filename_record))
 		if len(this_found) > 1:
-			alert("When checking recent_soas in corrrectness on '{}', found more than one record: '{}'".format(reporting_id, this_found))
+			alert("When checking recent_soas in corrrectness on '{}', found more than one record: '{}'".format(this_filename_record, this_found))
 			return
 		found_recent_soas = this_found[0][0]
 		root_file_to_check = ""
@@ -427,12 +425,12 @@ def process_one_correctness_array(tuple_of_file_and_id):
 		if root_file_to_check == "":
 			try:
 				cur = conn.cursor()
-				cur.execute("update record_info set (is_correct, failure_reason) = (%s, %s) where file_prefix = %s and record_number = %s", \
-					("n", "Tried with all SOAs for 48 hours", file_prefix, record_number))
+				cur.execute("update record_info set (is_correct, failure_reason) = (%s, %s) where filename_record = %s", \
+					("n", "Tried with all SOAs for 48 hours", this_filename_record))
 				### conn.commit()
 				cur.close()
 			except Exception as e:
-				alert("Could not update record_info after end of SOAs in correctness checking after processing record {}: '{}'".format(reporting_id, e))
+				alert("Could not update record_info after end of SOAs in correctness checking after processing record {}: '{}'".format(this_filename_record, e))
 			return
 
 		# Try to read the file	
@@ -440,7 +438,7 @@ def process_one_correctness_array(tuple_of_file_and_id):
 		try:
 			root_to_check = pickle.load(soa_f)
 		except:
-			alert("Could not unpickle {} while processing {} for correctness".format(root_file_to_check, reporting_id))
+			alert("Could not unpickle {} while processing {} for correctness".format(root_file_to_check, this_filename_record))
 			return
 	
 	# Here if it is a dig MESSAGE type
@@ -460,7 +458,7 @@ def process_one_correctness_array(tuple_of_file_and_id):
 			for this_full_record in resp[this_section_name]:
 				# There is an error in BIND 9.16.1 and .2 where this_full_record might be a dict instead of a str. If so, ignore it. #######
 				if isinstance(this_full_record, dict):
-					alert("Found record with a dict in id {} when checking responses".format(reporting_id))
+					alert("Found record with a dict in id {} when checking responses".format(this_filename_record))
 					continue
 				(rec_qname, _, _, rec_qtype, rec_rdata) = this_full_record.split(" ", maxsplit=4)
 				if not rec_qtype == "RRSIG":  # [ygx]
@@ -528,7 +526,7 @@ def process_one_correctness_array(tuple_of_file_and_id):
 				validate_output = validate_p.stdout.splitlines()[0]
 				(validate_return, _) = validate_output.split(" ", maxsplit=1)
 				if not validate_return == "400":
-					failure_reasons.append("Validating {} in {} got error of '{}' [yds]".format(this_section_name, reporting_id, validate_return))
+					failure_reasons.append("Validating {} in {} got error of '{}' [yds]".format(this_section_name, this_filename_record, validate_return))
 				validate_f.close()
 	
 	# Check that all the parts of the resp structure are correct, based on the type of answer
@@ -730,12 +728,12 @@ def process_one_correctness_array(tuple_of_file_and_id):
 	else:
 		try:
 			cur = conn.cursor()
-			cur.execute("update record_info set (is_correct, failure_reason) = (%s, %s) where file_prefix = %s and record_number = %s", \
-				(make_is_correct, failure_reason_text, file_prefix, record_number))
+			cur.execute("update record_info set (is_correct, failure_reason) = (%s, %s) where filename_record = %s", \
+				(make_is_correct, failure_reason_text, this_filename_record))
 			### conn.commit()
 			cur.close()
 		except Exception as e:
-			alert("Could not update record_info in correctness checking after processing record {}: '{}'".format(reporting_id, e))
+			alert("Could not update record_info in correctness checking after processing record {}: '{}'".format(this_filename_record, e))
 		return
 
 ###############################################################
@@ -773,7 +771,12 @@ if __name__ == "__main__":
 		help="Run tests on requests; must be run in the Tests directory")
 	this_parser.add_argument("--source", action="store", dest="source", default="skip",
 		help="Specify 'vps' or 'c01' or 'skip' to say where to pull recent files")
+	this_parser.add_argument("--limit", action="store_true", dest="limit",
+		help="Limit procesing to 10 items")
+	
 	opts = this_parser.parse_args()
+	if opts.limit:
+		log("Limiting record processing to 10 records")
 
 	# Make sure opts.source is "vps" or "c01" or "skip"
 	if not opts.source in ("vps", "c01", "skip"):
@@ -882,7 +885,7 @@ if __name__ == "__main__":
 	
 	elif opts.source == "skip":
 		# Don't do any source gathering
-		pass
+		log("Skipped getting sources because opts.source was 'skip'")
 
 	###############################################################
 
@@ -901,6 +904,9 @@ if __name__ == "__main__":
 	# Go through the files in ~/Incoming
 	log("Started going through ~/Incoming")
 	all_files = list(glob.glob("{}/*".format(incoming_dir)))
+	# If limit is set, use only the first 10
+	if opts.limit:
+		all_files = all_files[0:9]
 	with futures.ProcessPoolExecutor() as executor:
 		for (this_file, _) in zip(all_files, executor.map(process_one_incoming_file, all_files)):
 			pass
@@ -915,20 +921,23 @@ if __name__ == "__main__":
 	# Iterate over the records where is_correct is "?"
 	try:
 		cur = conn.cursor()
-		cur.execute("select file_prefix, record_number from record_info where record_type = 'C' and is_correct = '?'")
+		cur.execute("select filename_record from record_info where record_type = 'C' and is_correct = '?'")
 	except Exception as e:
 		die("Unable to start processing correctness with 'select' request: '{}'".format(e))
 	initial_correct_to_check = cur.fetchall()
 	cur.close()
-	# Make a list of tuples with the file_prefix and record_number
+	# Make a list of tuples with the filename_record
 	full_correctness_list = []
 	for this_initial_correct in initial_correct_to_check:
-		full_correctness_list.append(("normal", (this_initial_correct[0], this_initial_correct[1])))
+		full_correctness_list.append(("normal", this_initial_correct[0]))
+	# If limit is set, use only the first 10
+	if opts.limit:
+		full_correctness_list = full_correctness_list[0:10]
 	log("Started correctness checking on {} found".format(len(full_correctness_list)))
 	with futures.ProcessPoolExecutor() as executor:
 		for (this_correctness, _) in zip(full_correctness_list, executor.map(process_one_correctness_array, full_correctness_list, chunksize=1000)):
 			### pass
-			log("### Finished {}-{}".format(this_correctness[1][0], this_correctness[1][1]))
+			log("### Finished {}".format(this_correctness[1]))
 	log("Finished correctness checking")
 	
 	###############################################################
