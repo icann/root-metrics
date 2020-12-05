@@ -108,20 +108,21 @@ def get_files_from_one_vp(this_vp):
 	return pulled_count
 
 ###############################################################
+# Insert records into one of the two databases
+def insert_from_template(this_update_cmd_string, this_update_values):
+	try:
+		cur = conn.cursor()
+		cur.execute(this_update_cmd_string, this_update_values)
+		cur.close()
+	except Exception as e:
+		alert("Could not insert with '{}' / '{}': '{}'".format(this_update_cmd_string, this_update_values, e))
 	
+###############################################################
 def process_one_incoming_file(full_file):
 	# Process an incoming file, and move it when done
 	#   Returns nothing
 	#   File-level errors cause "die", record-level errors cause "alert" and skipping the record
-	# Insert records into one of the two databases
-	def insert_from_template(this_update_cmd_string, this_update_values):
-		try:
-			cur = conn.cursor()
-			cur.execute(this_update_cmd_string, this_update_values)
-			cur.close()
-		except Exception as e:
-			alert("Could not insert with '{}' / '{}': '{}'".format(this_update_cmd_string, this_update_values, e))
-
+	
 	# Check for bad file
 	if not full_file.endswith(".pickle.gz"):
 		alert("Found {} that did not end in .pickle.gz".format(full_file))
@@ -753,11 +754,11 @@ if __name__ == "__main__":
 	this_parser.add_argument("--source", action="store", dest="source", default="skip",
 		help="Specify 'vps' or 'c01' or 'skip' to say where to pull recent files")
 	this_parser.add_argument("--limit", action="store_true", dest="limit",
-		help="Limit procesing to 10 items")
+		help="Limit procesing to 1000 items")
 	
 	opts = this_parser.parse_args()
 	if opts.limit:
-		log("Limiting record processing to 10 records")
+		log("Limiting record processing to 1000 records")
 
 	# Make sure opts.source is "vps" or "c01" or "skip"
 	if not opts.source in ("vps", "c01", "skip"):
@@ -885,9 +886,9 @@ if __name__ == "__main__":
 	# Go through the files in ~/Incoming
 	log("Started going through ~/Incoming")
 	all_files = list(glob.glob("{}/*".format(incoming_dir)))
-	# If limit is set, use only the first 10
+	# If limit is set, use only the first 1000
 	if opts.limit:
-		all_files = all_files[0:9]
+		all_files = all_files[0:999]
 	with futures.ProcessPoolExecutor() as executor:
 		for (this_file, _) in zip(all_files, executor.map(process_one_incoming_file, all_files)):
 			pass
@@ -911,9 +912,9 @@ if __name__ == "__main__":
 	full_correctness_list = []
 	for this_initial_correct in initial_correct_to_check:
 		full_correctness_list.append(("normal", this_initial_correct[0]))
-	# If limit is set, use only the first 10
+	# If limit is set, use only the first 1000
 	if opts.limit:
-		full_correctness_list = full_correctness_list[0:10]
+		full_correctness_list = full_correctness_list[0:999]
 	log("Started correctness checking on {} found".format(len(full_correctness_list)))
 	with futures.ProcessPoolExecutor() as executor:
 		for (this_correctness, _) in zip(full_correctness_list, executor.map(process_one_correctness_array, full_correctness_list, chunksize=1000)):
