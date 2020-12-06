@@ -177,25 +177,21 @@ def process_one_incoming_file(full_file):
 	this_pickle_gz = short_file + ".pickle.gz"
 	cur = conn.cursor()
 	cur.execute("select count(*) from files_gotten where filename_full = %s", (this_pickle_gz, ))
-	# See if this file has already been processed
 	if cur.rowcount == -1:
 		alert("Got rowcount of -1 for {}; skipping this file".format(this_pickle_gz))
-		cur.close()
+		conn.close()
 		return
-	try:
-		files_gotten_check = cur.fetchone()
-	except Exception as e:
-		# If the file is not there, probably due to rsyncing from c01
-		insert_string = "insert into files_gotten (filename_full, retrieved_at) values (%s, %s);"
-		insert_values = (this_pickle_gz, datetime.datetime.now(datetime.timezone.utc))
-		insert_from_template(insert_string, insert_values)
-	else:
-		if files_gotten_check[0] > 1:
-			alert("Found mulitple instances of {} in files_gotten; ignoring this new one".format(short_file))
-			cur.close()
-			return
+	files_gotten_check = cur.fetchone()
+	if files_gotten_check[0] > 1:
+		alert("Found mulitple instances of {} in files_gotten; ignoring this new one".format(short_file))
+		conn.close()
+		return
+	# If the file is not there, probably due to rsyncing from c01
+	insert_string = "insert into files_gotten (filename_full, retrieved_at) values (%s, %s);"
+	insert_values = (this_pickle_gz, datetime.datetime.now(datetime.timezone.utc))
+	insert_from_template(insert_string, insert_values)
 	cur.close()
-
+	
 	# Update the metadata
 	update_string = "update files_gotten set processed_at=%s, version=%s, delay=%s, elapsed=%s where filename_full=%s"
 	update_vales = (datetime.datetime.now(datetime.timezone.utc), in_obj["v"], in_obj["d"], in_obj["e"], this_pickle_gz) 
@@ -896,12 +892,14 @@ if __name__ == "__main__":
 	all_files = list(glob.glob("{}/*".format(incoming_dir)))
 	# If limit is set, use only the first 1000
 	if opts.limit:
-		all_files = all_files[0:999]
+		all_files = all_files[0:1000]
+	processed_incoming_count = 0
+	processed_incoming_start = time.time()
 	with futures.ProcessPoolExecutor() as executor:
 		for (this_file, _) in zip(all_files, executor.map(process_one_incoming_file, all_files)):
-			pass
-	log("Finished processing {} files in Incoming".format(len(all_files)))
-	
+			processed_incoming_count += 1
+	log("Finished processing {} files in Incoming in {} seconds".format(processed_incoming_count, int(time.time() - processed_incoming_start)))
+
 	###############################################################
 
 	# Now that all the measurements are in, go through all records in record_info where is_correct is "?"
@@ -924,12 +922,14 @@ if __name__ == "__main__":
 		full_correctness_list.append(("normal", this_initial_correct[0]))
 	# If limit is set, use only the first 1000
 	if opts.limit:
-		full_correctness_list = full_correctness_list[0:999]
+		full_correctness_list = full_correctness_list[0:1000]
 	log("Started correctness checking on {} found".format(len(full_correctness_list)))
+	processed_correctness_count = 0
+	processed_correctness_start = time.time()
 	with futures.ProcessPoolExecutor() as executor:
 		for (this_correctness, _) in zip(full_correctness_list, executor.map(process_one_correctness_array, full_correctness_list, chunksize=1000)):
-			pass
-	log("Finished correctness checking")
+			processed_correctness_count += 1
+	log("Finished correctness checking {} files in {} seconds".format(processed_correctness_count, int(time.time() - processed_correctness_start)))
 	
 	###############################################################
 	
