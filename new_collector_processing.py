@@ -58,6 +58,7 @@ def get_files_from_one_vp(this_vp):
 	##################### Remove this before deploying #####################
 	die("Was about to get_files_from_one_vp for {}".format(this_vp))
 	########################################################################
+
 	# Used to pull files from VPs under multiprocessing; retuns the number of files pulled from this VP
 	pulled_count = 0
 	# Make a batch file for sftp that gets the directory
@@ -72,6 +73,10 @@ def get_files_from_one_vp(this_vp):
 		log("Getting directory for {} ended with '{}'".format(dir_batch_filename, e))
 		return pulled_count
 	dir_lines = p.stdout.splitlines()
+
+	conn = psycopg2.connect(dbname="metrics", user="metrics")
+	conn.set_session(autocommit=True)
+	
 	# Get the filenames that end in .gz; some lines will be other cruft such as ">"
 	for this_filename in dir_lines:
 		if not this_filename.endswith(".gz"):
@@ -86,6 +91,7 @@ def get_files_from_one_vp(this_vp):
 		try:
 			p = subprocess.run("sftp -b {} transfer@{}".format(get_batch_filename, this_vp), shell=True, capture_output=True, text=True, check=True)
 		except Exception as e:
+			conn.close()
 			die("Running get for {} ended with '{}'".format(this_filename, e))
 		# Create an sftp batch file for each file to move
 		move_batch_filename = "{}/{}-movebatchfile.txt".format(batch_dir, this_vp)
@@ -97,6 +103,7 @@ def get_files_from_one_vp(this_vp):
 		try:
 			p = subprocess.run("sftp -b {} transfer@{}".format(move_batch_filename, this_vp), shell=True, capture_output=True, text=True, check=True)
 		except Exception as e:
+			conn.close()
 			die("Running rename for {} ended with '{}'".format(this_filename, e))
 		pulled_count += 1
 		try:
@@ -104,19 +111,11 @@ def get_files_from_one_vp(this_vp):
 			cur.execute("insert into files_gotten (filename_full, retrieved_at) values (%s, %s);", (this_filename, datetime.datetime.now(datetime.timezone.utc)))
 			cur.close()
 		except Exception as e:
+			conn.close()
 			die("Could not insert '{}' into files_gotten: '{}'".format(this_filename, e))
+	conn.close()
 	return pulled_count
 
-###############################################################
-# Insert records into one of the two databases
-def insert_from_template(this_update_cmd_string, this_update_values):
-	try:
-		cur = conn.cursor()
-		cur.execute(this_update_cmd_string, this_update_values)
-		cur.close()
-	except Exception as e:
-		alert("Could not insert with '{}' / '{}': '{}'".format(this_update_cmd_string, this_update_values, e))
-	
 ###############################################################
 def process_one_incoming_file(full_file):
 	# Process an incoming file, and move it when done
@@ -157,6 +156,23 @@ def process_one_incoming_file(full_file):
 	except Exception as e:
 		die("Could not move {} to {}: '{}'".format(full_file, original_dir_target, e))
 
+	conn = psycopg2.connect(dbname="metrics", user="metrics")
+	conn.set_session(autocommit=True)
+
+	# Function to insert records into one of the two databases
+	def insert_from_template(this_update_cmd_string, this_update_values):
+		try:
+			curi = conn.cursor()
+		except:
+			alert("Could not get a cursor inside insert_from_template")
+			return
+		try:
+			curi.execute(this_update_cmd_string, this_update_values)
+		except Exception as e:
+			alert("Could not insert with '{}' / '{}': '{}'".format(this_update_cmd_string, this_update_values, e))
+		curi.close()
+		return
+
 	# See if this file has already been processed
 	this_pickle_gz = short_file + ".pickle.gz"
 	cur = conn.cursor()
@@ -191,6 +207,7 @@ def process_one_incoming_file(full_file):
 		file_date = datetime.datetime(int(file_date_text[0:4]), int(file_date_text[4:6]), int(file_date_text[6:8]),\
 			int(file_date_text[8:10]), int(file_date_text[10:12]))
 	except Exception as e:
+		conn.close()
 		die("Could not split the file name '{}' into a datetime: '{}'".format(short_file, e))
 
 	# Log the route information from in_obj["s"]
@@ -333,6 +350,8 @@ def process_one_correctness_array(tuple_of_file_and_id):
 	# Normally returns nothing because it is writing the results into the record_info database
 	# If running under opts.test, it does not write into the database but instead returns the results as text.
 	(request_type, this_filename_record) = tuple_of_file_and_id
+	conn = psycopg2.connect(dbname="metrics", user="metrics")
+	conn.set_session(autocommit=True)
 	if request_type == "normal":
 		try:
 			cur = conn.cursor()
@@ -349,6 +368,7 @@ def process_one_correctness_array(tuple_of_file_and_id):
 	elif request_type == "test":
 		(this_timeout, this_resp_pickle) = this_found[0]
 	else:
+		conn.close()
 		die("While running process_one_correctness_array, got unknown first argument '{}'".format(request_type))
 
 	# Before trying to load the pickled data, first see if it is a timeout; if so, set is_correct but move on [lbl]
@@ -871,18 +891,6 @@ if __name__ == "__main__":
 
 	###############################################################
 
-	# Connect to the database
-	try:
-		conn = psycopg2.connect(dbname="metrics", user="metrics")
-	except Exception as e:
-		die("Unable to open database: '{}'".format(e))
-	try:
-		conn.set_session(autocommit=True)
-	except Exception as e:
-		die("Unable to get set autocommit: '{}'".format(e))
-	
-	###############################################################
-
 	# Go through the files in ~/Incoming
 	log("Started going through ~/Incoming")
 	all_files = list(glob.glob("{}/*".format(incoming_dir)))
@@ -902,12 +910,14 @@ if __name__ == "__main__":
 
 	# Iterate over the records where is_correct is "?"
 	try:
+		conn = psycopg2.connect(dbname="metrics", user="metrics")
 		cur = conn.cursor()
 		cur.execute("select filename_record from record_info where record_type = 'C' and is_correct = '?'")
 	except Exception as e:
+		conn.close()
 		die("Unable to start processing correctness with 'select' request: '{}'".format(e))
 	initial_correct_to_check = cur.fetchall()
-	cur.close()
+	conn.close()
 	# Make a list of tuples with the filename_record
 	full_correctness_list = []
 	for this_initial_correct in initial_correct_to_check:
@@ -930,7 +940,5 @@ if __name__ == "__main__":
 	
 	###############################################################
 	
-	cur.close()
-	conn.close()
 	log("Finished overall collector processing")	
 	exit()
