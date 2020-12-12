@@ -400,9 +400,12 @@ def process_one_correctness_array(tuple_of_file_and_id):
 		start_date_minus_two = start_date - datetime.timedelta(days=2)
 		soa_matching_date_files = []
 		for this_start in [start_date, start_date_minus_one, start_date_minus_two]:
-			soa_matching_date_files.extend(glob.glob("{}/{}.matching.pickle".format(saved_matching_dir, this_start)))
+			soa_matching_date_files.extend(glob.glob("{}/{}*.matching.pickle".format(saved_matching_dir, this_start.strftime("%Y%m%d"))))
 		# See if any of the matching files are not listed in the recent_soas field in the record; if so, try the highest one
 		soa_matching_date_files = sorted(soa_matching_date_files, reverse=True)
+		if len(soa_matching_date_files) == 0:
+			alert("Found no SOA matching files for {} with dates starting {}".format(this_filename_record, start_date.strftime("%Y%m%d")))
+			return
 		try:
 			cur = conn.cursor()
 			cur.execute("select recent_soas from record_info where filename_record = %s", (this_filename_record, ))
@@ -422,6 +425,7 @@ def process_one_correctness_array(tuple_of_file_and_id):
 				continue
 			else:
 				root_file_to_check = this_file
+				soa_file_used_for_testing = os.path.basename(this_file)[0:10]
 		if root_file_to_check == "":
 			try:
 				cur = conn.cursor()
@@ -457,8 +461,8 @@ def process_one_correctness_array(tuple_of_file_and_id):
 			for this_full_record in resp[this_section_name]:
 				# There is an error in BIND 9.16.1 and .2 where this_full_record might be a dict instead of a str. If so, ignore it. #######
 				if isinstance(this_full_record, dict):
-					alert("Found record with a dict in id {} when checking responses".format(this_filename_record))
-					continue
+					alert("Found record with a dict in id {}, {} {}".format(this_filename_record, this_section_name, this_full_record))
+					return
 				(rec_qname, _, _, rec_qtype, rec_rdata) = this_full_record.split(" ", maxsplit=4)
 				if not rec_qtype == "RRSIG":  # [ygx]
 					this_key = "{}/{}".format(rec_qname, rec_qtype)
@@ -498,7 +502,7 @@ def process_one_correctness_array(tuple_of_file_and_id):
 	if opts.test:
 		recent_soa_root_filename = "root_zone.txt"
 	else:
-		recent_soa_root_filename = "{}/{}.root.txt".format(saved_root_zone_dir, root_file_to_check)
+		recent_soa_root_filename = "{}/{}.root.txt".format(saved_root_zone_dir, soa_file_used_for_testing)
 	if not os.path.exists(recent_soa_root_filename):
 		alert("Could not find {} for correctness validation, so skipping".format(recent_soa_root_filename))
 	else:
@@ -721,7 +725,10 @@ def process_one_correctness_array(tuple_of_file_and_id):
 		if not this_element == "":
 			pared_failure_reasons.append(this_element)
 	failure_reason_text = "\n".join(pared_failure_reasons)
-	make_is_correct = (failure_reason_text == "")
+	if failure_reason_text == "":
+		make_is_correct = "y"
+	else:
+		make_is_correct = "n"	
 	if opts.test:
 		return failure_reason_text
 	else:
@@ -764,17 +771,19 @@ if __name__ == "__main__":
 		log("Died with '{}'".format(error_message))
 		exit()
 	
+	limit_size = 1000
+	
 	this_parser = argparse.ArgumentParser()
 	this_parser.add_argument("--test", action="store_true", dest="test",
 		help="Run tests on requests; must be run in the Tests directory")
 	this_parser.add_argument("--source", action="store", dest="source", default="skip",
 		help="Specify 'vps' or 'c01' or 'skip' to say where to pull recent files")
 	this_parser.add_argument("--limit", action="store_true", dest="limit",
-		help="Limit procesing to 1000 items")
+		help="Limit procesing to {} items".format(limit_size))
 	
 	opts = this_parser.parse_args()
 	if opts.limit:
-		log("Limiting record processing to 1000 records")
+		log("Limiting record processing to {} records".format(limit_size))
 
 	# Make sure opts.source is "vps" or "c01" or "skip"
 	if not opts.source in ("vps", "c01", "skip"):
@@ -890,9 +899,9 @@ if __name__ == "__main__":
 	# Go through the files in ~/Incoming
 	log("Started going through ~/Incoming")
 	all_files = list(glob.glob("{}/*".format(incoming_dir)))
-	# If limit is set, use only the first 1000
+	# If limit is set, use only the first few
 	if opts.limit:
-		all_files = all_files[0:1000]
+		all_files = all_files[0:limit_size]
 	processed_incoming_count = 0
 	processed_incoming_start = time.time()
 	with futures.ProcessPoolExecutor() as executor:
@@ -920,9 +929,9 @@ if __name__ == "__main__":
 	full_correctness_list = []
 	for this_initial_correct in initial_correct_to_check:
 		full_correctness_list.append(("normal", this_initial_correct[0]))
-	# If limit is set, use only the first 1000
+	# If limit is set, use only the first few
 	if opts.limit:
-		full_correctness_list = full_correctness_list[0:1000]
+		full_correctness_list = full_correctness_list[0:limit_size]
 	log("Started correctness checking on {} found".format(len(full_correctness_list)))
 	processed_correctness_count = 0
 	processed_correctness_start = time.time()
@@ -932,9 +941,6 @@ if __name__ == "__main__":
 	log("Finished correctness checking {} files in {} seconds".format(processed_correctness_count, int(time.time() - processed_correctness_start)))
 	
 	###############################################################
-	
-	# STILL TO DO: Running through record_info where is_correct is "n", using older root zones based on SOA
-	#    Will likely use updating as in "update temp1 set b = b || '{"ThrEE"}' where a = 'one';"
 	
 	# STILL TO DO: Validation in correctness checking
 	
