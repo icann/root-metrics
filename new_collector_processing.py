@@ -4,6 +4,8 @@
 # Run as the metrics user
 # Three-letter items in square brackets (such as [xyz]) refer to parts of rssac-047.md
 
+###### Need to get rid of recent_soas #######
+
 import argparse, datetime, glob, gzip, logging, os, pickle, psycopg2, socket, subprocess, shutil, tempfile, time, yaml
 from concurrent import futures
 from collections import namedtuple
