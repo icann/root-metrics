@@ -339,13 +339,13 @@ def check_for_signed_rr(list_of_records_from_section, name_of_rrtype):
 	
 ###############################################################
 
-def process_one_correctness_array(tuple_of_file_and_id):
+def process_one_correctness_array(tuple_of_type_and_filename_record):
 	# request_type is "test" or "normal"
-	# For "normal", process one filename_record
-	# For "test", process one id/pickle_blob pair
-	# Normally returns nothing because it is writing the results into the record_info database
-	# If running under opts.test, it does not write into the database but instead returns the results as text.
-	(request_type, this_filename_record) = tuple_of_file_and_id
+	#    For "normal", process one filename_record
+	#    For "test", process one id/pickle_blob pair
+	# Normally, this function returns nothing because it is writing the results into the record_info database
+	#    However, if the type is "test", the function does not write into the database but instead returns the results as text
+	(request_type, this_filename_record) = tuple_of_type_and_filename_record
 	conn = psycopg2.connect(dbname="metrics", user="metrics")
 	conn.set_session(autocommit=True)
 	if request_type == "normal":
@@ -364,8 +364,8 @@ def process_one_correctness_array(tuple_of_file_and_id):
 	elif request_type == "test":
 		(this_timeout, this_resp_pickle) = this_found[0]
 	else:
-		conn.close()
-		die("While running process_one_correctness_array, got unknown first argument '{}'".format(request_type))
+		alert("While running process_one_correctness_array on {}, got unknown first argument '{}'".format(this_filename_record, request_type))
+		return
 
 	# Before trying to load the pickled data, first see if it is a timeout; if so, set is_correct but move on [lbl]
 	if not this_timeout == "":
