@@ -723,6 +723,9 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 				cur.close()
 			except Exception as e:
 				alert("Could not update record_info in correctness checking after processing record {} as incorrect: '{}'".format(this_filename_record, e))
+			#######################
+			alert("{}: {}".format(this_filename_record, failure_text))
+			#######################
 			return
 		else:
 			pass  # Go through the loop over soas_to_test again
@@ -757,7 +760,7 @@ if __name__ == "__main__":
 		log("Died with '{}'".format(error_message))
 		exit()
 	
-	limit_size = 1000
+	limit_size = 100
 	
 	this_parser = argparse.ArgumentParser()
 	this_parser.add_argument("--test", action="store_true", dest="test",
@@ -884,7 +887,7 @@ if __name__ == "__main__":
 
 	# Go through the files in ~/Incoming
 	log("Started going through ~/Incoming")
-	all_files = list(glob.glob("{}/*".format(incoming_dir)))
+	all_files = list(glob.glob("{}/*.pickle.gz".format(incoming_dir)))
 	# If limit is set, use only the first few
 	if opts.limit:
 		all_files = all_files[0:limit_size]
