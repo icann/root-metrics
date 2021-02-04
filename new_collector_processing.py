@@ -433,6 +433,7 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 		# After this check is done, we no longer need to check RRsets from the answer against the root zone
 		for this_section_name in [ "ANSWER_SECTION", "AUTHORITY_SECTION", "ADDITIONAL_SECTION" ]:
 			if resp.get(this_section_name):
+				# Gather the non-RRSIG RRsets in this section
 				rrsets_for_checking = {}
 				for this_full_record in resp[this_section_name]:
 					# There is an error in BIND 9.16.1 and .2 where this_full_record might be a dict instead of a str. If so, ignore it. #######
@@ -442,36 +443,47 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 					(rec_qname, _, _, rec_qtype, rec_rdata) = this_full_record.split(" ", maxsplit=4)
 					if not rec_qtype == "RRSIG":  # [ygx]
 						this_key = "{}/{}".format(rec_qname, rec_qtype)
-						if not this_key in rrsets_for_checking:
-							rrsets_for_checking[this_key] = set()
-						rrsets_for_checking[this_key].add(rec_rdata)
+						rrsets_for_checking.setdefault(this_key, set()).add(rec_rdata)
+				############################################################################## need to be looking here ############################################
+				# Check each qname/qtype pair that was found in the section
 				for this_rrset_key in rrsets_for_checking:
+					# See if the qname/qtype is in the root
 					if not this_rrset_key in root_to_check:
 						failure_reasons.append("'{}' was in '{}' in the response but not the root [vnk]".format(this_rrset_key, this_section_name))
 					else:
+						# See if the length of the sets is not the same
 						if not len(rrsets_for_checking[this_rrset_key]) == len(root_to_check[this_rrset_key]):
 							failure_reasons.append("RRset '{}' in {} in response has a different length than '{}' in root zone [vnk]".\
 								format(rrsets_for_checking[this_rrset_key], this_section_name, root_to_check[this_rrset_key]))
 							continue
-						if not rrsets_for_checking[this_rrset_key] == root_to_check[this_rrset_key]:
+						# If the data is the same, that's good; continue on
+						if rrsets_for_checking[this_rrset_key] == root_to_check[this_rrset_key]:
+							continue
+						else:
 							# Before giving up, see if it is a mismatch in the text for IPv6 addresses
-							#   First see if they are sets of one; if not, this will be a normal mismatch failure
-							if len(rrsets_for_checking[this_rrset_key]) != 1 or len(root_to_check[this_rrset_key]) != 1:
-								pass
-							else:
-								resp_val = rrsets_for_checking[this_rrset_key].pop()
-								root_val = root_to_check[this_rrset_key].pop()
-								try:
-									resp_ipv6 = socket.inet_pton(socket.AF_INET6, resp_val)
-									root_ipv6 = socket.inet_pton(socket.AF_INET6, root_val)
-									if resp_ipv6 == root_ipv6:
+							if this_rrset_key.endswith("/AAAA"):
+								checking_aaaa = set()
+								for this_rdata in rrsets_for_checking[this_rrset_key]:
+									try:
+										checking_aaaa.add(socket.inet_pton(socket.AF_INET6, this_rdata))
+									except:
+										alert("Found a bad AAAA record '{}' in {} in {}, so cannot continue checking this record".format(this_rdata, this_filename_record, this_section_name))
 										continue
-								except:
-									failure_reasons.append("RRset value '{}' in {} in response is different than '{}' in root zone [vnk]".\
-										format(resp_val, this_section_name, root_val))
-									continue
-							failure_reasons.append("RRset value '{}' in {} in response is different than '{}' in root zone [vnk]".\
-								format(rrsets_for_checking[this_rrset_key], this_section_name, root_to_check[this_rrset_key]))
+								root_aaaa = set()
+								for this_rdata in root_to_check[this_rrset_key]:
+									try:
+										checking_aaaa.add(socket.inet_pton(socket.AF_INET6, this_rdata))
+									except:
+										alert("Found a bad AAAA record '{}' in {}, so cannot continue checking this record".format(this_rdata, this_root_file))
+										continue
+								for this_aaa_from_checking in checking_aaaa:
+									if not this_aaa_from_checking in root_aaaa:
+										failure_reasons.append("AAAA RRset value '{}' in {} in response is different than any AAAA '{}' in root zone [vnk]".\
+											format(this_aaa_from_checking, this_section_name, root_aaaa))
+										continue
+							else:
+								failure_reasons.append("Non-AAAA RRset value '{}' in {} in response is different than '{}' in root zone [vnk]".\
+									format(rrsets_for_checking[this_rrset_key], this_section_name, root_to_check[this_rrset_key]))
 
 		# Check that each of the RRsets that are signed have their signatures validated. [yds]
 		#   Send all the records in each section to the function that checks for validity
