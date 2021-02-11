@@ -150,7 +150,7 @@ def process_one_incoming_file(full_file):
 		try:
 			os.mkdir(original_dir_target)
 		except Exception as e:
-			log("Could not create {}; continuing")
+			log("Could not create {}; continuing".format(original_dir_target))
 	try:
 		shutil.move(full_file, original_dir_target)
 	except Exception as e:
@@ -393,6 +393,18 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 		alert("Could not get the response_message_data from the first message in {}".format(this_filename_record))
 		return
 
+	# Use this to finish checking; it appears in two places in the outer function
+	#   The outer function needs to return after this call
+	def update_database_when_finished(failure_reason_text, this_filename_record):
+		out_result = "n" if len(failure_reason_text) > 0 else "y"
+		try:
+			cur = conn.cursor()
+			cur.execute("update record_info set (is_correct, failure_reason) = (%s, %s) where filename_record = %s", (out_result, failure_reason_text, this_filename_record))
+			cur.close()
+		except Exception as e:
+			alert("Could not update record_info in correctness checking after processing record {} as incorrect: '{}'".format(this_filename_record, e))
+		return
+
 	# Store the list of SOAs and files as tuples in soas_to_test
 	if opts.test:
 		soas_to_test = [ ("TEST-SOA", "root_name_and_types.pickle") ] 
@@ -409,13 +421,12 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 		soas_to_test = []
 		for this_matched_file in sorted(matched_date_files, reverse=True):
 			soas_to_test.append( ((os.path.basename(this_matched_file))[0:10], this_matched_file) )
+		###### last_soa = soas_to_test[-1][1]
+	
+	###################
+	print("#####{}".format(soas_to_test))
 			
-	# failure_reasons holds an expanding set of reasons
-	#   It is checked at the end of testing, and all "" entries eliminted
-	#   If it is empty, then all correctness tests passed
 	for (this_soa, this_root_file) in soas_to_test:
-		# Start with no failure reasons
-		failure_reasons = []
 		# Try to read the file	
 		soa_f = open(this_root_file, mode="rb")
 		try:
@@ -426,104 +437,19 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 			else:
 				alert("Could not unpickle {} while processing {} for correctness".format(this_root_file, this_filename_record))
 				return
-	
-		# Check that each of the RRsets in the Answer, Authority, and Additional sections match RRsets found in the zone [vnk]
-		#   This check does not include any RRSIG RRsets that are not named in the matching tests below. [ygx]
-		# This check does not include any OPT RRset found in the Additional section because "dig +yaml" does not put them in the Additional section [pvz]
-		# After this check is done, we no longer need to check RRsets from the answer against the root zone
-		for this_section_name in [ "ANSWER_SECTION", "AUTHORITY_SECTION", "ADDITIONAL_SECTION" ]:
-			if resp.get(this_section_name):
-				# Gather the non-RRSIG RRsets in this section
-				rrsets_for_checking = {}
-				for this_full_record in resp[this_section_name]:
-					# There is an error in BIND 9.16.1 and .2 where this_full_record might be a dict instead of a str. If so, ignore it. #######
-					if isinstance(this_full_record, dict):
-						alert("Found record with a dict in id {}, {} {}".format(this_filename_record, this_section_name, this_full_record))
-						return
-					(rec_qname, _, _, rec_qtype, rec_rdata) = this_full_record.split(" ", maxsplit=4)
-					if not rec_qtype == "RRSIG":  # [ygx]
-						this_key = "{}/{}".format(rec_qname, rec_qtype)
-						rrsets_for_checking.setdefault(this_key, set()).add(rec_rdata)
-				############################################################################## need to be looking here ############################################
-				# Check each qname/qtype pair that was found in the section
-				for this_rrset_key in rrsets_for_checking:
-					# See if the qname/qtype is in the root
-					if not this_rrset_key in root_to_check:
-						failure_reasons.append("'{}' was in '{}' in the response but not the root [vnk]".format(this_rrset_key, this_section_name))
-					else:
-						# See if the length of the sets is not the same
-						if not len(rrsets_for_checking[this_rrset_key]) == len(root_to_check[this_rrset_key]):
-							failure_reasons.append("RRset '{}' in {} in response has a different length than '{}' in root zone [vnk]".\
-								format(rrsets_for_checking[this_rrset_key], this_section_name, root_to_check[this_rrset_key]))
-							continue
-						# If the data is the same, that's good; continue on
-						if rrsets_for_checking[this_rrset_key] == root_to_check[this_rrset_key]:
-							continue
-						else:
-							# Before giving up, see if it is a mismatch in the text for IPv6 addresses
-							if this_rrset_key.endswith("/AAAA"):
-								checking_aaaa = set()
-								for this_rdata in rrsets_for_checking[this_rrset_key]:
-									try:
-										checking_aaaa.add(socket.inet_pton(socket.AF_INET6, this_rdata))
-									except:
-										alert("Found a bad AAAA record '{}' in {} in {}, so cannot continue checking this record".format(this_rdata, this_filename_record, this_section_name))
-										continue
-								root_aaaa = set()
-								for this_rdata in root_to_check[this_rrset_key]:
-									try:
-										checking_aaaa.add(socket.inet_pton(socket.AF_INET6, this_rdata))
-									except:
-										alert("Found a bad AAAA record '{}' in {}, so cannot continue checking this record".format(this_rdata, this_root_file))
-										continue
-								for this_aaa_from_checking in checking_aaaa:
-									if not this_aaa_from_checking in root_aaaa:
-										failure_reasons.append("AAAA RRset value '{}' in {} in response is different than any AAAA '{}' in root zone [vnk]".\
-											format(this_aaa_from_checking, this_section_name, root_aaaa))
-										continue
-							else:
-								failure_reasons.append("Non-AAAA RRset value '{}' in {} in response is different than '{}' in root zone [vnk]".\
-									format(rrsets_for_checking[this_rrset_key], this_section_name, root_to_check[this_rrset_key]))
 
-		# Check that each of the RRsets that are signed have their signatures validated. [yds]
-		#   Send all the records in each section to the function that checks for validity
-		if opts.test:
-			recent_soa_root_filename = "root_zone.txt"
-		else:
-			recent_soa_root_filename = "{}/{}.root.txt".format(saved_root_zone_dir, this_soa)
-		if not os.path.exists(recent_soa_root_filename):
-			alert("Could not find {} for correctness validation, so skipping".format(recent_soa_root_filename))
-		else:
-			for this_section_name in [ "ANSWER_SECTION", "AUTHORITY_SECTION", "ADDITIONAL_SECTION" ]:
-				this_section_rrs = resp.get(this_section_name, [])
-				# Only act if this section has an RRSIG
-				rrsigs_over_rrtypes = set()
-				for this_in_rr_text in this_section_rrs:
-					# The following splits into 5 parts to expose the first field of RRSIGs
-					rr_parts = this_in_rr_text.split(" ", maxsplit=5)
-					if rr_parts[3] == "RRSIG":
-						rrsigs_over_rrtypes.add(rr_parts[4])
-				if len(rrsigs_over_rrtypes) > 0:
-					validate_f = tempfile.NamedTemporaryFile(mode="wt")
-					validate_fname = validate_f.name
-					# Go through each record, and only save the RRSIGs and the records they cover
-					for this_in_rr_text in this_section_rrs:
-						rr_parts = this_in_rr_text.split(" ", maxsplit=4)
-						if (rr_parts[3] == "RRSIG") or (rr_parts[3] in rrsigs_over_rrtypes):
-							validate_f.write(this_in_rr_text+"\n")
-					validate_f.seek(0)
-					validate_p = subprocess.run("{}/getdns_validate -s {} {}".format(target_dir, recent_soa_root_filename, validate_fname),
-						shell=True, text=True, check=True, capture_output=True)
-					validate_output = validate_p.stdout.splitlines()[0]
-					(validate_return, _) = validate_output.split(" ", maxsplit=1)
-					if not validate_return == "400":
-						failure_reasons.append("Validating {} in {} got error of '{}' [yds]".format(this_section_name, this_filename_record, validate_return))
-					validate_f.close()
-	
+		# failure_reasons holds an expanding set of reasons fore each run
+		#   If it is empty, then all correctness tests passed
+		# Start with no failure reasons
+		failure_reasons = []
+
 		# Check that all the parts of the resp structure are correct, based on the type of answer
 		question_record = resp["QUESTION_SECTION"][0]
 		(this_qname, _, this_qtype) = question_record.split(" ")
-		if resp["status"] == "NOERROR":
+		if not resp["status"] in ("NOERROR", "NXDOMAIN"):
+			failure_reasons.append("Response had a status other than NOERROR and NXDOMAIN")
+
+		elif resp["status"] == "NOERROR":  # Process for positive responses
 			if (this_qname != ".") and (this_qtype == "NS"):  # Processing for TLD / NS [hmk]
 				# The header AA bit is not set. [ujy]
 				if "aa" in resp["flags"]:
@@ -649,6 +575,7 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 					failure_reasons.append("Additional section was not empty [jws]")
 			else:
 				failure_reasons.append("Not matched: when checking NOERROR statuses, found unexpected name/type of {}/{}".format(this_qname, this_qtype))
+	
 		elif resp["status"] == "NXDOMAIN":  # Processing for negative responses [vcu]
 			# The header AA bit is set. [gpl]
 			if not "aa" in resp["flags"]:
@@ -703,44 +630,140 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 			# The Additional section is empty. [trw]
 			if resp.get("ADDITIONAL_SECTION"):
 				failure_reasons.append("Additional section was not empty [trw]")
-		else:
-			failure_reasons.append("Response had a status other than NOERROR and NXDOMAIN")
-	
-		#  Remove all failure_reasons entries which are blank
-		pared_failure_reasons = []
-		for this_element in failure_reasons:
-			if not this_element == "":
-				pared_failure_reasons.append(this_element)
 
-		# If running tests, finish here regardless of whether there were failure reasons
+		# If there are any errors, stop here instead of also trying the RRset matching and validation
+		if len(failure_reasons) > 0:
+			failure_reason_text = "\n".join(failure_reasons) + "\nTests with RRset matching and validation not done\n"
+			# If running tests, and there were failure reasons, return them
+			if opts.test:
+				return failure_reason_text
+			else:
+				update_database_when_finished(failure_reason_text, this_filename_record)
+				return
+
+		# Check that each of the RRsets in the Answer, Authority, and Additional sections match RRsets found in the zone [vnk]
+		#   This check does not include any RRSIG RRsets that are not named in the matching tests below. [ygx]
+		# This check does not include any OPT RRset found in the Additional section because "dig +yaml" does not put them in the Additional section [pvz]
+		# After this check is done, we no longer need to check RRsets from the answer against the root zone
+		for this_section_name in [ "ANSWER_SECTION", "AUTHORITY_SECTION", "ADDITIONAL_SECTION" ]:
+			if resp.get(this_section_name):
+				# Gather the non-RRSIG RRsets in this section
+				rrsets_for_checking = {}
+				for this_full_record in resp[this_section_name]:
+					# There is an error in BIND 9.16.1 and .2 where this_full_record might be a dict instead of a str. If so, ignore it. #######
+					if isinstance(this_full_record, dict):
+						alert("Found record with a dict in id {}, {} {}".format(this_filename_record, this_section_name, this_full_record))
+						return
+					(rec_qname, _, _, rec_qtype, rec_rdata) = this_full_record.split(" ", maxsplit=4)
+					if not rec_qtype == "RRSIG":  # [ygx]
+						this_key = "{}/{}".format(rec_qname, rec_qtype)
+						rrsets_for_checking.setdefault(this_key, set()).add(rec_rdata)
+				# Check each qname/qtype pair that was found in the section
+				for this_rrset_key in rrsets_for_checking:
+					# See if the qname/qtype is in the root
+					if not this_rrset_key in root_to_check:
+						failure_reasons.append("'{}' was in '{}' in the response but not the root [vnk]".format(this_rrset_key, this_section_name))
+					else:
+						# See if the length of the sets is not the same
+						if not len(rrsets_for_checking[this_rrset_key]) == len(root_to_check[this_rrset_key]):
+							failure_reasons.append("RRset '{}' in {} in response has a different length than '{}' in root zone [vnk]".\
+								format(rrsets_for_checking[this_rrset_key], this_section_name, root_to_check[this_rrset_key]))
+							continue
+						# If the data is the same, that's good; continue on
+						if rrsets_for_checking[this_rrset_key] == root_to_check[this_rrset_key]:
+							continue
+						else:
+							# Before giving up, see if it is a mismatch in the text for IPv6 addresses
+							if this_rrset_key.endswith("/AAAA"):
+								checking_aaaa = set()
+								for this_rdata in rrsets_for_checking[this_rrset_key]:
+									try:
+										checking_aaaa.add(socket.inet_pton(socket.AF_INET6, this_rdata))
+									except:
+										alert("Found a bad AAAA record '{}' in {} in {}, so cannot continue checking this record".format(this_rdata, this_filename_record, this_section_name))
+										continue
+								root_aaaa = set()
+								for this_rdata in root_to_check[this_rrset_key]:
+									try:
+										checking_aaaa.add(socket.inet_pton(socket.AF_INET6, this_rdata))
+									except:
+										alert("Found a bad AAAA record '{}' in {}, so cannot continue checking this record".format(this_rdata, this_root_file))
+										continue
+								for this_aaa_from_checking in checking_aaaa:
+									if not this_aaa_from_checking in root_aaaa:
+										failure_reasons.append("AAAA RRset value '{}' in {} in response is different than any AAAA '{}' in root zone [vnk]".\
+											format(this_aaa_from_checking, this_section_name, root_aaaa))
+										continue
+							else:
+								failure_reasons.append("Non-AAAA RRset value '{}' in {} in response is different than '{}' in root zone [vnk]".\
+									format(rrsets_for_checking[this_rrset_key], this_section_name, root_to_check[this_rrset_key]))
+
+		# If there are any errors, stop here instead of also trying the validation
+		if len(failure_reasons) > 0:
+			failure_reason_text = "\n".join(failure_reasons) + "\nTests with validation not done\n"
+			# If running tests, and there were failure reasons, return them
+			if opts.test:
+				return failure_reason_text
+			else:
+				update_database_when_finished(failure_reason_text, this_filename_record)
+				return
+
+		# Check that each of the RRsets that are signed have their signatures validated. [yds]
+		#   Send all the records in each section to the function that checks for validity
 		if opts.test:
-			return "\n".join(pared_failure_reasons)
-
-		# If there are no failure reasons, the record passes
-		if len(pared_failure_reasons) == 0:
-			try:
-				cur = conn.cursor()
-				cur.execute("update record_info set (is_correct, failure_reason) = ('y', '') where filename_record = %s", (this_filename_record, ))
-				cur.close()
-			except Exception as e:
-				alert("Could not update record_info in correctness checking after processing record {} as correct: '{}'".format(this_filename_record, e))
-			return
-		# Here if there is failure reason
-		#   See if this is the last SOA by comparing it to the last SOA in soas_to_test
-		if this_soa == soas_to_test[-1][0]:
-			failure_text = "Failed after testing against SOAs {}\n{}".format(" ".join([x[0] for x in soas_to_test]), "\n".join(pared_failure_reasons))
-			try:
-				cur = conn.cursor()
-				cur.execute("update record_info set (is_correct, failure_reason) = ('n', %s) where filename_record = %s", (failure_text, this_filename_record))
-				cur.close()
-			except Exception as e:
-				alert("Could not update record_info in correctness checking after processing record {} as incorrect: '{}'".format(this_filename_record, e))
-			#######################
-			alert("{}: {}".format(this_filename_record, failure_text))
-			#######################
-			return
+			recent_soa_root_filename = "root_zone.txt"
 		else:
-			pass  # Go through the loop over soas_to_test again
+			recent_soa_root_filename = "{}/{}.root.txt".format(saved_root_zone_dir, this_soa)
+		if not os.path.exists(recent_soa_root_filename):
+			alert("Could not find {} for correctness validation, so skipping".format(recent_soa_root_filename))
+		else:
+			for this_section_name in [ "ANSWER_SECTION", "AUTHORITY_SECTION", "ADDITIONAL_SECTION" ]:
+				this_section_rrs = resp.get(this_section_name, [])
+				# Only act if this section has an RRSIG
+				rrsigs_over_rrtypes = set()
+				for this_in_rr_text in this_section_rrs:
+					# The following splits into 5 parts to expose the first field of RRSIGs
+					rr_parts = this_in_rr_text.split(" ", maxsplit=5)
+					if rr_parts[3] == "RRSIG":
+						rrsigs_over_rrtypes.add(rr_parts[4])
+				if len(rrsigs_over_rrtypes) > 0:
+					validate_f = tempfile.NamedTemporaryFile(mode="wt")
+					validate_fname = validate_f.name
+					# Go through each record, and only save the RRSIGs and the records they cover
+					for this_in_rr_text in this_section_rrs:
+						rr_parts = this_in_rr_text.split(" ", maxsplit=4)
+						if (rr_parts[3] == "RRSIG") or (rr_parts[3] in rrsigs_over_rrtypes):
+							validate_f.write(this_in_rr_text+"\n")
+					validate_f.seek(0)
+					validate_p = subprocess.run("{}/getdns_validate -s {} {}".format(target_dir, recent_soa_root_filename, validate_fname),
+						shell=True, text=True, check=True, capture_output=True)
+					validate_output = validate_p.stdout.splitlines()[0]
+					(validate_return, _) = validate_output.split(" ", maxsplit=1)
+					if not validate_return == "400":
+						failure_reasons.append("Validating {} in {} got error of '{}' [yds]".format(this_section_name, this_filename_record, validate_return))
+					validate_f.close()
+
+		# If there no errors, we're done, no need to try other SOAs
+		if len(failure_reasons) == 0:
+			if opts.test:
+				return ""
+			else:
+				update_database_when_finished("", this_filename_record)
+				return
+
+		# Here if there were errors. If there are still more entries in soas_to_test, they will be tried; otherwise, it will fall off to a validation failure
+			
+	# Here if went through all the SOAs and got a validation failure for the last SOA tested
+	#   Because the SOAs were tried in reverse order, this_soa is the highest SOA in the list
+	failure_reason_text = "\n".join(failure_reasons) + "\nFailed in {} after trying in all SOAs ({})\n".format(this_soa, " ".join(soas_to_test))
+	# If running tests, return regardless
+	if opts.test:
+		return failure_reason_text
+	else:
+		update_database_when_finished(failure_reason_text, this_filename_record)
+		return
+	
+
 
 ###############################################################
 
