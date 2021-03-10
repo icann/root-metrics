@@ -417,14 +417,13 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 		# Note that a single date will have multiple SOAs, so add the files as groups
 		for this_start in [start_date, start_date_minus_one, start_date_minus_two]:
 			matched_date_files.extend(glob.glob("{}/{}*.matching.pickle".format(saved_matching_dir, this_start.strftime("%Y%m%d"))))
+		if len(matched_date_files) == 0:
+			alert("There were no matched files for start date {}".format(start_date))
+			return
 		# Store the list of SOAs in descending order by SOA
 		soas_to_test = []
 		for this_matched_file in sorted(matched_date_files, reverse=True):
 			soas_to_test.append( ((os.path.basename(this_matched_file))[0:10], this_matched_file) )
-		###### last_soa = soas_to_test[-1][1]
-	
-	###################
-	print("#####{}".format(soas_to_test))
 			
 	for (this_soa, this_root_file) in soas_to_test:
 		# Try to read the file	
@@ -755,7 +754,9 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 			
 	# Here if went through all the SOAs and got a validation failure for the last SOA tested
 	#   Because the SOAs were tried in reverse order, this_soa is the highest SOA in the list
-	failure_reason_text = "\n".join(failure_reasons) + "\nFailed in {} after trying in all SOAs ({})\n".format(this_soa, " ".join(soas_to_test))
+	failure_reason_text = "{}\n".format("\n".join(failure_reasons))
+	failure_reason_text += "Failed in SOA {}".format(this_soa)
+	failure_reason_text += " after trying in all SOAs ({})\n".format(" ".join([ x[0] for x in soas_to_test]))
 	# If running tests, return regardless
 	if opts.test:
 		return failure_reason_text
