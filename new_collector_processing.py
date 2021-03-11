@@ -709,38 +709,46 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 
 		# Check that each of the RRsets that are signed have their signatures validated. [yds]
 		#   Send all the records in each section to the function that checks for validity
-		if opts.test:
-			recent_soa_root_filename = "root_zone.txt"
+		################################################################################################################
+		#   Due to mysterious errors coming from getdns_validate, validation is temporarily turned off
+		################################################################################################################
+		if True:
+			pass
 		else:
-			recent_soa_root_filename = "{}/{}.root.txt".format(saved_root_zone_dir, this_soa)
-		if not os.path.exists(recent_soa_root_filename):
-			alert("Could not find {} for correctness validation, so skipping".format(recent_soa_root_filename))
-		else:
-			for this_section_name in [ "ANSWER_SECTION", "AUTHORITY_SECTION", "ADDITIONAL_SECTION" ]:
-				this_section_rrs = resp.get(this_section_name, [])
-				# Only act if this section has an RRSIG
-				rrsigs_over_rrtypes = set()
-				for this_in_rr_text in this_section_rrs:
-					# The following splits into 5 parts to expose the first field of RRSIGs
-					rr_parts = this_in_rr_text.split(" ", maxsplit=5)
-					if rr_parts[3] == "RRSIG":
-						rrsigs_over_rrtypes.add(rr_parts[4])
-				if len(rrsigs_over_rrtypes) > 0:
-					validate_f = tempfile.NamedTemporaryFile(mode="wt")
-					validate_fname = validate_f.name
-					# Go through each record, and only save the RRSIGs and the records they cover
+			if opts.test:
+				recent_soa_root_filename = "root_zone.txt"
+			else:
+				recent_soa_root_filename = "{}/{}.root.txt".format(saved_root_zone_dir, this_soa)
+			if not os.path.exists(recent_soa_root_filename):
+				alert("Could not find {} for correctness validation, so skipping".format(recent_soa_root_filename))
+			else:
+				for this_section_name in [ "ANSWER_SECTION", "AUTHORITY_SECTION", "ADDITIONAL_SECTION" ]:
+					this_section_rrs = resp.get(this_section_name, [])
+					# Only act if this section has an RRSIG
+					rrsigs_over_rrtypes = set()
 					for this_in_rr_text in this_section_rrs:
-						rr_parts = this_in_rr_text.split(" ", maxsplit=4)
-						if (rr_parts[3] == "RRSIG") or (rr_parts[3] in rrsigs_over_rrtypes):
-							validate_f.write(this_in_rr_text+"\n")
-					validate_f.seek(0)
-					validate_p = subprocess.run("{}/getdns_validate -s {} {}".format(target_dir, recent_soa_root_filename, validate_fname),
-						shell=True, text=True, check=True, capture_output=True)
-					validate_output = validate_p.stdout.splitlines()[0]
-					(validate_return, _) = validate_output.split(" ", maxsplit=1)
-					if not validate_return == "400":
-						failure_reasons.append("Validating {} in {} got error of '{}' [yds]".format(this_section_name, this_filename_record, validate_return))
-					validate_f.close()
+						# The following splits into 5 parts to expose the first field of RRSIGs
+						rr_parts = this_in_rr_text.split(" ", maxsplit=5)
+						if rr_parts[3] == "RRSIG":
+							rrsigs_over_rrtypes.add(rr_parts[4])
+					if len(rrsigs_over_rrtypes) > 0:
+						validate_f = tempfile.NamedTemporaryFile(mode="wt")
+						validate_fname = validate_f.name
+						# Go through each record, and only save the RRSIGs and the records they cover
+						for this_in_rr_text in this_section_rrs:
+							rr_parts = this_in_rr_text.split(" ", maxsplit=4)
+							if (rr_parts[3] == "RRSIG") or (rr_parts[3] in rrsigs_over_rrtypes):
+								validate_f.write(this_in_rr_text+"\n")
+						validate_f.seek(0)
+						validate_p = subprocess.run("{}/getdns_validate -s {} {}".format(target_dir, recent_soa_root_filename, validate_fname),
+							shell=True, text=True, check=True, capture_output=True)
+						validate_output = validate_p.stdout.splitlines()[0]
+						(validate_return, _) = validate_output.split(" ", maxsplit=1)
+						if not validate_return == "400":
+							input_file_contents = open(validate_fname, "rt").read()
+							failure_reasons.append("Validating {} in {} with {} gave code {} [yds]\n{}"\
+								.format(this_section_name, this_filename_record, recent_soa_root_filename, validate_return, input_file_contents))
+						validate_f.close()
 
 		# If there no errors, we're done, no need to try other SOAs
 		if len(failure_reasons) == 0:
