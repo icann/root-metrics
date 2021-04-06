@@ -425,6 +425,8 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 		for this_matched_file in sorted(matched_date_files, reverse=True):
 			soas_to_test.append( ((os.path.basename(this_matched_file))[0:10], this_matched_file) )
 			
+	# Loop over the SOAs
+	per_soa_results = {}
 	for (this_soa, this_root_file) in soas_to_test:
 		# Try to read the file	
 		soa_f = open(this_root_file, mode="rb")
@@ -698,57 +700,49 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 									format(rrsets_for_checking[this_rrset_key], this_section_name, root_to_check[this_rrset_key]))
 
 		# If there are any errors, stop here instead of also trying the validation
-		if len(failure_reasons) > 0:
-			failure_reason_text = "\n".join(failure_reasons) + "\nTests with validation not done\n"
-			# If running tests, and there were failure reasons, return them
-			if opts.test:
-				return failure_reason_text
+		if len(failure_reasons) == 0:
+			# Check that each of the RRsets that are signed have their signatures validated. [yds]
+			#   Send all the records in each section to the function that checks for validity
+			################################################################################################################
+			#   Due to unexplainable errors coming from getdns_validate, validation is temporarily turned off
+			################################################################################################################
+			if True:
+				pass
 			else:
-				update_database_when_finished(failure_reason_text, this_filename_record)
-				return
-
-		# Check that each of the RRsets that are signed have their signatures validated. [yds]
-		#   Send all the records in each section to the function that checks for validity
-		################################################################################################################
-		#   Due to mysterious errors coming from getdns_validate, validation is temporarily turned off
-		################################################################################################################
-		if True:
-			pass
-		else:
-			if opts.test:
-				recent_soa_root_filename = "root_zone.txt"
-			else:
-				recent_soa_root_filename = "{}/{}.root.txt".format(saved_root_zone_dir, this_soa)
-			if not os.path.exists(recent_soa_root_filename):
-				alert("Could not find {} for correctness validation, so skipping".format(recent_soa_root_filename))
-			else:
-				for this_section_name in [ "ANSWER_SECTION", "AUTHORITY_SECTION", "ADDITIONAL_SECTION" ]:
-					this_section_rrs = resp.get(this_section_name, [])
-					# Only act if this section has an RRSIG
-					rrsigs_over_rrtypes = set()
-					for this_in_rr_text in this_section_rrs:
-						# The following splits into 5 parts to expose the first field of RRSIGs
-						rr_parts = this_in_rr_text.split(" ", maxsplit=5)
-						if rr_parts[3] == "RRSIG":
-							rrsigs_over_rrtypes.add(rr_parts[4])
-					if len(rrsigs_over_rrtypes) > 0:
-						validate_f = tempfile.NamedTemporaryFile(mode="wt")
-						validate_fname = validate_f.name
-						# Go through each record, and only save the RRSIGs and the records they cover
+				if opts.test:
+					recent_soa_root_filename = "root_zone.txt"
+				else:
+					recent_soa_root_filename = "{}/{}.root.txt".format(saved_root_zone_dir, this_soa)
+				if not os.path.exists(recent_soa_root_filename):
+					alert("Could not find {} for correctness validation, so skipping".format(recent_soa_root_filename))
+				else:
+					for this_section_name in [ "ANSWER_SECTION", "AUTHORITY_SECTION", "ADDITIONAL_SECTION" ]:
+						this_section_rrs = resp.get(this_section_name, [])
+						# Only act if this section has an RRSIG
+						rrsigs_over_rrtypes = set()
 						for this_in_rr_text in this_section_rrs:
-							rr_parts = this_in_rr_text.split(" ", maxsplit=4)
-							if (rr_parts[3] == "RRSIG") or (rr_parts[3] in rrsigs_over_rrtypes):
-								validate_f.write(this_in_rr_text+"\n")
-						validate_f.seek(0)
-						validate_p = subprocess.run("{}/getdns_validate -s {} {}".format(target_dir, recent_soa_root_filename, validate_fname),
-							shell=True, text=True, check=True, capture_output=True)
-						validate_output = validate_p.stdout.splitlines()[0]
-						(validate_return, _) = validate_output.split(" ", maxsplit=1)
-						if not validate_return == "400":
-							input_file_contents = open(validate_fname, "rt").read()
-							failure_reasons.append("Validating {} in {} with {} gave code {} [yds]\n{}"\
-								.format(this_section_name, this_filename_record, recent_soa_root_filename, validate_return, input_file_contents))
-						validate_f.close()
+							# The following splits into 5 parts to expose the first field of RRSIGs
+							rr_parts = this_in_rr_text.split(" ", maxsplit=5)
+							if rr_parts[3] == "RRSIG":
+								rrsigs_over_rrtypes.add(rr_parts[4])
+						if len(rrsigs_over_rrtypes) > 0:
+							validate_f = tempfile.NamedTemporaryFile(mode="wt")
+							validate_fname = validate_f.name
+							# Go through each record, and only save the RRSIGs and the records they cover
+							for this_in_rr_text in this_section_rrs:
+								rr_parts = this_in_rr_text.split(" ", maxsplit=4)
+								if (rr_parts[3] == "RRSIG") or (rr_parts[3] in rrsigs_over_rrtypes):
+									validate_f.write(this_in_rr_text+"\n")
+							validate_f.seek(0)
+							validate_p = subprocess.run("{}/getdns_validate -s {} {}".format(target_dir, recent_soa_root_filename, validate_fname),
+								shell=True, text=True, check=True, capture_output=True)
+							validate_output = validate_p.stdout.splitlines()[0]
+							(validate_return, _) = validate_output.split(" ", maxsplit=1)
+							if not validate_return == "400":
+								input_file_contents = open(validate_fname, "rt").read()
+								failure_reasons.append("Validating {} in {} with {} gave code {} [yds]\n{}"\
+									.format(this_section_name, this_filename_record, recent_soa_root_filename, validate_return, input_file_contents))
+							validate_f.close()
 
 		# If there no errors, we're done, no need to try other SOAs
 		if len(failure_reasons) == 0:
@@ -759,12 +753,17 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 				return
 
 		# Here if there were errors. If there are still more entries in soas_to_test, they will be tried; otherwise, it will fall off to a validation failure
+		per_soa_results[this_soa] = failure_reasons
 			
 	# Here if went through all the SOAs and got a validation failure for the last SOA tested
+	highest_failure_soa = max(per_soa_results.keys())
 	#   Because the SOAs were tried in reverse order, this_soa is the highest SOA in the list
-	failure_reason_text = "{}\n".format("\n".join(failure_reasons))
-	failure_reason_text += "Failed in SOA {}".format(this_soa)
+	failure_reason_text = "{}\n".format("\n".join(per_soa_results[highest_failure_soa]))
+	failure_reason_text += "Failed in SOA {}".format(highest_failure_soa)
 	failure_reason_text += " after trying in all SOAs ({})\n".format(" ".join([ x[0] for x in soas_to_test]))
+	debug("Correctness failure for {}".format(this_filename_record))
+	for this_soa in per_soa_results:
+		debug(per_soa_results[this_soa])
 	# If running tests, return regardless
 	if opts.test:
 		return failure_reason_text
@@ -784,6 +783,7 @@ if __name__ == "__main__":
 	# Set up the logging and alert mechanisms
 	log_file_name = "{}/collector-log.txt".format(log_dir)
 	alert_file_name = "{}/collector-alert.txt".format(log_dir)
+	debug_file_name = "{}/collector-debug.txt".format(log_dir)
 	vp_log = logging.getLogger("logging")
 	vp_log.setLevel(logging.INFO)
 	log_handler = logging.FileHandler(log_file_name)
@@ -794,6 +794,11 @@ if __name__ == "__main__":
 	alert_handler = logging.FileHandler(alert_file_name)
 	alert_handler.setFormatter(logging.Formatter("%(asctime)s %(message)s"))
 	vp_alert.addHandler(alert_handler)
+	vp_debug = logging.getLogger("debug")
+	vp_debug.setLevel(logging.DEBUG)
+	debug_handler = logging.FileHandler(debug_file_name)
+	debug_handler.setFormatter(logging.Formatter("%(asctime)s %(message)s"))
+	vp_debug.addHandler(debug_handler)
 	def log(log_message):
 		vp_log.info(log_message)
 	def alert(alert_message):
@@ -803,8 +808,10 @@ if __name__ == "__main__":
 		vp_alert.critical(error_message)
 		log("Died with '{}'".format(error_message))
 		exit()
+	def debug(debug_message):
+		vp_debug.debug(debug_message)
 	
-	limit_size = 100
+	limit_size = 100000
 	
 	this_parser = argparse.ArgumentParser()
 	this_parser.add_argument("--test", action="store_true", dest="test",
@@ -816,7 +823,7 @@ if __name__ == "__main__":
 	
 	opts = this_parser.parse_args()
 	if opts.limit:
-		log("Limiting record processing to {} records".format(limit_size))
+		log("Limiting record processing to {} files".format(limit_size))
 
 	# Make sure opts.source is "vps" or "c01" or "skip"
 	if not opts.source in ("vps", "c01", "skip"):
@@ -962,9 +969,9 @@ if __name__ == "__main__":
 	full_correctness_list = []
 	for this_initial_correct in initial_correct_to_check:
 		full_correctness_list.append(("normal", this_initial_correct[0]))
-	# If limit is set, use only the first few
-	if opts.limit:
-		full_correctness_list = full_correctness_list[0:limit_size]
+	##### # If limit is set, use only the first few
+	##### if opts.limit:
+	#####	full_correctness_list = full_correctness_list[0:limit_size]
 	log("Started correctness checking on {} found".format(len(full_correctness_list)))
 	processed_correctness_count = 0
 	processed_correctness_start = time.time()
