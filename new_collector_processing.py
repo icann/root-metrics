@@ -150,7 +150,7 @@ def process_one_incoming_file(full_file):
 		try:
 			os.mkdir(original_dir_target)
 		except Exception as e:
-			log("Could not create {}; continuing".format(original_dir_target))
+			log("Could not create {} but it might already have just been created; continuing".format(original_dir_target))
 	try:
 		shutil.move(full_file, original_dir_target)
 	except Exception as e:
@@ -252,9 +252,15 @@ def process_one_incoming_file(full_file):
 			continue
 			
 		# Get it out of YAML and do basic sanity checks
-		#   Stuff saved as "YAML fix" would go here
+		#   BIND sometimes puts out bad YAML by having colons at the end of unquoted strings for IPv6 addresses in AAAA records
+		#   If so, add a "0" on those lines
+		in_yaml_lines = this_resp[6].splitlines()
+		for (line_number, this_line) in enumerate(in_yaml_lines):
+			if len(this_line) > 0 and this_line.lstrip()[0] == "-" and this_line.rstrip().endswith(":"):
+				in_yaml_lines[line_number] = in_yaml_lines[line_number] + "0"
+		in_yaml_fixed = "\n".join(in_yaml_lines)
 		try:
-			this_resp_obj = yaml.load(this_resp[6])
+			this_resp_obj = yaml.load(in_yaml_fixed)
 		except Exception as e:
 			alert("Could not interpret YAML from {} of {}: '{}'".format(response_count, full_file, e))
 			continue
@@ -632,16 +638,6 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 			if resp.get("ADDITIONAL_SECTION"):
 				failure_reasons.append("Additional section was not empty [trw]")
 
-		# If there are any errors, stop here instead of also trying the RRset matching and validation
-		if len(failure_reasons) > 0:
-			failure_reason_text = "\n".join(failure_reasons) + "\nTests with RRset matching and validation not done\n"
-			# If running tests, and there were failure reasons, return them
-			if opts.test:
-				return failure_reason_text
-			else:
-				update_database_when_finished(failure_reason_text, this_filename_record)
-				return
-
 		# Check that each of the RRsets in the Answer, Authority, and Additional sections match RRsets found in the zone [vnk]
 		#   This check does not include any RRSIG RRsets that are not named in the matching tests below. [ygx]
 		# This check does not include any OPT RRset found in the Additional section because "dig +yaml" does not put them in the Additional section [pvz]
@@ -675,24 +671,25 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 							continue
 						else:
 							# Before giving up, see if it is a mismatch in the text for IPv6 addresses
+							#  Normalize IPv6 strings with socket.inet_ntop(socket.AF_INET6, (socket.inet_pton(socket.AF_INET6, this_rdata)))
 							if this_rrset_key.endswith("/AAAA"):
 								checking_aaaa = set()
 								for this_rdata in rrsets_for_checking[this_rrset_key]:
 									try:
-										checking_aaaa.add(socket.inet_pton(socket.AF_INET6, this_rdata))
+										checking_aaaa.add(socket.inet_ntop(socket.AF_INET6, (socket.inet_pton(socket.AF_INET6, this_rdata))))
 									except:
 										alert("Found a bad AAAA record '{}' in {} in {}, so cannot continue checking this record".format(this_rdata, this_filename_record, this_section_name))
 										continue
 								root_aaaa = set()
 								for this_rdata in root_to_check[this_rrset_key]:
 									try:
-										checking_aaaa.add(socket.inet_pton(socket.AF_INET6, this_rdata))
+										root_aaaa.add(socket.inet_ntop(socket.AF_INET6, (socket.inet_pton(socket.AF_INET6, this_rdata))))
 									except:
 										alert("Found a bad AAAA record '{}' in {}, so cannot continue checking this record".format(this_rdata, this_root_file))
 										continue
 								for this_aaa_from_checking in checking_aaaa:
 									if not this_aaa_from_checking in root_aaaa:
-										failure_reasons.append("AAAA RRset value '{}' in {} in response is different than any AAAA '{}' in root zone [vnk]".\
+										failure_reasons.append("AAAA RRset value '{}' in {} in response is different than any AAAA RRset '{}' in root zone [vnk]".\
 											format(this_aaa_from_checking, this_section_name, root_aaaa))
 										continue
 							else:
@@ -760,10 +757,10 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 	#   Because the SOAs were tried in reverse order, this_soa is the highest SOA in the list
 	failure_reason_text = "{}\n".format("\n".join(per_soa_results[highest_failure_soa]))
 	failure_reason_text += "Failed in SOA {}".format(highest_failure_soa)
-	failure_reason_text += " after trying in all SOAs ({})\n".format(" ".join([ x[0] for x in soas_to_test]))
-	debug("Correctness failure for {}".format(this_filename_record))
+	failure_reason_text += " after trying in all SOAs ({})".format(" ".join([ x[0] for x in soas_to_test]))
+	debug("Correctness failure for {}\n{}".format(this_filename_record, failure_reason_text))
 	for this_soa in per_soa_results:
-		debug(per_soa_results[this_soa])
+		debug("{}: {}".format(this_soa, per_soa_results[this_soa]))
 	# If running tests, return regardless
 	if opts.test:
 		return failure_reason_text
@@ -782,36 +779,36 @@ if __name__ == "__main__":
 		os.mkdir(log_dir)
 	# Set up the logging and alert mechanisms
 	log_file_name = "{}/collector-log.txt".format(log_dir)
-	alert_file_name = "{}/collector-alert.txt".format(log_dir)
-	debug_file_name = "{}/collector-debug.txt".format(log_dir)
 	vp_log = logging.getLogger("logging")
 	vp_log.setLevel(logging.INFO)
 	log_handler = logging.FileHandler(log_file_name)
 	log_handler.setFormatter(logging.Formatter("%(asctime)s %(message)s"))
 	vp_log.addHandler(log_handler)
+	alert_file_name = "{}/collector-alert.txt".format(log_dir)
 	vp_alert = logging.getLogger("alerts")
 	vp_alert.setLevel(logging.CRITICAL)
 	alert_handler = logging.FileHandler(alert_file_name)
 	alert_handler.setFormatter(logging.Formatter("%(asctime)s %(message)s"))
 	vp_alert.addHandler(alert_handler)
+	debug_file_name = "{}/collector-debug.txt".format(log_dir)
 	vp_debug = logging.getLogger("debug")
 	vp_debug.setLevel(logging.DEBUG)
 	debug_handler = logging.FileHandler(debug_file_name)
-	debug_handler.setFormatter(logging.Formatter("%(asctime)s %(message)s"))
+	debug_handler.setFormatter(logging.Formatter("%(message)s"))
 	vp_debug.addHandler(debug_handler)
 	def log(log_message):
 		vp_log.info(log_message)
 	def alert(alert_message):
 		vp_alert.critical(alert_message)
 		log(alert_message)
+	def debug(debug_message):
+		vp_debug.debug(debug_message + "\n")
 	def die(error_message):
 		vp_alert.critical(error_message)
 		log("Died with '{}'".format(error_message))
 		exit()
-	def debug(debug_message):
-		vp_debug.debug(debug_message)
 	
-	limit_size = 100000
+	limit_size = 10000
 	
 	this_parser = argparse.ArgumentParser()
 	this_parser.add_argument("--test", action="store_true", dest="test",
@@ -831,10 +828,6 @@ if __name__ == "__main__":
 
 	# Where the binaries are
 	target_dir = "/home/metrics/Target"	
-	# Where to put the SFTP batch files
-	batch_dir = os.path.expanduser("{}/Batches".format(log_dir))
-	if not os.path.exists(batch_dir):
-		os.mkdir(batch_dir)
 	# Where to store the incoming files comeing from the vantage points
 	incoming_dir = os.path.expanduser("~/Incoming")
 	if not os.path.exists(incoming_dir):
@@ -854,7 +847,11 @@ if __name__ == "__main__":
 	saved_matching_dir = "{}/RootMatching".format(output_dir)
 	if not os.path.exists(saved_matching_dir):
 		os.mkdir(saved_matching_dir)
-
+	# Where to put the SFTP batch files
+	batch_dir = os.path.expanduser("{}/Batches".format(output_dir))
+	if not os.path.exists(batch_dir):
+		os.mkdir(batch_dir)
+	
 	###############################################################
 
 	# Tests can be run outside the normal cron job. Exits when done.
@@ -978,7 +975,7 @@ if __name__ == "__main__":
 	with futures.ProcessPoolExecutor() as executor:
 		for (this_correctness, _) in zip(full_correctness_list, executor.map(process_one_correctness_array, full_correctness_list, chunksize=1000)):
 			processed_correctness_count += 1
-	log("Finished correctness checking {} files in {} seconds".format(processed_correctness_count, int(time.time() - processed_correctness_start)))
+	log("Finished correctness checking {} records in {} seconds".format(processed_correctness_count, int(time.time() - processed_correctness_start)))
 	
 	###############################################################
 	
