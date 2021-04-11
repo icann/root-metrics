@@ -239,10 +239,11 @@ def process_one_incoming_file(full_file):
 			alert("Found a response type {}, which is not S or C, in record {} of {}".format(this_resp[4], response_count, full_file))
 			continue
 		insert_template = "insert into record_info ({}) values ({})".format(template_names_with_commas, percent_s_string)
-		# Note that the default value for is_correct is "?" so that the test for "has correctness been checked" can still be against "y" or "n", which is set below
+		# Note that the default value for is_correct is "?" for type "C" so that the test for "has correctness been checked" can still be against "y" or "n", which is set below
+		this_corr = "?" if this_resp[4] == "C" else ""
 		insert_values = insert_values_template(filename_record="{}-{}".format(short_file, response_count), date_derived=file_date, \
 			rsi=this_resp[0], internet=this_resp[1], transport=this_resp[2], ip_addr=this_resp[3], record_type=this_resp[4], prog_elapsed=this_resp[5], \
-			dig_elapsed=0.0, timeout="", soa_found="", is_correct="?", failure_reason="", source_pickle=b"")
+			dig_elapsed=0.0, timeout="", soa_found="", is_correct=this_corr, failure_reason="", source_pickle=b"")
 
 		# If what was supposed to be YAML is an empty string, it means that dig could not get a route to the server
 		#   In this case, make it a timeout, and don't fill in any other data [dfl] [dks]
@@ -467,7 +468,8 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 				# The Authority section contains the entire NS RRset for the query name. [pdd]
 				if not resp.get("AUTHORITY_SECTION"):
 					failure_reasons.append("Authority section was empty [pdd]")
-				root_ns_for_qname = root_to_check["{}/NS".format(this_qname)]
+				# The TLD might not be in this root zone because it has been reoved from the root
+				root_ns_for_qname = root_to_check.get("{}/NS".format(this_qname))
 				auth_ns_for_qname = set()
 				for this_rec in resp["AUTHORITY_SECTION"]:
 					(rec_qname, _, _, rec_qtype, rec_rdata) = this_rec.split(" ", maxsplit=4)
@@ -693,8 +695,10 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 											format(this_aaa_from_checking, this_section_name, root_aaaa))
 										continue
 							else:
-								failure_reasons.append("Non-AAAA RRset value '{}' in {} in response is different than '{}' in root zone [vnk]".\
-									format(rrsets_for_checking[this_rrset_key], this_section_name, root_to_check[this_rrset_key]))
+								# Don't need to check for ./SOA again
+								if not this_rrset_key.endswith("/SOA"):
+									failure_reasons.append("Non-AAAA RRset value '{}' in {} in response is different than '{}' in root zone [vnk]".\
+										format(rrsets_for_checking[this_rrset_key], this_section_name, root_to_check[this_rrset_key]))
 
 		# If there are any errors, stop here instead of also trying the validation
 		if len(failure_reasons) == 0:
@@ -966,9 +970,6 @@ if __name__ == "__main__":
 	full_correctness_list = []
 	for this_initial_correct in initial_correct_to_check:
 		full_correctness_list.append(("normal", this_initial_correct[0]))
-	##### # If limit is set, use only the first few
-	##### if opts.limit:
-	#####	full_correctness_list = full_correctness_list[0:limit_size]
 	log("Started correctness checking on {} found".format(len(full_correctness_list)))
 	processed_correctness_count = 0
 	processed_correctness_start = time.time()
