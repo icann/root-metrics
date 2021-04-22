@@ -75,7 +75,7 @@ Some vantage point measurements have timeouts or are designed to measure elapsed
 
 For connectionless requests (i.e., over UDP) a timer starts immediately after the UDP message has been sent. It stops when the entire response has been received. `[tsm]`
 
-For connection-based requests (e.g., over TCP) a timer starts when the connection is initiated. It stops when the entire DNS response has been received (although not waiting for the TCP connection to close). `[epp]`
+For connection-based requests (e.g., over TCP) a timer starts when the connection is initiated. It stops when the entire DNS response has been received (although not waiting for the TCP connection to close). `[epp]` __*The current implementation uses `dig`, which does not include the connection setup time at the beginning of the TCP query.*__
 
 __*Requirements in this paragraph are not currently implemented.*__ Some features such as TCP Fast Open (TFO) reduce connection setup delays. None of those features should be turned on in the measurement platform. `[zbf]` Environments and/or operating systems that do not allow TFO to be disabled should not be used for these measurements, if at all possible. `[jbt]`
 
