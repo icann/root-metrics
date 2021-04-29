@@ -69,7 +69,7 @@ The repo has a Markdown version of excerpts of [RSSAC047](rssac-047.md) as the f
 	- Find records in the correctness table that have not been checked, and check them
 	- Reports why any failure happens
 
-- `produce_reports.py`
+- `report_creator.py`
 	- Run from cron job every week, and on the first of each month
 	- `--debug` to add debugging info to the report
 	- `--force` to recreate a report that already exists
