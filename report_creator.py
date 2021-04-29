@@ -124,21 +124,22 @@ if __name__ == "__main__":
 	where_clause = "where date_derived between '{}' and  '{}' ".format(first_of_last_month_timestamp, end_of_last_month_timestamp)
 
 	# Get all the SOA records for this month
-	cur.execute("select file_prefix, date_derived, vp, rsi, internet, transport, dig_elapsed, timeout, soa from public.soa_info "\
-		+ "{} order by date_derived".format(where_clause))
+	cur.execute("select filename_record, date_derived, rsi, internet, transport, dig_elapsed, timeout, soa_found from public.record_info "\
+		+ "{} and record_type = 'S' order by date_derived".format(where_clause))
 	soa_recs = cur.fetchall()
 	log("Found {} SOA records".format(len(soa_recs)))
 	
 	# Get all the correctness records for this month
-	cur.execute("select file_prefix, date_derived, rsi, is_correct from public.correctness_info {} order by date_derived".format(where_clause))
+	cur.execute("select filename_record, date_derived, rsi, is_correct from public.record_info {} and record_type = 'C' order by date_derived".format(where_clause))
 	correctness_recs = cur.fetchall()
 	log("Found {} correctness records".format(len(correctness_recs)))
 
 	# Collect information for the RSS availability
-	cur.execute("select vp from public.soa_info {} group by vp".format(where_clause))
+	cur.execute("select filename_record from public.record_info {}".format(where_clause))
 	vp_names = set()
 	for this_record in cur.fetchall():
-		vp_names.add(this_record[0])
+		(_, vp_name, _) = this_record[0].split("-")
+		vp_names.add(vp_name)
 	log("Found {} vantage point names".format(len(vp_names)))
 	
 	cur.close()
@@ -159,7 +160,7 @@ if __name__ == "__main__":
 	#   soa_first_seen keys are SOAs, values are the date first seen
 	soa_first_seen = {}
 	for this_rec in soa_recs:
-		(this_file_prefix, this_date_time, this_vp, this_rsi, this_internet, this_transport, this_dig_elapsed, this_timeout, this_soa) = this_rec
+		(this_file_prefix, this_date_time, this_rsi, this_internet, this_transport, this_dig_elapsed, this_timeout, this_soa) = this_rec
 		files_seen.add(this_file_prefix)
 		int_trans_pair = this_internet + this_transport
 		# RSI availability [gfa]
@@ -195,6 +196,8 @@ if __name__ == "__main__":
 	##############################################################
 
 	# RSI publication latency collation  # [yxn]
+	
+	######### Need to add VP differentiation here ###############################################
 
 	# This must be run after the soa_first_seen dict is filled in
 	# For publication latency, record the datetimes that each SOA is seen for each internet and transport pair
@@ -206,7 +209,7 @@ if __name__ == "__main__":
 	# Go through the SOA records again, filling in the fields for internet and transport pairs
 	#   Again, this relies on soa_recs to be in date order
 	for this_rec in soa_recs:
-		(this_file_prefix, this_date_time, this_vp, this_rsi, this_internet, this_transport, this_dig_elapsed, this_timeout, this_soa) = this_rec
+		(this_file_prefix, this_date_time, this_rsi, this_internet, this_transport, this_dig_elapsed, this_timeout, this_soa) = this_rec
 		# Timed-out responses don't count for publication latency  # [tub]
 		if this_timeout:
 			continue
@@ -235,7 +238,7 @@ if __name__ == "__main__":
 		rss_availability[this_vp] = {}
 	# Go through te SOA records recorded earlier
 	for this_rec in soa_recs:
-		(this_file_prefix, this_date_time, this_vp, this_rsi, this_internet, this_transport, this_dig_elapsed, this_timeout, this_soa) = this_rec
+		(this_file_prefix, this_date_time, this_rsi, this_internet, this_transport, this_dig_elapsed, this_timeout, this_soa) = this_rec
 		if not rss_availability[this_vp].get(this_date_time):
 			rss_availability[this_vp][this_date_time] = { "v4udp": [ 0, 0 ], "v4tcp": [ 0, 0 ], "v6udp": [ 0, 0 ], "v6tcp": [ 0, 0 ] }
 		int_trans_pair = this_internet + this_transport
@@ -251,7 +254,7 @@ if __name__ == "__main__":
 	rss_response_latency_in = {}
 	rss_latency_intervals = set()
 	for this_rec in soa_recs:  # [spx]
-		(this_file_prefix, this_date_time, this_vp, this_rsi, this_internet, this_transport, this_dig_elapsed, this_timeout, this_soa) = this_rec
+		(this_file_prefix, this_date_time, this_rsi, this_internet, this_transport, this_dig_elapsed, this_timeout, this_soa) = this_rec
 		rss_latency_intervals.add(this_date_time)
 		if not rss_response_latency_in.get(this_date_time):
 			rss_response_latency_in[this_date_time] = { "v4udp": [], "v4tcp": [], "v6udp": [], "v6tcp": [] }
@@ -263,7 +266,10 @@ if __name__ == "__main__":
 	for this_interval in rss_latency_intervals:
 		rss_response_latency_aggregates[this_interval] = {}
 		for this_pair in report_pairs:
-			this_median = statistics.median(rss_response_latency_in[this_interval][this_pair][0:rss_k-1])  # [jbr]
+			try:
+				this_median = statistics.median(rss_response_latency_in[this_interval][this_pair][0:rss_k-1])  # [jbr]
+			except Exception as e:
+				die("Died with {}\nrss_k={}, this_pair={}, this_interval={}".format(e, rss_k, this_pair, this_interval))
 			this_count = len(rss_response_latency_in[this_interval][this_pair])
 			rss_response_latency_aggregates[this_interval][this_pair] = [ this_median, this_count ]
 			
