@@ -6,18 +6,22 @@ import gzip, os, pickle, sys, yaml
 if len(sys.argv) == 1:
 	exit("Need to give an argument in the form of '202011060425-505-60'. Exiting.")
 this_rec = sys.argv[1]
+# 202011060425-505-6
 # 202011060425-505-60
-file_name = this_rec[:-3] + ".pickle.gz"
-in_rec_num = this_rec[-2:]
+(date_info, vp_info, in_rec_num) = this_rec.split("-")
+file_name = date_info + "-" + vp_info + ".pickle.gz"
 
 n1 = "/home/metrics/Incoming/{}".format(file_name)
 n2 = "/home/metrics/Incoming/{}/{}".format(file_name[0:6], file_name)
+n3 = "/home/metrics/Originals/{}/{}".format(file_name[0:6], file_name)
 if os.path.exists(n1):
 	full_file = n1
 elif os.path.exists(n2):
 	full_file = n2
+elif os.path.exists(n3):
+	full_file = n3
 else:
-	exit("{} and {} did not exist. Exiting.".format(n1, n2))
+	exit("{} and {} and {} did not exist. Exiting.".format(n1, n2, n3))
 
 print("Reading {}".format(full_file))
 # Ungz it
@@ -56,4 +60,3 @@ for this_key in rmd_keys:
 					rmd_out += "{} ... {}\n".format(this_rr[:97], this_rr[-8:])
 			print("\n{}\n{}".format(this_key, rmd_out))
 	
-
