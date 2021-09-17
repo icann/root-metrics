@@ -1,0 +1,54 @@
+- name: Set up the machine as root
+  hosts: all_beacons
+  remote_user: "{{ superuser }}"
+  tasks:
+  - name: Initialize apt
+    apt:
+      update_cache: true
+  - name: Do the apt upgrade
+    apt:
+      upgrade: full
+      force: true
+  - name: Install all the needed packages
+    apt:
+      pkg: [bind9, curl, git, nginx]
+  - name: Put .bashrc for root
+    copy:
+      src: ../bashrc-for-metrics-and-root
+      dest: /root/.bashrc
+  - name: Replace sshd_config
+    copy:
+      src: ../etc_sshd_config_shorter
+      dest: /etc/ssh/sshd_config
+  - name: Restart sshd after changing the config
+    systemd:
+      state: restarted
+      name: sshd.service
+      daemon_reload: yes      
+- name: Install things
+  hosts: all_beacons  
+  remote_user: "{{ superuser }}"
+  become: true
+  tasks:
+  - name: Set up BIND part 1
+    template:
+      src: ../beacon_named_conf_local
+      dest: /etc/bind/named.conf.local
+  - name: Set up BIND part 2
+    template:
+      src: ../beacon_faketld_zone
+      dest: /etc/bind/faketld.zone
+  - name: Set up NGINX
+    template:
+      src: ../nginx_index_html
+      dest: /var/www/html/index.html
+  - name: Restart BIND
+    systemd:
+      state: restarted
+      name: bind9
+      daemon_reload: yes      
+  - name: Restart NGINX
+    systemd:
+      state: restarted
+      name: nginx
+      daemon_reload: yes      
