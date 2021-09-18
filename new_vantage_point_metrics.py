@@ -29,11 +29,13 @@ def do_one_command(command_dict):
 
 # Make a list candidate RRsets for the correctness testing
 def update_rr_list(file_to_write):
+	# Returns nothing
 	internic_url = "https://www.internic.net/domain/root.zone"
 	try:
 		r = requests.get(internic_url)
 	except Exception as e:
 		alert("Could not do the requests.get on {}: '{}'".format(internic_url, e))
+		return
 	# Save it as a temp file to use named-compilezone
 	temp_latest_zone_name = "{}/temp_latest_zone".format(log_dir)
 	temp_latest_zone_f = open(temp_latest_zone_name, mode="wt")
@@ -88,6 +90,7 @@ def update_rr_list(file_to_write):
 	root_auth_out_f.write(root_auth_text)
 	root_auth_out_f.close()
 	log("Wrote out new {}".format(os.path.basename(file_to_write)))
+	return
 
 # Main program starts here
 
@@ -103,10 +106,16 @@ if __name__ == "__main__":
 	if vp_ident == None or vp_ident == "":
 		exit("The vp_ident gotten from {} was bad: '{}'. Exiting.".format(vp_ident_file_name, vp_ident))
 
-	# Get the base for the log directory
+	# Get the base for the log and alerts directories
 	log_dir = "{}/Logs".format(os.path.expanduser("~"))
 	if not os.path.exists(log_dir):
 		os.mkdir(log_dir)
+	alerts_dir = "{}/Alerts".format(log_dir)
+	if not os.path.exists(alerts_dir):
+		os.mkdir(alerts_dir)
+
+	# Get the time string for this run
+	start_time_string = time.strftime("%Y%m%d%H%M")
 
 	# Set up the logging and alert mechanisms
 	#   Requires log_dir and vp_ident to have been defined above 
@@ -127,15 +136,23 @@ if __name__ == "__main__":
 	def alert(alert_message):
 		vp_alert.critical(alert_message)
 		log(alert_message)
+		# Also write alerts as individual alert files
+		this_alert_file_name = "{}/alert-{}-{}-{:03}".format(alerts_dir, vp_ident, start_time_string, random.randint(0, 999))
+		alert_f = open(this_alert_file_name, mode="wt")
+		alert_f.write(alert_message)
+		alert_f.close()
 	def die(error_message):
 		vp_alert.critical(error_message)
 		log("Died with '{}'".format(error_message))
+		# Also write alerts as individual alert files
+		this_alert_file_name = "{}/alert-{}-{}-{:03}".format(alerts_dir, vp_ident, start_time_string, random.randint(0, 999))
+		alert_f = open(this_alert_file_name, mode="wt")
+		alert_f.write("Died with '{}'".format(error_message))
+		alert_f.close()
 		if vp_ident == "999":
 			print("Exiting at {}: {}".format(int(time.time()), error_message))
 		exit()
 
-	# Get the time string for this run
-	start_time_string = time.strftime("%Y%m%d%H%M")
 	# Log the start
 	log("Starting run {}-{}".format(start_time_string, vp_ident))
 
