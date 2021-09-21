@@ -13,7 +13,7 @@ def do_one_command(command_dict):
 	try:
 		command_to_give = command_dict["command"]
 	except:
-		alert("No 'command' in '{}' in do_one_command.".format(command_dict))
+		alert(f"No 'command' in '{command_dict}' in do_one_command.")
 	command_p = subprocess.run(command_to_give, shell=True, capture_output=True, text=True, check=False)
 	one_command_elapsed = time.time() - one_command_start
 	this_command_text = command_p.stdout
@@ -21,9 +21,9 @@ def do_one_command(command_dict):
 	if command_p.returncode == 9:
 		return(True, -1, this_command_text)
 	elif not command_p.returncode == 0:
-		return (False, one_command_elapsed, "# Return code {}\n# Command {}\n{}".format(command_p.returncode, command_to_give, this_command_text))
+		return (False, one_command_elapsed, f"# Return code {command_p.returncode}\n# Command {command_to_give}\n{this_command_text}")
 	elif len(this_command_text) == 0:
-		return (False, one_command_elapsed, "Running '{}' got a zero-length response, stderr was '{}'".format(command_to_give, command_p.stderr))
+		return (False, one_command_elapsed, f"Running '{command_to_give}' got a zero-length response, stderr was '{command_p.stderr}'")
 	else:
 		return (True, one_command_elapsed, this_command_text)
 
@@ -34,19 +34,19 @@ def update_rr_list(file_to_write):
 	try:
 		r = requests.get(internic_url)
 	except Exception as e:
-		alert("Could not do the requests.get on {}: '{}'".format(internic_url, e))
+		alert(f"Could not do the requests.get on {internic_url}: '{e}'")
 		return
 	# Save it as a temp file to use named-compilezone
-	temp_latest_zone_name = "{}/temp_latest_zone".format(log_dir)
+	temp_latest_zone_name = f"{log_dir}/temp_latest_zone"
 	temp_latest_zone_f = open(temp_latest_zone_name, mode="wt")
 	temp_latest_zone_f.write(r.text)
 	temp_latest_zone_f.close()
 	# Give the named-compilezone command, then post-process
 	try:
-		named_compilezone_p = subprocess.run("/home/metrics/Target/sbin/named-compilezone -q -i none -r ignore -o - . '{}'".format(temp_latest_zone_name),\
+		named_compilezone_p = subprocess.run(f"/home/metrics/Target/sbin/named-compilezone -q -i none -r ignore -o - . '{temp_latest_zone_name}'",\
 			shell=True, text=True, check=True, capture_output=True)
 	except Exception as e:
-		alert("named-compilezone failed with '{}'".format(e))
+		alert(f"named-compilezone failed with '{e}'")
 	new_root_text_in = named_compilezone_p.stdout
 	# Turn tabs into spaces
 	new_root_text_in = re.sub("\t", " ", new_root_text_in)
@@ -57,11 +57,11 @@ def update_rr_list(file_to_write):
 	# Remove the comments
 	for this_line in new_root_text_in.splitlines():
 		if not this_line.startswith(";"):
-			new_root_text += this_line + "\n"	
+			new_root_text += f"{this_line}\n"	
 	root_name_and_types = {}
 	for (line_num, this_line) in enumerate(new_root_text.splitlines()):
 		(this_name, _, _, this_type, rdata) = this_line.split(" ", maxsplit=4)
-		this_key = "{}/{}".format(this_name, this_type)
+		this_key = f"{this_name}/{this_type}"
 		if this_key in root_name_and_types:
 			root_name_and_types[this_key].append(rdata)
 		else:
@@ -73,8 +73,8 @@ def update_rr_list(file_to_write):
 	try:
 		this_soa = this_soa_record.split(" ")[2]
 	except Exception as e:
-		die("Splitting the SOA from the root zone just received failed with '{}'".format(e))
-	log("Got a new root zone with SOA {}".format(this_soa))
+		die(f"Splitting the SOA from the root zone just received failed with '{e}'")
+	log(f"Got a new root zone with SOA {this_soa}")
 	# Create a new root_auth_file, which has the same qname / qtypes as the processed file but only for authoritative zones
 	root_auth_text = ""
 	for this_key in root_name_and_types:
@@ -85,11 +85,11 @@ def update_rr_list(file_to_write):
 			or ((this_name == ".") and (this_type == "NS")) \
 			or ((this_name != ".") and (this_name.count(".") == 1) and (this_type == "NS") and (this_name != "arpa.")) \
 			or ((this_name != ".") and (this_name.count(".") == 1) and (this_type == "DS")) ):
-			root_auth_text += "{}\n".format(this_key)
+			root_auth_text += f"{this_key}\n"
 	root_auth_out_f = open(file_to_write, mode="wt")
 	root_auth_out_f.write(root_auth_text)
 	root_auth_out_f.close()
-	log("Wrote out new {}".format(os.path.basename(file_to_write)))
+	log(f"Wrote out new {os.path.basename(file_to_write)}")
 	return
 
 # Main program starts here
@@ -102,15 +102,15 @@ if __name__ == "__main__":
 	try:
 		vp_ident = open(vp_ident_file_name, mode="rt").read().strip()
 	except:
-		exit("Could not read {}. Exiting.".format(vp_ident_file_name))
+		exit(f"Could not read {vp_ident_file_name}. Exiting.")
 	if vp_ident == None or vp_ident == "":
-		exit("The vp_ident gotten from {} was bad: '{}'. Exiting.".format(vp_ident_file_name, vp_ident))
+		exit(f"The vp_ident gotten from {vp_ident_file_name} was bad: '{vp_ident}'. Exiting.")
 
 	# Get the base for the log and alerts directories
-	log_dir = "{}/Logs".format(os.path.expanduser("~"))
+	log_dir = f"{os.path.expanduser('~')}/Logs"
 	if not os.path.exists(log_dir):
 		os.mkdir(log_dir)
-	alerts_dir = "{}/Alerts".format(log_dir)
+	alerts_dir = f"{log_dir}/Alerts"
 	if not os.path.exists(alerts_dir):
 		os.mkdir(alerts_dir)
 
@@ -119,8 +119,8 @@ if __name__ == "__main__":
 
 	# Set up the logging and alert mechanisms
 	#   Requires log_dir and vp_ident to have been defined above 
-	log_file_name = "{}/{}-log.txt".format(log_dir, vp_ident)
-	alert_file_name = "{}/{}-alert.txt".format(log_dir, vp_ident)
+	log_file_name = f"{log_dir}/{vp_ident}-log.txt"
+	alert_file_name = f"{log_dir}/{vp_ident}-alert.txt"
 	vp_log = logging.getLogger("logging")
 	vp_log.setLevel(logging.INFO)
 	log_handler = logging.FileHandler(log_file_name)
@@ -138,19 +138,19 @@ if __name__ == "__main__":
 		log(alert_message)
 		# Also write alerts as individual alert files
 		p = subprocess.run(f'create-alert.py "{alert_message}"', shell=True, capture_output=True, text=True)
-		if len(p.stdout.read()) > 0:
-			die(f"Trying to send alert failed with '{p.stderr.read()}")
+		if len(p.stdout) > 0:
+			die(f"Trying to send alert failed with '{p.stderr}")
 	def die(error_message):
 		vp_alert.critical(error_message)
-		log("Died with '{}'".format(error_message))
+		log(f"Died with '{error_message}'")
 		# Also write alerts as individual alert files
-		p = subprocess.run(f'create-alert.py "{alert_message}"', shell=True, capture_output=True, text=True)
+		subprocess.run(f'create-alert.py "{error_message}"', shell=True, capture_output=True, text=True)
 		if vp_ident == "999":
-			print("Exiting at {}: {}".format(int(time.time()), error_message))
+			print(f"Exiting at {int(time.time())}: {error_message}")
 		exit()
 
 	# Log the start
-	log("Starting run {}-{}".format(start_time_string, vp_ident))
+	log(f"Starting run {start_time_string}-{vp_ident}")
 
 	# Get the command-line arguments
 	this_parser = argparse.ArgumentParser()
@@ -238,7 +238,7 @@ if __name__ == "__main__":
 	#    90% chance of a positive authoritative QNAME/QTYPE, 10% chance of a negative test value
 	correctness_candidates = []
 	# Check if root-auth-rrs.txt is recent; if not, get a new one
-	root_auth_file = "{}/root-auth-rrs.txt".format(log_dir)
+	root_auth_file = f"{log_dir}/root-auth-rrs.txt"
 	# For the first run, create the file
 	if not os.path.exists(root_auth_file):
 		f = open(root_auth_file, mode="wt")
@@ -251,7 +251,7 @@ if __name__ == "__main__":
 	try:
 		qname_qtype_pairs = open(root_auth_file, mode="rt").read().splitlines()
 	except:
-		die("Could not open {}".format(root_auth_file))
+		die(f"Could not open {root_auth_file}")
 	# Choose nine good pairs at random
 	for i in range(9):
 		this_pair = random.choice(qname_qtype_pairs)
@@ -265,7 +265,7 @@ if __name__ == "__main__":
 	ten_random_letters = ""
 	for i in range(10):
 		ten_random_letters += all_letters[random.randint(0, 25)]
-	rand_nxd_tld = "www.rssac047-test.{}.".format(ten_random_letters)  # [hkc]
+	rand_nxd_tld = f"www.rssac047-test.{ten_random_letters}."  # [hkc]
 	correctness_candidates.append([rand_nxd_tld, "A"])
 	# Pick just one of these ten [yyg]
 	this_correctness_test = random.choice(correctness_candidates)
@@ -313,7 +313,7 @@ if __name__ == "__main__":
 				all_dig_output.append(this_record)
 				# Log timeouts
 				if this_record[5] == -1:
-					log("Timeout for {}".format(this_record))
+					log(f"Timeout for {this_record}")
 			else:
 				log(this_ret[2])
 	
@@ -325,16 +325,16 @@ if __name__ == "__main__":
 		for this_internet in ["v4", "v6"]:
 			specify_4_or_6 = "-4" if this_internet == "v4" else "-6"
 			for this_ip_addr in test_targets[this_target][this_internet]:
-				this_scamper_cmd += "{} ".format(this_ip_addr)
+				this_scamper_cmd += f"{this_ip_addr} "
 	try:
 		command_p = subprocess.run(this_scamper_cmd, shell=True, capture_output=True, text=True, check=True)
 	except Exception as e:
-		log("Running scamper had the exception '{}'; continuing.".format(e))
+		log(f"Running scamper had the exception '{e}'; continuing.")
 	scamper_output = command_p.stdout
 	scamper_elapsed = int(time.time() - scamper_start_time)
 	if len(scamper_output) == 0:
-		log("Running scamper got a zero-length response in {} seconds, stderr was '{}'".format(scamper_elapsed, command_p.stderr))
-	scamper_output += "Elapsed was {} seconds".format(scamper_elapsed)
+		log(f"Running scamper got a zero-length response in {scamper_elapsed} seconds, stderr was '{command_p.stderr}'")
+	scamper_output += f"Elapsed was {scamper_elapsed} seconds"
 
 	commands_clock_stop = int(time.time())
 
@@ -354,12 +354,12 @@ if __name__ == "__main__":
 	# Save the output in a file with start_time_string and vp_ident
 	output_dir = "/sftp/transfer/Output"
 	try:
-		out_run_file_name = "{}/{}-{}.pickle.gz".format(output_dir, start_time_string, vp_ident)
+		out_run_file_name = f"{output_dir}/{start_time_string}-{vp_ident}.pickle.gz"
 		with gzip.open(out_run_file_name, mode="wb") as gzf:
 			gzf.write(pickle.dumps(output_dict))
 			gzf.close()
 	except:
-		alert("Could not create {}".format(out_run_file_name))
+		alert(f"Could not create {out_run_file_name}")
 	# Log the finish
-	log("Finishing run, wrote out {}, elapsed was {} seconds".format(os.path.basename(out_run_file_name), int(commands_clock_stop - commands_clock_start)))
+	log(f"Finishing run, wrote out {os.path.basename(out_run_file_name)}, elapsed was {int(commands_clock_stop - commands_clock_start)} seconds")
 	exit()
