@@ -137,18 +137,14 @@ if __name__ == "__main__":
 		vp_alert.critical(alert_message)
 		log(alert_message)
 		# Also write alerts as individual alert files
-		this_alert_file_name = "{}/alert-{}-{}-{:03}".format(alerts_dir, vp_ident, start_time_string, random.randint(0, 999))
-		alert_f = open(this_alert_file_name, mode="wt")
-		alert_f.write(alert_message)
-		alert_f.close()
+		p = subprocess.run(f'create-alert.py "{alert_message}"', shell=True, capture_output=True, text=True)
+		if len(p.stdout.read()) > 0:
+			die(f"Trying to send alert failed with '{p.stderr.read()}")
 	def die(error_message):
 		vp_alert.critical(error_message)
 		log("Died with '{}'".format(error_message))
 		# Also write alerts as individual alert files
-		this_alert_file_name = "{}/alert-{}-{}-{:03}".format(alerts_dir, vp_ident, start_time_string, random.randint(0, 999))
-		alert_f = open(this_alert_file_name, mode="wt")
-		alert_f.write("Died with '{}'".format(error_message))
-		alert_f.close()
+		p = subprocess.run(f'create-alert.py "{alert_message}"', shell=True, capture_output=True, text=True)
 		if vp_ident == "999":
 			print("Exiting at {}: {}".format(int(time.time()), error_message))
 		exit()
