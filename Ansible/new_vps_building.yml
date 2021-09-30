@@ -1,5 +1,5 @@
 - name: Set up the machine as root
-  hosts: vps  
+  hosts: all_vps  
   remote_user: "{{ superuser }}"
   become_user: root
   become: yes
@@ -51,7 +51,7 @@
     when: python_version is failed
     import_tasks: make_python_37_for_debian-9.yml
 - name: Set up transfer user
-  hosts: vps
+  hosts: all_vps
   remote_user: "{{ superuser }}"
   become_user: transfer
   become: yes
@@ -59,7 +59,7 @@
   - name: Set up id_rsa for transfer
     authorized_key:
       user: transfer
-      key: "{{ lookup('file', '../Local/transfer-id_rsa.pub') }}"
+      key: "{{ lookup('file', '../Local/transfer_id_rsa.pub') }}"
   - name: Create Output/ for transfer
     file:
       path: /sftp/transfer/Output
@@ -71,7 +71,7 @@
       mode: go+w
       state: directory
 - name: Set up metrics user
-  hosts: vps
+  hosts: all_vps
   remote_user: "{{ superuser }}"
   become_user: metrics
   become: yes
@@ -101,17 +101,17 @@
       state: directory
   - name: Get BIND tarball
     get_url:
-      url: https://downloads.isc.org/isc/bind9/9.16.4/bind-9.16.4.tar.xz
-      dest: /home/metrics/Source/bind-9.16.4.tar.xz
+      url: https://downloads.isc.org/isc/bind9/9.16.20/bind-9.16.20.tar.xz
+      dest: /home/metrics/Source/bind-9.16.20.tar.xz
   - name: Expand BIND tarball
     unarchive:
       remote_src: yes
-      src: /home/metrics/Source/bind-9.16.4.tar.xz
+      src: /home/metrics/Source/bind-9.16.20.tar.xz
       dest: /home/metrics/Source
-      creates: /home/metrics/Source/bind-9.16.4
+      creates: /home/metrics/Source/bind-9.16.20
   - name: Make BIND
     shell:
-      chdir: /home/metrics/Source/bind-9.16.4
+      chdir: /home/metrics/Source/bind-9.16.20
       cmd: "./configure --prefix=/home/metrics/Target; make install"
       creates: /home/metrics/Target/bin/dig
   - name: Pull or freshen the Github repo
