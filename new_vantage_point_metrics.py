@@ -11,20 +11,39 @@ class QueryError(Exception):
 	pass
 
 # Run one command; to be used under concurrent.futures
-def do_one_query(target, internet, ip_addr, transport):
+def do_one_query(target, internet, ip_addr, transport, query, test_type):
 	''' Send one ./SOA query over UDP/TPC and v4/v6; return a dict of results '''
-	id_string = f"{target}-{internet}-{transport}"
+	id_string = f"{target}|{internet}|{transport}|{query}|{test_type}"
 	# Sanity checks
 	if not internet in ("v4", "v6"):
 		raise QueryError(f"Bad internet: {internet} in {id_string}")
 	if not transport in ("udp", "tcp"):
 		raise QueryError(f"Bad transport: {transport} in {id_string}")
-	# Prepare the query for ./SOA, also include NSID over EDNS0 [mgj], and set the buffer size to 1220 [rja]
-	q = dns.message.make_query(dns.name.from_text("."), dns.rdatatype.SOA)
-	q.use_edns(edns=0, payload=1220, options=[dns.edns.GenericOption(dns.edns.OptionType.NSID, b'')])
+	if not test_type in ("C", "S"):
+		raise QueryError(f"Bad test type: {test_type} in {id_string}")
+	# Prepare the query
+	try:
+		(qname, qtype) = query.split("/")
+	except:
+		raise QueryError(f"Bad query: {query} in {id_string}")
+	try:
+		qname_processed = dns.name.from_text(qname)
+	except:
+		raise QueryError(f"Bad qname: {qname} in {id_string}")
+	try:
+		qtype_processed = dns.rdatatype.qtype
+	except:
+		raise QueryError(f"Unknown qtype: {qtype} in {id_string}")
+	q = dns.message.make_query(qname_processed, qtype_processed)
+	# If test_type is "C", set the buffer size to 1220 [rja] and add DO bit
+	#    Include NSID over EDNS0 [mgj] for both "S" and "C"
+	if test_type == "C":
+		q.use_edns(edns=0, payload=1220, ednsflags = dns.flags.DO, options=[dns.edns.GenericOption(dns.edns.OptionType.NSID, b'')])
+	else:
+		q.use_edns(edns=0, options=[dns.edns.GenericOption(dns.edns.OptionType.NSID, b'')])
 	# Start the return value
 	query_start_time = time.time()
-	r_dict = { "id_string": id_string, "target": target, "internet": internet, "ip_addr": ip_addr, "transport": transport }
+	r_dict = { "id_string": id_string, "target": target, "internet": internet, "ip_addr": ip_addr, "transport": transport, "query": query, "test_type": test_type }
 	# Choose the transport
 	if transport == "udp":
 		try:
@@ -218,16 +237,7 @@ if __name__ == "__main__":
 		"l": { "v4": ["199.7.83.42"], "v6": ["2001:500:9f::42"] },
 		"m": { "v4": ["202.12.27.33"], "v6": ["2001:dc3::35"] } }
 
-	# The correctness_query_template is only used for correctness measurements
-	#   The variables to be filled in are path_to_dig, QNAME, QTYPE, IP address, -4 or -6, and "no" if this is for UDP
-	#   It uses +nsid for later identification of instances [mgj]
-	#   It uses +dnssec [rhe]
-	#   It uses a UDP buffer size of 1220 [rja]
-	#   It has a timeout of 4 seconds [twf]
-	#   It has +noignore to force a retry if the response has the TC bit set [hjw]
-	correctness_query_template = "{} +yaml {} {} @{} {} +{}tcp +dnssec +bufsize=1220 +nsid +norecurse +time=4 +tries=1 +noignore"
-
-	# Create one command for correctness
+	# Pick one QNAME for correctness to be used later
 	#    90% chance of a positive authoritative QNAME/QTYPE, 10% chance of a negative test value
 	correctness_candidates = []
 	# Check if root-auth-rrs.txt is recent; if not, get a new one
@@ -252,52 +262,44 @@ if __name__ == "__main__":
 		# RSSAC047 calls for the use of 0x20 mixed case in the QNAME. [zon] This is not done here because it feels unneccessary,
 		#   given that it is already highly unpredictable what queries will be sent.
 		#   This is a divergence from RSSAC047.
-		correctness_candidates.append([this_qname, this_qtype])
+		correctness_candidates.append(f"{this_qname}/{this_qtype}")
 	# For the negative test, choose a RAND-NXD
 	all_letters = "abcdefghijklmnopqrstuvwxyz"  # [dse]
 	ten_random_letters = ""
 	for i in range(10):
 		ten_random_letters += all_letters[random.randint(0, 25)]
 	rand_nxd_tld = f"www.rssac047-test.{ten_random_letters}."  # [hkc]
-	correctness_candidates.append([rand_nxd_tld, "A"])
+	correctness_candidates.append(f"{rand_nxd_tld}/A")
 	# Pick just one of these ten [yyg]
 	this_correctness_test = random.choice(correctness_candidates)
+	correctness_tuples = []
 	for this_target in test_targets:
 		# Pick a random address type [thb]
 		rand_v4_v6 = random.choice(["v4", "v6"])
 		# Pick a random transport [ogo]
 		rand_udp_tcp = random.choice(["udp", "tcp"])
-		specify_4_or_6 = "-4" if this_internet == "v4" else "-6"
-		is_tcp_string = "no" if this_transport == "udp" else ""
 		for this_ip_addr in test_targets[this_target][rand_v4_v6]:
-			# Add the DNSSEC correctness commands
-			this_dig_cmd = correctness_query_template.format(
-				path_to_dig,
-				this_correctness_test[0],
-				this_correctness_test[1],
-				this_ip_addr,
-				specify_4_or_6,
-				is_tcp_string )
-			all_commands.append( {
-				"target": this_target,
-				"internet": this_internet,
-				"ip_addr": this_ip_addr,
-				"transport": this_transport,
-				"test_type": "C",
-				"command": this_dig_cmd } )
+			correctness_tuples.append((this_target, rand_v4_v6, this_ip_addr, rand_v4_v6, this_correctness_test))
 	
 	# Sleep a random time
 	time.sleep(wait_first)
 	
-	# Send the dnspython queries on different threads
+	# Send the dnspython queries for ./SOA
 	all_results = []
 	commands_clock_start = int(time.time())
 	with concurrent.futures.ThreadPoolExecutor() as executor:
+		# Calling sequence for do_one_query() is: target, internet, ip_addr, transport, query, test_type
+		#   query is None for ./SOA, or "<qname>/<qtype>" for correctness
 		returned_futures = {}
+		# First launch the ./SOA queries (S)
 		for (this_target, this_dict) in test_targets.items():
 			for this_transport in ["udp", "tcp" ]:
 				for this_internet in ["v4", "v6" ]:
-					returned_futures[executor.submit(do_one_query, this_target, this_internet, this_dict[this_internet][0], this_transport)] = None
+					returned_futures[executor.submit(do_one_query, this_target, this_internet, this_dict[this_internet][0], this_transport, "./SOA", "S")] = None
+		# Then launch the correctness tests (C)
+		for (this_target, this_internet, this_ip_addr, this_transport, this_q_and_t) in correctness_tuples:
+			returned_futures[executor.submit(do_one_query, this_target, this_internet, this_ip_addr, this_transport, this_q_and_t, "C")] = None
+		# Collect the results
 		for this_future in concurrent.futures.as_completed(returned_futures):
 			try:
 				this_ret = this_future.result()
@@ -338,7 +340,7 @@ if __name__ == "__main__":
 		"v": 1,
 		"d": wait_first,
 		"e": commands_clock_stop - commands_clock_start,
-		"r": all_dig_output,
+		"r": all_results,
 		"s": scamper_output
 	}
 	# Save the output in a file with start_time_string and vp_ident
