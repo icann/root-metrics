@@ -13,7 +13,8 @@
       force: true
   - name: Install all the needed packages
     apt:
-      pkg: [curl, git, pyflakes3, python3-pip, python3-requests, rsync, scamper, sudo, traceroute, unzip]
+      pkg: [acl, build-essential, curl, git, libcap-dev, libssl-dev, libuv1-dev, man, pkg-config,
+        pyflakes3, python-ply, python3-pip, python3-requests, rsync, scamper, sudo, traceroute, unzip]
   - name: Put .bashrc for root
     copy:
       src: ../bashrc-for-metrics-and-root
