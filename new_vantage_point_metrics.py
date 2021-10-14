@@ -3,29 +3,71 @@
 
 # Three-letter items in square brackets (such as [xyz]) refer to parts of rssac-047.md
 
-import argparse, gzip, logging, os, pickle, random, re, requests, subprocess, time
-from concurrent import futures
+import argparse, concurrent.futures, gzip, logging, os, pickle, random, re, requests, socket, subprocess, time
+import dns.edns, dns.message, dns.query, dns.rdataclass, dns.rdatatype
+
+# New class for errors from dnspython queries
+class QueryError(Exception):
+	pass
 
 # Run one command; to be used under concurrent.futures
-def do_one_command(command_dict):
-	''' Takes a command_dict that contains command_dict["command"]; returns (success_bool, elapsed, text) '''
-	one_command_start = time.time()
-	try:
-		command_to_give = command_dict["command"]
-	except:
-		alert(f"No 'command' in '{command_dict}' in do_one_command.")
-	command_p = subprocess.run(command_to_give, shell=True, capture_output=True, text=True, check=False)
-	one_command_elapsed = time.time() - one_command_start
-	this_command_text = command_p.stdout
-	# Return code 9 means timeout
-	if command_p.returncode == 9:
-		return(True, -1, this_command_text)
-	elif not command_p.returncode == 0:
-		return (False, one_command_elapsed, f"# Return code {command_p.returncode}\n# Command {command_to_give}\n{this_command_text}")
-	elif len(this_command_text) == 0:
-		return (False, one_command_elapsed, f"Running '{command_to_give}' got a zero-length response, stderr was '{command_p.stderr}'")
+def do_one_query(target, internet, ip_addr, transport):
+	''' Send one ./SOA query over UDP/TPC and v4/v6; return a dict of results '''
+	id_string = f"{target}-{internet}-{transport}"
+	# Sanity checks
+	if not internet in ("v4", "v6"):
+		raise QueryError(f"Bad internet: {internet} in {id_string}")
+	if not transport in ("udp", "tcp"):
+		raise QueryError(f"Bad transport: {transport} in {id_string}")
+	# Prepare the query for ./SOA, also include NSID over EDNS0 [mgj], and set the buffer size to 1220 [rja]
+	q = dns.message.make_query(dns.name.from_text("."), dns.rdatatype.SOA)
+	q.use_edns(edns=0, payload=1220, options=[dns.edns.GenericOption(dns.edns.OptionType.NSID, b'')])
+	# Start the return value
+	query_start_time = time.time()
+	r_dict = { "id_string": id_string, "target": target, "internet": internet, "ip_addr": ip_addr, "transport": transport }
+	# Choose the transport
+	if transport == "udp":
+		try:
+			r = dns.query.udp(q, ip_addr, timeout=4.0)
+			r_dict["query_elapsed"] = time.time() - query_start_time
+		except Exception as e:
+			raise QueryError(f"UDP query failure: {e} in {id_string}")
 	else:
-		return (True, one_command_elapsed, this_command_text)
+		try:
+			tcp_start_time = time.time()
+			if internet == "v4":
+				t_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+			else:
+				t_sock = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
+			t_sock.connect((ip_addr, 53))
+			r_dict["tcp_setup"] = time.time() - tcp_start_time
+		except Exception as e:
+			raise QueryError(f"TCP setup failure: {e} in {id_string}")
+		try:
+			r = dns.query.tcp(q, None, timeout=4.0, sock=t_sock)
+			r_dict["query_elapsed"] = time.time() - query_start_time
+			t_sock.close()
+		except Exception as e:
+			raise QueryError(f"TCP query failure: {e} in {id_string}")
+	# Collect all the response data
+	try:
+		r_dict["id"] = r.id
+		r_dict["opcode"] = r.opcode()
+		r_dict["rcode"] = r.rcode()
+		r_dict["flags"] = dns.flags.to_text(r.flags)
+		r_dict["edns"] = {}
+		for this_option in r.options:
+			r_dict["edns"][this_option.otype.value] = this_option.data
+		for (this_section_number, this_section_name) in enumerate(("question", "answer", "authority", "additional")):
+			r_dict[this_section_name] = []
+			for this_rrset in r.section_from_number(this_section_number):
+				this_rrset_dict = {"name": this_rrset.name.to_text(), "ttl": this_rrset.ttl, "class": this_rrset.rdclass, "rdata": []}
+				for this_record in this_rrset:
+					this_rrset_dict["rdata"].append(this_record.to_text())
+				r_dict[this_section_name].append(this_rrset_dict)
+	except Exception as e:
+		raise QueryError(f"Dict failure; {e} in {id_string}")
+	return r_dict
 
 # Make a list candidate RRsets for the correctness testing
 def update_rr_list(file_to_write):
@@ -176,55 +218,6 @@ if __name__ == "__main__":
 		"l": { "v4": ["199.7.83.42"], "v6": ["2001:500:9f::42"] },
 		"m": { "v4": ["202.12.27.33"], "v6": ["2001:dc3::35"] } }
 
-	# Make the list of commands to give on this run
-	#   This is a list of dicts. Each dict contains:
-	#			"target": target for the query
-	#			"internet": "v4" or "v6"
-	#			"ip_addr": address for the query
-	#			"test_type": "S" for ./SOA, "C" for correctness
-	#			"command": the command to give
-	all_commands = []
-	
-	# Notes on using "dig"
-	#   Starting in BIND 9.16, dig has a "+yaml" argument that outputs responses in YAML format;
-	#      this makes it much easier to parse the output than in earlier versions of BIND.
-	#   The reported time for UDP is from query to response, as expected. [tsm]
-	#   dig treats connection errors as timeouts [dfl] and are not retried. [dks]  ### Need to check this later
-	#   dig uses query source port randomization [uym], query ID randomization [wsb], and query response matching [doh]
-	#   Using dig causes some limitations in the implementation:
-	#      There is no control of the reported time for TCP. [epp] This may or may not be OK for the final implementation.
-  #   The templates below do *not* do DNS cookies [ujj] because they are optional and are not necessarily supported by all instances.
-  #      This is a divergence from RSSAC047.
-	path_to_dig = "/home/metrics/Target/bin/dig"
-
-	# dot_soa_query_template uses +nodnssec +noauthority +noadditional in order to reduce the size of the responses
-	#   The variables to be filled in are path_to_dig, IP address, -4 or -6, and "no" if this is for UDP
-	#   It is used many of the measurements [dzn] [hht] [wdo] [zvy] [kzu]
-	#   It has +nsid for later identification of instances [mgj]
-	#   It has a timeout of 4 seconds [ywz]
-	#   It does not allow retries [xyl]
-	dot_soa_query_template = "{} +yaml . SOA @{} {} +{}tcp +nodnssec +noauthority +noadditional +bufsize=1220 +nsid +norecurse +time=4 +tries=1"
-
-	# Run the queries for . SOA
-	for this_target in test_targets:
-		# Sent to both v4 and v6 addresses [jhb]
-		for this_internet in ["v4", "v6"]:
-			specify_4_or_6 = "-4" if this_internet == "v4" else "-6"
-			for this_ip_addr in test_targets[this_target][this_internet]:
-				# Send to both UDP and TCP [ykn]
-				for this_transport in ["udp", "tcp"]:
-					is_tcp_string = "no" if this_transport == "udp" else ""
-					# Add the . SOA commands
-					this_dig_cmd = dot_soa_query_template.format(path_to_dig, this_ip_addr, specify_4_or_6, is_tcp_string)
-					all_commands.append( {
-						"target": this_target,
-						"internet": this_internet,
-						"ip_addr": this_ip_addr,
-						"transport": this_transport,
-						"test_type": "S",
-						"command": this_dig_cmd
-					} )
-
 	# The correctness_query_template is only used for correctness measurements
 	#   The variables to be filled in are path_to_dig, QNAME, QTYPE, IP address, -4 or -6, and "no" if this is for UDP
 	#   It uses +nsid for later identification of instances [mgj]
@@ -295,27 +288,24 @@ if __name__ == "__main__":
 	
 	# Sleep a random time
 	time.sleep(wait_first)
-
-	# If the commands are supposed to run in random order, this would be the place to do that
-	#   random.shuffle(all_commands)
 	
-	# Run the dig commands, collecting the text output
+	# Send the dnspython queries on different threads
+	all_results = []
 	commands_clock_start = int(time.time())
-	all_dig_output = []
-	with futures.ProcessPoolExecutor() as executor:
-		for (this_command, this_ret) in zip(all_commands, executor.map(do_one_command, all_commands)):
-			# Check the first argument for True/False
-			if this_ret[0]:
-				# The record of the command is [ target, internet, transport, ip_addr, test_type, elapsed, dig_output ]
-				this_record = [
-					this_command["target"], this_command["internet"], this_command["transport"], this_command["ip_addr"], this_command["test_type"],
-					this_ret[1], this_ret[2] ]
-				all_dig_output.append(this_record)
-				# Log timeouts
-				if this_record[5] == -1:
-					log(f"Timeout for {this_record}")
+	with concurrent.futures.ThreadPoolExecutor() as executor:
+		returned_futures = {}
+		for (this_target, this_dict) in test_targets.items():
+			for this_transport in ["udp", "tcp" ]:
+				for this_internet in ["v4", "v6" ]:
+					returned_futures[executor.submit(do_one_query, this_target, this_internet, this_dict[this_internet][0], this_transport)] = None
+		for this_future in concurrent.futures.as_completed(returned_futures):
+			try:
+				this_ret = this_future.result()
+			except Exception as e:
+				############### Should look for timeouts here
+				log(f"Request error: {e}")
 			else:
-				log(this_ret[2])
+				all_results.append(this_ret)
 	
 	# Finish with the scamper command to run traceroute-like queries for all targets [vno]
 	scamper_output = ""
