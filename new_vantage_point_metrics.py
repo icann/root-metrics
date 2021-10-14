@@ -31,7 +31,7 @@ def do_one_query(target, internet, ip_addr, transport, query, test_type):
 	except:
 		raise QueryError(f"Bad qname: {qname} in {id_string}")
 	try:
-		qtype_processed = dns.rdatatype.qtype
+		qtype_processed = dns.rdatatype.from_text(qtype)
 	except:
 		raise QueryError(f"Unknown qtype: {qtype} in {id_string}")
 	q = dns.message.make_query(qname_processed, qtype_processed)
@@ -279,7 +279,7 @@ if __name__ == "__main__":
 		# Pick a random transport [ogo]
 		rand_udp_tcp = random.choice(["udp", "tcp"])
 		for this_ip_addr in test_targets[this_target][rand_v4_v6]:
-			correctness_tuples.append((this_target, rand_v4_v6, this_ip_addr, rand_v4_v6, this_correctness_test))
+			correctness_tuples.append((this_target, rand_v4_v6, this_ip_addr, rand_udp_tcp, this_correctness_test))
 	
 	# Sleep a random time
 	time.sleep(wait_first)
