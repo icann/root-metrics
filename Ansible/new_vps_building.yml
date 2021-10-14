@@ -13,8 +13,7 @@
       force: true
   - name: Install all the needed packages
     apt:
-      pkg: [acl, build-essential, curl, git, libcap-dev, libssl-dev, libuv1-dev, man, pkg-config,
-        pyflakes3, python-ply, python3-requests, rsync, scamper, sudo, traceroute, unzip]
+      pkg: [curl, git, pyflakes3, python3-pip, python3-requests, rsync, scamper, sudo, traceroute, unzip]
   - name: Put .bashrc for root
     copy:
       src: ../bashrc-for-metrics-and-root
@@ -43,13 +42,6 @@
       name: metrics
       home: /home/metrics
       shell: /bin/bash
-  - name: Check Python version
-    shell: python3 --version | grep "Python 3.7"  
-    register: python_version  # grep will exit with 1 when no results found. 
-    ignore_errors: true
-  - name: Make Python 3.7 if needed
-    when: python_version is failed
-    import_tasks: make_python_37_for_debian-9.yml
 - name: Set up transfer user
   hosts: all_vps
   remote_user: "{{ superuser }}"
@@ -89,42 +81,17 @@
       path: /home/metrics/Logs
       mode: u+wrx,go+rx
       state: directory
-  - name: make Source/
-    file:
-      path: /home/metrics/Source
-      mode: u+wrx,go+rx
-      state: directory
-  - name: make Target/
-    file:
-      path: /home/metrics/Target
-      mode: u+wrx,go+rx
-      state: directory
-  - name: Get BIND tarball
-    get_url:
-      url: https://downloads.isc.org/isc/bind9/9.16.20/bind-9.16.20.tar.xz
-      dest: /home/metrics/Source/bind-9.16.20.tar.xz
-  - name: Expand BIND tarball
-    unarchive:
-      remote_src: yes
-      src: /home/metrics/Source/bind-9.16.20.tar.xz
-      dest: /home/metrics/Source
-      creates: /home/metrics/Source/bind-9.16.20
-  - name: Make BIND
+  - name: get dnspython
     shell:
-      chdir: /home/metrics/Source/bind-9.16.20
-      cmd: "./configure --prefix=/home/metrics/Target; make install"
-      creates: /home/metrics/Target/bin/dig
+      cmd: "pip3 install --user dnspython"
+      creates: /home/metrics/.local/lib/python3.7/site-packages/dns
   - name: Pull or freshen the Github repo
     git:
       repo: 'https://github.com/icann/root-metrics.git'
       dest: /home/metrics/repo
-  - name: Give the crontab entry for vantage_point_metrics.py
+      version: dnspython
+  - name: Give the crontab entry for new_vantage_point_metrics.py
     cron:   # [mba] [wca]
       name: Get measurements
       minute: "0-59/5"
-      job: "/home/metrics/repo/vantage_point_metrics.py >>/home/metrics/Logs/cron-alert.txt 2>&1"
-  - name: Update the crontab to use /usr/local first
-    cron:
-      name: PATH
-      env: yes
-      value: "/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin"
+      job: "/home/metrics/repo/new_vantage_point_metrics.py >>/home/metrics/Logs/cron-alert.txt 2>&1"
