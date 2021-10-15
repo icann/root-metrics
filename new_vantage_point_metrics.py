@@ -331,13 +331,13 @@ if __name__ == "__main__":
 	commands_clock_stop = int(time.time())
 
 	# Save output as a dict
-	#   "v": int, version of this program (1 for now)
+	#   "v": int, version of this program (2 for now)
 	#   "d": int, the delay used: wait_first
 	#   "e": float, elapsed time for commands: commands_clock_stop - commands_clock_start
 	#   "r": list, the records
 	#   "s", text, the output from scamper
 	output_dict = {
-		"v": 1,
+		"v": 2,
 		"d": wait_first,
 		"e": commands_clock_stop - commands_clock_start,
 		"r": all_results,

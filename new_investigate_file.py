@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import gzip, pickle, sys
+import gzip, pickle, pprint, sys
 
 ''' For debugging input files that are found to have issues '''
 
@@ -16,8 +16,9 @@ resp_count = 0
 print("There are {} responses".format(len(in_obj["r"])))
 for this_response in in_obj["r"]:
 	resp_count += 1
-	resp_obj = this_response[6]
 	if get_resp == 0:
-		 print("\n{}:\n{}".format(resp_count, resp_obj))
+		print(resp_count)
+		pprint.pprint(this_response, compact=False, sort_dicts=False)
 	elif get_resp == resp_count:
-		 print("\n{}:\n{}".format(resp_count, resp_obj))
+		print(resp_count)
+		pprint.pprint(this_response, compact=False, sort_dicts=False)
