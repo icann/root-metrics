@@ -18,7 +18,7 @@ for this_response in in_obj["r"]:
 	resp_count += 1
 	if get_resp == 0:
 		print(resp_count)
-		pprint.pprint(this_response, compact=False, sort_dicts=False)
+		pprint.pprint(this_response, compact=False)
 	elif get_resp == resp_count:
 		print(resp_count)
-		pprint.pprint(this_response, compact=False, sort_dicts=False)
+		pprint.pprint(this_response, compact=False)
