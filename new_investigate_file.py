@@ -7,7 +7,7 @@ if not len(sys.argv) > 1:
 	exit("Arguments are a pickle.gz file, and optionally a record, to investigate")
 in_file = sys.argv[1]
 get_resp = None
-if len(sys.argv) <= 3:
+if len(sys.argv) = 3:
 	get_resp = int(sys.argv[2])
 with gzip.open(in_file, mode="rb") as f:
 	in_pickle = f.read()
