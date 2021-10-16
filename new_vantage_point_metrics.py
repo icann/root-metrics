@@ -317,7 +317,7 @@ if __name__ == "__main__":
 			try:
 				this_ret = this_future.result()
 			except Exception as e:
-				log(f"Request error: {e}")
+				alert(f"Request error: {e}")
 			else:
 				all_results.append(this_ret)
 	
@@ -364,6 +364,12 @@ if __name__ == "__main__":
 			gzf.close()
 	except:
 		alert(f"Could not create {out_run_file_name}")
+
+	# Look for timeputs
+	for this_result in all_results:
+		if this_result["r"].get("timeout"):
+			log(f"Timeout in {this_result['r']['id_string']} {this_result['r']['timeout']})
+	
 	# Log the finish
-	log(f"Finishing run, wrote out {os.path.basename(out_run_file_name)}, elapsed was {int(commands_clock_stop - commands_clock_start)} seconds")
+	log(f"Finishing run, wrote out {os.path.basename(out_run_file_name)}, elapsed command time was {int(commands_clock_stop - commands_clock_start)} seconds")
 	exit()
