@@ -51,7 +51,7 @@ def do_one_query(target, internet, ip_addr, transport, query, test_type):
 			r = dns.query.udp(q, ip_addr, timeout=4.0)
 			r_dict["query_elapsed"] = time.time() - query_start_time
 		except Exception as e:
-			if "operation timed out" in e:
+			if "operation timed out" in str(e):
 				r_dict["timeout"] = "UDP timeout"
 			else:
 				r_dict["error"] = f"UDP query failure: {e}"
@@ -66,7 +66,7 @@ def do_one_query(target, internet, ip_addr, transport, query, test_type):
 			t_sock.connect((ip_addr, 53))
 			r_dict["tcp_setup"] = time.time() - tcp_start_time
 		except Exception as e:
-			if "operation timed out" in e:
+			if "operation timed out" in str(e):
 				r_dict["timeout"] = "TCP setup timeout"
 			else:
 				r_dict["error"] = f"TCP setup failure: {e}"
@@ -76,7 +76,7 @@ def do_one_query(target, internet, ip_addr, transport, query, test_type):
 			r_dict["query_elapsed"] = time.time() - query_start_time
 			t_sock.close()
 		except Exception as e:
-			if "operation timed out" in e:
+			if "operation timed out" in str(e):
 				r_dict["timeout"] = "TCP query timeout"
 			else:
 				r_dict["error"] = f"TCP query failure: {e}"
