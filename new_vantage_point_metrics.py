@@ -367,8 +367,8 @@ if __name__ == "__main__":
 
 	# Look for timeputs
 	for this_result in all_results:
-		if this_result["r"].get("timeout"):
-			log(f"Timeout in {this_result['r']['id_string']} {this_result['r']['timeout']}")
+		if this_result.get("timeout"):
+			log(f"Timeout in {this_result['id_string']} {this_result['timeout']}")
 	
 	# Log the finish
 	log(f"Finishing run, wrote out {os.path.basename(out_run_file_name)}, elapsed command time was {int(commands_clock_stop - commands_clock_start)} seconds")
