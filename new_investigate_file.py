@@ -13,7 +13,7 @@ with gzip.open(in_file, mode="rb") as f:
 	in_pickle = f.read()
 in_obj = pickle.loads(in_pickle)
 resp_count = 0
-print("There are {} responses".format(len(in_obj["r"])))
+print(f"delay: {in_obj['d']}  elapsed: {in_obj['e']}  count: {len(in_obj['r'])}")
 for this_response in in_obj["r"]:
 	resp_count += 1
 	if get_resp == None:

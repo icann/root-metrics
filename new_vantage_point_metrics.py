@@ -317,7 +317,6 @@ if __name__ == "__main__":
 			try:
 				this_ret = this_future.result()
 			except Exception as e:
-				############### Should look for timeouts here
 				log(f"Request error: {e}")
 			else:
 				all_results.append(this_ret)
