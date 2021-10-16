@@ -14,6 +14,7 @@ class QueryError(Exception):
 def do_one_query(target, internet, ip_addr, transport, query, test_type):
 	''' Send one ./SOA query over UDP/TPC and v4/v6; return a dict of results '''
 	id_string = f"{target}|{internet}|{transport}|{query}|{test_type}"
+	r_dict = { "id_string": id_string, "error": "", "target": target, "internet": internet, "ip_addr": ip_addr, "transport": transport, "query": query, "test_type": test_type }
 	# Sanity checks
 	if not internet in ("v4", "v6"):
 		raise QueryError(f"Bad internet: {internet} in {id_string}")
@@ -37,20 +38,24 @@ def do_one_query(target, internet, ip_addr, transport, query, test_type):
 	q = dns.message.make_query(qname_processed, qtype_processed)
 	# If test_type is "C", set the buffer size to 1220 [rja] and add DO bit
 	#    Include NSID over EDNS0 [mgj] for both "S" and "C"
+	nsid_option = dns.edns.GenericOption(dns.edns.OptionType.NSID, b'')
 	if test_type == "C":
-		q.use_edns(edns=0, payload=1220, ednsflags = dns.flags.DO, options=[dns.edns.GenericOption(dns.edns.OptionType.NSID, b'')])
+		q.use_edns(edns=0, payload=1220, ednsflags=dns.flags.DO, options=[nsid_option])
 	else:
-		q.use_edns(edns=0, options=[dns.edns.GenericOption(dns.edns.OptionType.NSID, b'')])
+		q.use_edns(edns=0, options=[nsid_option])
 	# Start the return value
 	query_start_time = time.time()
-	r_dict = { "id_string": id_string, "target": target, "internet": internet, "ip_addr": ip_addr, "transport": transport, "query": query, "test_type": test_type }
 	# Choose the transport
 	if transport == "udp":
 		try:
 			r = dns.query.udp(q, ip_addr, timeout=4.0)
 			r_dict["query_elapsed"] = time.time() - query_start_time
 		except Exception as e:
-			raise QueryError(f"UDP query failure: {e} in {id_string}")
+			if "operation timed out" in e:
+				r_dict["timeout"] = "UDP timeout"
+			else:
+				r_dict["error"] = f"UDP query failure: {e}"
+			return r_dict
 	else:
 		try:
 			tcp_start_time = time.time()
@@ -61,13 +66,21 @@ def do_one_query(target, internet, ip_addr, transport, query, test_type):
 			t_sock.connect((ip_addr, 53))
 			r_dict["tcp_setup"] = time.time() - tcp_start_time
 		except Exception as e:
-			raise QueryError(f"TCP setup failure: {e} in {id_string}")
+			if "operation timed out" in e:
+				r_dict["timeout"] = "TCP setup timeout"
+			else:
+				r_dict["error"] = f"TCP setup failure: {e}"
+			return r_dict
 		try:
 			r = dns.query.tcp(q, None, timeout=4.0, sock=t_sock)
 			r_dict["query_elapsed"] = time.time() - query_start_time
 			t_sock.close()
 		except Exception as e:
-			raise QueryError(f"TCP query failure: {e} in {id_string}")
+			if "operation timed out" in e:
+				r_dict["timeout"] = "TCP query timeout"
+			else:
+				r_dict["error"] = f"TCP query failure: {e}"
+			return r_dict
 	# Collect all the response data
 	try:
 		r_dict["id"] = r.id
