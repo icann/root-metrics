@@ -4,7 +4,7 @@
 # Run as the metrics user
 # Three-letter items in square brackets (such as [xyz]) refer to parts of rssac-047.md
 
-import argparse, datetime, glob, gzip, logging, os, pickle, psycopg2, socket, subprocess, shutil, tempfile, time, yaml
+import argparse, datetime, glob, gzip, logging, os, pickle, psycopg2, socket, subprocess, shutil, tempfile, time
 from concurrent import futures
 from collections import namedtuple
 
@@ -22,7 +22,7 @@ def run_tests_only():
 	for this_test_file in sorted(glob.glob("p-*")):
 		p_count += 1
 		this_id = os.path.basename(this_test_file)
-		this_resp_pickle = pickle.dumps(yaml.load(open(this_test_file, mode="rb")))
+		this_resp_pickle = pickle.dumps(open(this_test_file, mode="rb"))
 		this_response = ("test", process_one_correctness_array(["", [ "test" ], this_resp_pickle]))
 		if this_response:
 			log("Expected pass, but got failure, on {}\n{}\n".format(this_id, this_response))
@@ -36,7 +36,7 @@ def run_tests_only():
 		in_lines = open(this_test_file, mode="rt").read().splitlines()
 		n_responses[this_id] = {}
 		n_responses[this_id]["desc"] = in_lines[0]
-		this_resp_pickle = pickle.dumps(yaml.load(open(this_test_file, mode="rt")))
+		this_resp_pickle = pickle.dumps(open(this_test_file, mode="rt"))
 		this_response = ("test", process_one_correctness_array(["", [ "test" ], this_resp_pickle]))
 		if not this_response:
 			log("Expected failure, but got pass, on {}".format(this_id))
@@ -139,7 +139,7 @@ def process_one_incoming_file(full_file):
 	except Exception as e:
 		die("Could not unpickle {}: '{}'".format(full_file, e))
 	# Sanity check the record
-	if not ("d" in in_obj) and ("e" in in_obj) and ("r" in in_obj) and ("s" in in_obj) and ("v" in in_obj):
+	if not ("v" in in_obj) and ("d" in in_obj) and ("e" in in_obj) and ("r" in in_obj) and ("s" in in_obj):
 		alert("Object in {} did not contain keys d, e, r, s, and v".format(full_file))
 
 	# Move the file to ~/Originals/yyyymm so it doesn't get processed again
@@ -149,7 +149,7 @@ def process_one_incoming_file(full_file):
 	if not os.path.exists(original_dir_target):
 		try:
 			os.mkdir(original_dir_target)
-		except Exception as e:
+		except Exception:
 			log("Could not create {}; continuing")
 	try:
 		shutil.move(full_file, original_dir_target)
@@ -244,66 +244,33 @@ def process_one_incoming_file(full_file):
 			rsi=this_resp[0], internet=this_resp[1], transport=this_resp[2], ip_addr=this_resp[3], record_type=this_resp[4], prog_elapsed=this_resp[5], \
 			dig_elapsed=0.0, timeout="", soa_found="", recent_soas=[], is_correct="?", failure_reason="", source_pickle=b"")
 
-		# If what was supposed to be YAML is an empty string, it means that dig could not get a route to the server
-		#   In this case, make it a timeout, and don't fill in any other data [dfl] [dks]
-		if len(this_resp[6]) == 0:
-			insert_values = insert_values._replace(timeout="empty_yaml")
-			insert_from_template(insert_template, insert_values)
-			continue
-			
-		# Get it out of YAML and do basic sanity checks
-		#   Stuff saved as "YAML fix" would go here
-		try:
-			this_resp_obj = yaml.load(this_resp[6])
-		except Exception as e:
-			alert("Could not interpret YAML from {} of {}: '{}'".format(response_count, full_file, e))
-			continue
-		if not this_resp_obj[0].get("type"):
-			alert("Found no dig type in record {} of {}".format(response_count, full_file))
-			continue
-		if not this_resp_obj[0]["type"] in ("MESSAGE", "DIG_ERROR"):
-			alert("Found an unexpected dig type {} in record {} of {}".format(this_resp_obj[0]["type"], response_count, full_file))
-			continue
-		if not this_resp_obj[0].get("message"):
-			alert("Found no message in record {} of {}".format(response_count, full_file))
-			continue
-
-		# All DIG_ERROR responses should say "timed out" or "communications error" in the message
-		if this_resp_obj[0]["type"] == "DIG_ERROR":
-			if not (("timed out" in this_resp_obj[0]["message"]) or ("communications error" in this_resp_obj[0]["message"])):
-				alert("Found unexpected dig error message '{}' in record {} of {}".format(this_resp_obj[0]["message"], response_count, full_file))
-				continue
-			insert_values = insert_values._replace(timeout="dig_error")
-			insert_from_template(insert_template, insert_values)
-			continue
-
 		# If the response code is wrong, treat it as a timeout; use the response code as the timeout message
 		#   For "S" records   [ppo]
 		#   For "C" records   [ote]
-		this_response_code = this_resp_obj[0]["message"]["response_message_data"]["status"]
-		if not ((insert_values.record_type == "S" and this_response_code in ("NOERROR")) or (insert_values.record_type == "C" and this_response_code in ("NOERROR", "NXDOMAIN"))):
+		# NOERROR = 0  NXDOMIN = 3
+		this_response_code = this_resp["rcode"]
+		if not ((insert_values.record_type == "S" and this_response_code in (0)) or (insert_values.record_type == "C" and this_response_code in (0, 3))):
 			insert_values = insert_values._replace(timeout=this_response_code)
 			insert_from_template(insert_template, insert_values)
 			continue
 
 		# What is left is the normal responses
 		#   For these, leave the timeout as ""
-		if (not this_resp_obj[0]["message"].get("response_time")) or (not this_resp_obj[0]["message"].get("query_time")):
-			alert("Found a message of type 'S' without response_time or query_time in record {} of {}".format(response_count, full_file))
+		if not this_resp.get("query_elapsed"):
+			alert("Found a message without query_elapsed or query_time in record {} of {}".format(response_count, full_file))
 			continue
-		dig_elapsed_as_delta = this_resp_obj[0]["message"]["response_time"] - this_resp_obj[0]["message"]["query_time"]  # [aym]
-		insert_values = insert_values._replace(dig_elapsed=datetime.timedelta.total_seconds(dig_elapsed_as_delta))
+		insert_values = insert_values._replace(this_resp["query_elapsed"])# [aym]
 		if insert_values.record_type == "S":
-			if not this_resp_obj[0]["message"].get("response_message_data").get("ANSWER_SECTION"):
+			if len(this_resp["answer"]) == 0:
 				alert("Found a message of type 'S' without an answer in record {} of {}".format(response_count, full_file))
 				continue
-			this_soa_record = this_resp_obj[0]["message"]["response_message_data"]["ANSWER_SECTION"][0]
+			this_soa_record = this_resp["answer"][0]
 			soa_record_parts = this_soa_record.split(" ")
 			this_soa = soa_record_parts[6]
 			insert_values = insert_values._replace(soa_found=this_soa)
 		if insert_values.record_type == "C":
-			# The correctness response contains the pickle of the YAML; to save space, don't do this for "S" records
-			insert_values = insert_values._replace(source_pickle=pickle.dumps(this_resp_obj))
+			# The correctness response contains the pickle of the whole response; to save space, don't do this for "S" records
+			insert_values = insert_values._replace(source_pickle=pickle.dumps(this_resp))
 			# Set is_correct to "?" so it can be checked later
 			insert_values = insert_values._replace(is_correct="?")
 		# Write out this record
@@ -453,7 +420,7 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 
 	# Check that each of the RRsets in the Answer, Authority, and Additional sections match RRsets found in the zone [vnk]
 	#   This check does not include any RRSIG RRsets that are not named in the matching tests below. [ygx]
-	# This check does not include any OPT RRset found in the Additional section because "dig +yaml" does not put them in the Additional section [pvz]
+	# This check does not include any EDNS0 NSID RRset [pvz]
 	# After this check is done, we no longer need to check RRsets from the answer against the root zone
 	for this_section_name in [ "ANSWER_SECTION", "AUTHORITY_SECTION", "ADDITIONAL_SECTION" ]:
 		if resp.get(this_section_name):
