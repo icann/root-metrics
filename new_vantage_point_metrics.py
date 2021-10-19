@@ -356,7 +356,7 @@ if __name__ == "__main__":
 		"s": scamper_output
 	}
 	# Save the output in a file with start_time_string and vp_ident
-	output_dir = "/sftp/transfer/Output"
+	output_dir = "/home/metrics/Output"
 	try:
 		out_run_file_name = f"{output_dir}/{start_time_string}-{vp_ident}.pickle.gz"
 		with gzip.open(out_run_file_name, mode="wb") as gzf:

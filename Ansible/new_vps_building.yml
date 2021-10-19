@@ -42,7 +42,7 @@
   - name: Set up id_rsa for metrics
     authorized_key:
       user: metrics
-      key: "{{ lookup('file', '../Local/transfer_id_rsa.pub') }}"
+      key: "{{ lookup('file', '../Local/metrics_id_rsa.pub') }}"
   - name: Put .bashrc for metrics
     copy:
       src: ../bashrc-for-metrics-and-root
@@ -51,6 +51,11 @@
     template:
       src: ../short-host-name.txt
       dest: /home/metrics/short-host-name.txt
+  - name: make Output/
+    file:
+      path: /home/metrics/Output
+      mode: u+wrx,go+rx
+      state: directory
   - name: make Logs/
     file:
       path: /home/metrics/Logs
