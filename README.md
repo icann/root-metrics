@@ -16,14 +16,14 @@ The repo has a Markdown version of excerpts of [RSSAC047](rssac-047.md) as the f
 ## Logging and alerts
 
 - Logs are text files kept on VPs and collector
-- Alerts are text files, monitored by Prometheus/Zabbix/etc. on collector
+- Alerts are text files, may be monitored by Prometheus/Zabbix/etc. on collector
 	- ~/Logs/nnn-alerts.txt on every machine
 - All Python scripts have _die_ function that prints to alert logs
 
 ## Vantage points
 
 - Each VP should have more than one core if possible
-- All are running latest Debian
+- All are running latest Debian or similar
 	- Thus automatically running NTP  `[ugt]`
 - All programs run as "metrics" user
 - Also has "transfer" user for for the collector to copy data
@@ -37,21 +37,10 @@ The repo has a Markdown version of excerpts of [RSSAC047](rssac-047.md) as the f
 	- Results of each run are saved as .pickle.gz to /sftp/transfer/Output for later pulling
 	- Logs to ~/Logs/nnn-log.txt
 
-- `watch_fp.py`
-	- Run from cron every 5 minutes on 4, 9, ...
-	- Alerts if no output from most recent run
-	- Check for disk usage > 80%, alert if found
-
-- Distribution of vantage points
-	- Remind RSSAC Caucus of the previous discussion
-	- Spin up a VM in every data center for North America, Asia, and Europe
-	- Do traceroutes to two places
-	- Ask if they need more or, if not, which to use
-
 ## Collector
 
 - Run on a VM with lots of cores and memory
-- Running Debian 10
+- Running latest Debian or similar
 	- Thus automatically running NTP  `[ugt]`
 - All programs run as "metrics" user
 - Also has "transfer" user for others to copy data

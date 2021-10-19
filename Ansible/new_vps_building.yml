@@ -115,7 +115,7 @@
     git:
       repo: 'https://github.com/icann/root-metrics.git'
       dest: /home/metrics/repo
-      version: dnspython
+      ####### version: dnspython
   - name: Give the crontab entry for new_vantage_point_metrics.py
     cron:   # [mba] [wca]
       name: Get measurements
