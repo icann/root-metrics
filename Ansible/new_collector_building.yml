@@ -17,11 +17,6 @@
     copy:
       src: ../bashrc-for-metrics-and-root
       dest: /root/.bashrc
-  - name: Make /sftp for transfer user
-    file:
-      path: /sftp
-      state: directory
-      mode: go-w
   - name: Replace sshd_config
     copy:
       src: ../etc_sshd_config_shorter
@@ -31,11 +26,6 @@
       state: restarted
       name: sshd.service
       daemon_reload: yes      
-  - name: Make user 'transfer'
-    user:
-      name: transfer
-      home: /sftp/transfer
-      shell: /bin/bash
   - name: Make user 'metrics'
     user: 
       name: metrics
@@ -61,16 +51,6 @@
     file:
       path: /home/metrics/.ssh
       state: directory
-      mode: go-rwx
-  - name: Copy public key for transfer
-    copy:
-      src: ../Local/transfer_id_rsa.pub
-      dest: /home/metrics/.ssh/id_rsa.pub
-      mode: go-rwx
-  - name: Copy private key for transfer
-    copy:
-      src: ../Local/transfer_id_rsa
-      dest: /home/metrics/.ssh/id_rsa
       mode: go-rwx
   - name: Copy metrics public key
     copy:
