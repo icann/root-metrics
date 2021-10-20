@@ -14,7 +14,8 @@ class QueryError(Exception):
 def do_one_query(target, internet, ip_addr, transport, query, test_type):
 	''' Send one ./SOA query over UDP/TPC and v4/v6; return a dict of results '''
 	id_string = f"{target}|{internet}|{transport}|{query}|{test_type}"
-	r_dict = { "id_string": id_string, "error": "", "target": target, "internet": internet, "ip_addr": ip_addr, "transport": transport, "query": query, "test_type": test_type }
+	r_dict = { "id_string": id_string, "error": "", "target": target, "internet": internet, "ip_addr": ip_addr,
+		"transport": transport, "query": query, "test_type": test_type }
 	# Sanity checks
 	if not internet in ("v4", "v6"):
 		raise QueryError(f"Bad internet: {internet} in {id_string}")

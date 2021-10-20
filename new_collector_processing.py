@@ -59,7 +59,7 @@ def get_files_from_one_vp(this_vp):
 	##### die("Was about to get_files_from_one_vp for {}".format(this_vp))
 	########################################################################
 
-	# Used to rsync files from VPs under multiprocessing into incoming_dir; retuns nothing
+	# Used to rsync files from VPs under multiprocessing into incoming_dir; retuns error messages
 	pull_to_dir = f"{incoming_dir}/{this_vp}"
 	if not os.path.exists(pull_to_dir):
 		try:
@@ -69,9 +69,9 @@ def get_files_from_one_vp(this_vp):
 	# rsync from the VP
 	for this_dir in ("Output", "Logs"):
 		try:
-			p = subprocess.run(f"rsync -av metrics@{this_vp}.mtric.net:{this_dir} {pull_to_dir}/{this_vp}", shell=True, capture_output=True, text=True, check=True)
+			p = subprocess.run(f"rsync -av --timeout=5 metrics@{this_vp}.mtric.net:{this_dir} {pull_to_dir}/{this_vp}", shell=True, capture_output=True, text=True, check=True)
 		except Exception as e:
-			die(f"Failed to rsync {this_dir} from {this_vp}: {e}")
+			return f"For {this_vp}, failed to rsync {this_dir}: {e}"
 		# Keep the log
 		try:
 			log_f = open(f"{pull_to_dir}/{this_vp}/rsync-log.txt", mode="at")
@@ -79,7 +79,7 @@ def get_files_from_one_vp(this_vp):
 			log_f.close()
 		except:
 			die(f"Could not write to log {pull_to_dir}/{this_vp}/rsync-log.txt") 
-	return
+	return ""
 
 ###############################################################
 def process_one_incoming_file(full_file):
@@ -185,7 +185,7 @@ def process_one_incoming_file(full_file):
 			alert("Could not insert into route_info for {}: '{}'".format(short_file, e))
 
 	# Named tuple for the record templates
-	template_names_raw = "filename_record date_derived rsi internet transport ip_addr record_type prog_elapsed dig_elapsed timeout soa_found " \
+	template_names_raw = "filename_record date_derived target internet transport ip_addr record_type query_elapsed timeout soa_found " \
 		+ "recent_soas is_correct failure_reason source_pickle"
 	# Change spaces to ", "
 	template_names_with_commas = template_names_raw.replace(" ", ", ")
@@ -205,15 +205,14 @@ def process_one_incoming_file(full_file):
 			continue
 		insert_template = "insert into record_info ({}) values ({})".format(template_names_with_commas, percent_s_string)
 		# Note that the default value for is_correct is "?" so that the test for "has correctness been checked" can still be against "y" or "n", which is set below
-		insert_values = insert_values_template(filename_record="{}-{}".format(short_file, response_count), date_derived=file_date, \
-			rsi=this_resp[0], internet=this_resp[1], transport=this_resp[2], ip_addr=this_resp[3], record_type=this_resp[4], prog_elapsed=this_resp[5], \
-			dig_elapsed=0.0, timeout="", soa_found="", recent_soas=[], is_correct="?", failure_reason="", source_pickle=b"")
-
+		insert_values = insert_values_template(filename_record="f{short_file}-{response_count}", date_derived=file_date, \
+			target=this_resp["target"], internet=this_resp["internet"], transport=this_resp["transport"], ip_addr=this_resp["ip_addr"], record_type=this_resp["test_type"], \
+			query_elapsed=this_resp.get("query_elapsed"), timeout="", soa_found="", recent_soas=[], is_correct="?", failure_reason="", source_pickle=b"")
 		# If the response code is wrong, treat it as a timeout; use the response code as the timeout message
 		#   For "S" records   [ppo]
 		#   For "C" records   [ote]
 		# NOERROR = 0  NXDOMIN = 3
-		this_response_code = this_resp["rcode"]
+		this_response_code = this_resp.get("rcode")
 		if not ((insert_values.record_type == "S" and this_response_code in (0)) or (insert_values.record_type == "C" and this_response_code in (0, 3))):
 			insert_values = insert_values._replace(timeout=this_response_code)
 			insert_from_template(insert_template, insert_values)
@@ -222,11 +221,11 @@ def process_one_incoming_file(full_file):
 		# What is left is the normal responses
 		#   For these, leave the timeout as ""
 		if not this_resp.get("query_elapsed"):
-			alert("Found a message without query_elapsed or query_time in record {} of {}".format(response_count, full_file))
+			alert("Found a message without query_elapsed in record {} of {}".format(response_count, full_file))
 			continue
 		insert_values = insert_values._replace(this_resp["query_elapsed"])# [aym]
 		if insert_values.record_type == "S":
-			if len(this_resp["answer"]) == 0:
+			if this_resp.get("answer") == None or len(this_resp["answer"]) == 0:
 				alert("Found a message of type 'S' without an answer in record {} of {}".format(response_count, full_file))
 				continue
 			this_soa_record = this_resp["answer"][0]
@@ -817,7 +816,8 @@ if __name__ == "__main__":
 					die("Could not run ssh-keyscan on {}: {}".format(this_vp, e))
 		with futures.ProcessPoolExecutor() as executor:
 			for (this_vp, this_ret) in zip(all_vps, executor.map(get_files_from_one_vp, all_vps)):
-				pass
+				if not this_ret == "":
+					alert(this_ret)
 		log("Finished pulling from VPs; got files from {} VPs".format(len(all_vps)))
 	
 	elif opts.source == "skip":
@@ -826,8 +826,8 @@ if __name__ == "__main__":
 
 	###############################################################
 
-	# Go through the files in ~/Incoming
-	log("Started going through ~/Incoming")
+	# Go through the files in incoming_dir
+	log(f"Started going through {incoming_dir}")
 	all_files = list(glob.glob("{}/*".format(incoming_dir)))
 	# If limit is set, use only the first few
 	if opts.limit:
