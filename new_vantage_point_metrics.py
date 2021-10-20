@@ -90,7 +90,11 @@ def do_one_query(target, internet, ip_addr, transport, query, test_type):
 		r_dict["edns"] = {}
 		for this_option in r.options:
 			r_dict["edns"][this_option.otype.value] = this_option.data
-		for (this_section_number, this_section_name) in enumerate(("question", "answer", "authority", "additional")):
+		if test_type == "C":
+			get_sections = ("question", "answer", "authority", "additional")
+		else:
+			get_sections = ("question", "answer")
+		for (this_section_number, this_section_name) in enumerate(get_sections):
 			r_dict[this_section_name] = []
 			for this_rrset in r.section_from_number(this_section_number):
 				this_rrset_dict = {"name": this_rrset.name.to_text(), "ttl": this_rrset.ttl, "class": this_rrset.rdclass, "rdata": []}
@@ -170,7 +174,6 @@ def update_rr_list(file_to_write):
 
 if __name__ == "__main__":
 	# Get the vantage point identifier from the short-host-name.txt file
-	#   vp_ident of 999 is special: it means this is running on a local computer, probably for testing
 	#   This has to be done before setting up logging, so "exit" is needed if it fails
 	vp_ident_file_name = "/home/metrics/short-host-name.txt"
 	try:
@@ -184,17 +187,14 @@ if __name__ == "__main__":
 	log_dir = f"{os.path.expanduser('~')}/Logs"
 	if not os.path.exists(log_dir):
 		os.mkdir(log_dir)
-	alerts_dir = f"{log_dir}/Alerts"
-	if not os.path.exists(alerts_dir):
-		os.mkdir(alerts_dir)
 
 	# Get the time string for this run
 	start_time_string = time.strftime("%Y%m%d%H%M")
 
 	# Set up the logging and alert mechanisms
 	#   Requires log_dir and vp_ident to have been defined above 
-	log_file_name = f"{log_dir}/{vp_ident}-log.txt"
-	alert_file_name = f"{log_dir}/{vp_ident}-alert.txt"
+	log_file_name = f"{log_dir}/log.txt"
+	alert_file_name = f"{log_dir}/alert.txt"
 	vp_log = logging.getLogger("logging")
 	vp_log.setLevel(logging.INFO)
 	log_handler = logging.FileHandler(log_file_name)
@@ -210,17 +210,9 @@ if __name__ == "__main__":
 	def alert(alert_message):
 		vp_alert.critical(alert_message)
 		log(alert_message)
-		# Also write alerts as individual alert files
-		p = subprocess.run(f'create-alert.py "{alert_message}"', shell=True, capture_output=True, text=True)
-		if len(p.stdout) > 0:
-			die(f"Trying to send alert failed with '{p.stderr}")
 	def die(error_message):
 		vp_alert.critical(error_message)
 		log(f"Died with '{error_message}'")
-		# Also write alerts as individual alert files
-		subprocess.run(f'create-alert.py "{error_message}"', shell=True, capture_output=True, text=True)
-		if vp_ident == "999":
-			print(f"Exiting at {int(time.time())}: {error_message}")
 		exit()
 
 	# Log the start

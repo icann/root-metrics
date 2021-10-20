@@ -55,12 +55,12 @@
   - name: Copy metrics public key
     copy:
       src: ../Local/metrics_id_rsa.pub
-      dest: /home/metrics/.ssh/metrics_id_rsa.pub
+      dest: /home/metrics/.ssh/id_rsa.pub
       mode: go-rwx
   - name: Copy metrics private key
     copy:
       src: ../Local/metrics_id_rsa
-      dest: /home/metrics/.ssh/metrics_id_rsa
+      dest: /home/metrics/.ssh/id_rsa
       mode: go-rwx
   - name: Turn off hashing of names in known_hosts
     copy:
