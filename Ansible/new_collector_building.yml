@@ -135,6 +135,7 @@
     git:
       repo: 'https://github.com/icann/root-metrics.git'
       dest: /home/metrics/repo
+      version: no-transfer-user
   - name: Give the crontab entry for get_root_zone.py
     cron:   # [mba] [wca]
       disabled: yes
