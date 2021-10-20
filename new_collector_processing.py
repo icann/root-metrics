@@ -56,65 +56,30 @@ def run_tests_only():
 
 def get_files_from_one_vp(this_vp):
 	##################### Remove this before deploying #####################
-	die("Was about to get_files_from_one_vp for {}".format(this_vp))
+	##### die("Was about to get_files_from_one_vp for {}".format(this_vp))
 	########################################################################
 
-	# Used to pull files from VPs under multiprocessing; retuns the number of files pulled from this VP
-	pulled_count = 0
-	# Make a batch file for sftp that gets the directory
-	dir_batch_filename = "{}/{}-dirbatchfile.txt".format(batch_dir, this_vp)
-	dir_f = open(dir_batch_filename, mode="wt")
-	dir_f.write("cd transfer/Output\ndir -1\n")
-	dir_f.close()
-	# Execuite sftp with the directory batch file
-	try:
-		p = subprocess.run("sftp -b {} transfer@{}".format(dir_batch_filename, this_vp), shell=True, capture_output=True, text=True, check=True)
-	except Exception as e:
-		log("Getting directory for {} ended with '{}'".format(dir_batch_filename, e))
-		return pulled_count
-	dir_lines = p.stdout.splitlines()
-
-	conn = psycopg2.connect(dbname="metrics", user="metrics")
-	conn.set_session(autocommit=True)
-	
-	# Get the filenames that end in .gz; some lines will be other cruft such as ">"
-	for this_filename in dir_lines:
-		if not this_filename.endswith(".gz"):
-			continue
-		# Create an sftp batch file for each file to get
-		get_batch_filename = "{}/{}-getbatchfile.txt".format(batch_dir, this_vp)
-		get_f = open(get_batch_filename, mode="wt")
-		# Get the file
-		get_cmd = "get transfer/Output/{} {}\n".format(this_filename, incoming_dir)
-		get_f.write(get_cmd)
-		get_f.close()
+	# Used to rsync files from VPs under multiprocessing into incoming_dir; retuns nothing
+	pull_to_dir = f"{incoming_dir}/{this_vp}"
+	if not os.path.exists(pull_to_dir):
 		try:
-			p = subprocess.run("sftp -b {} transfer@{}".format(get_batch_filename, this_vp), shell=True, capture_output=True, text=True, check=True)
-		except Exception as e:
-			conn.close()
-			die("Running get for {} ended with '{}'".format(this_filename, e))
-		# Create an sftp batch file for each file to move
-		move_batch_filename = "{}/{}-movebatchfile.txt".format(batch_dir, this_vp)
-		move_f = open(move_batch_filename, mode="wt")
-		# Get the file
-		move_cmd = "rename transfer/Output/{0} transfer/AlreadySeen/{0}\n".format(this_filename)
-		move_f.write(move_cmd)
-		move_f.close()
+			os.mkdir(pull_to_dir)
+		except:
+			die(f"Could not create {pull_to_dir}")
+	# rsync from the VP
+	for this_dir in ("Output", "Logs"):
 		try:
-			p = subprocess.run("sftp -b {} transfer@{}".format(move_batch_filename, this_vp), shell=True, capture_output=True, text=True, check=True)
+			p = subprocess.run(f"rsync -av metrics@{this_vp}.mtric.net:{this_dir} {pull_to_dir}/{this_vp}", shell=True, capture_output=True, text=True, check=True)
 		except Exception as e:
-			conn.close()
-			die("Running rename for {} ended with '{}'".format(this_filename, e))
-		pulled_count += 1
+			die(f"Failed to rsync {this_dir} from {this_vp}: {e}")
+		# Keep the log
 		try:
-			cur = conn.cursor()
-			cur.execute("insert into files_gotten (filename_full, retrieved_at) values (%s, %s);", (this_filename, datetime.datetime.now(datetime.timezone.utc)))
-			cur.close()
-		except Exception as e:
-			conn.close()
-			die("Could not insert '{}' into files_gotten: '{}'".format(this_filename, e))
-	conn.close()
-	return pulled_count
+			log_f = open(f"{pull_to_dir}/{this_vp}/rsync-log.txt", mode="at")
+			log_f.write(p.stdout)
+			log_f.close()
+		except:
+			die(f"Could not write to log {pull_to_dir}/{this_vp}/rsync-log.txt") 
+	return
 
 ###############################################################
 def process_one_incoming_file(full_file):
@@ -850,12 +815,10 @@ if __name__ == "__main__":
 					log("Added {} to known_hosts".format(this_vp))
 				except Exception as e:
 					die("Could not run ssh-keyscan on {}: {}".format(this_vp, e))
-		total_pulled = 0
 		with futures.ProcessPoolExecutor() as executor:
-			for (this_vp, pulled_count) in zip(all_vps, executor.map(get_files_from_one_vp, all_vps)):
-				if pulled_count:
-					total_pulled += pulled_count
-		log("Finished pulling from VPs; got {} files from {} VPs".format(total_pulled, len(all_vps)))
+			for (this_vp, this_ret) in zip(all_vps, executor.map(get_files_from_one_vp, all_vps)):
+				pass
+		log("Finished pulling from VPs; got files from {} VPs".format(len(all_vps)))
 	
 	elif opts.source == "skip":
 		# Don't do any source gathering

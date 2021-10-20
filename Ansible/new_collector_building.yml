@@ -111,7 +111,7 @@
       creates: /home/metrics/Source/bind-9.16.20/config.log
   - name: Put vp_list.txt
     copy:
-      src: ../vp_list.txt
+      src: ../new_vp_list.txt
       dest: /home/metrics/vp_list.txt
   - name: Put the source for getdns_validate
     copy:
