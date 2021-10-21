@@ -229,7 +229,7 @@ def process_one_incoming_file(full_file):
 		if not this_resp.get("query_elapsed"):
 			alert("Found a message without query_elapsed in record {} of {}".format(response_count, full_file))
 			continue
-		insert_values = insert_values._replace(this_resp["query_elapsed"])  # [aym]
+		insert_values = insert_values._replace(query_elapsed=this_resp["query_elapsed"])  # [aym]
 		if insert_values.record_type == "S":
 			if this_resp.get("answer") == None or len(this_resp["answer"]) == 0:
 				alert("Found a message of type 'S' without an answer in record {} of {}".format(response_count, full_file))
