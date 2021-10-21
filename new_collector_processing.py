@@ -800,7 +800,7 @@ if __name__ == "__main__":
 
 	# Go through the files in incoming_dir
 	log(f"Started going through {incoming_dir}")
-	all_files = list(Path(f"{incoming_dir}").glob("**/*.pickle.gz"))
+	all_files = [ str(x) for x in Path(f"{incoming_dir}").glob("**/*.pickle.gz") ]
 	# If limit is set, use only the first few
 	if opts.limit:
 		all_files = all_files[0:limit_size]
