@@ -213,7 +213,7 @@ def process_one_incoming_file(full_file):
 		# Note that the default value for is_correct is "?" so that the test for "has correctness been checked" can still be against "y" or "n", which is set below
 		insert_values = insert_values_template(filename_record="f{short_file}-{response_count}", date_derived=file_date, \
 			target=this_resp["target"], internet=this_resp["internet"], transport=this_resp["transport"], ip_addr=this_resp["ip_addr"], record_type=this_resp["test_type"], \
-			query_elapsed=this_resp.get("query_elapsed"), timeout="", soa_found="", recent_soas=[], is_correct="?", failure_reason="", source_pickle=b"")
+			query_elapsed=0.0, timeout="", soa_found="", recent_soas=[], is_correct="?", failure_reason="", source_pickle=b"")
 		# If the response code is wrong, treat it as a timeout; use the response code as the timeout message
 		#   For "S" records   [ppo]
 		#   For "C" records   [ote]
@@ -229,7 +229,7 @@ def process_one_incoming_file(full_file):
 		if not this_resp.get("query_elapsed"):
 			alert("Found a message without query_elapsed in record {} of {}".format(response_count, full_file))
 			continue
-		insert_values = insert_values._replace(this_resp["query_elapsed"])# [aym]
+		insert_values = insert_values._replace(this_resp["query_elapsed"])  # [aym]
 		if insert_values.record_type == "S":
 			if this_resp.get("answer") == None or len(this_resp["answer"]) == 0:
 				alert("Found a message of type 'S' without an answer in record {} of {}".format(response_count, full_file))
