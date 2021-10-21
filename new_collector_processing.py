@@ -234,7 +234,7 @@ def process_one_incoming_file(full_file):
 			if this_resp.get("answer") == None or len(this_resp["answer"]) == 0:
 				alert("Found a message of type 'S' without an answer in record {} of {}".format(response_count, full_file))
 				continue
-			this_soa_record = this_resp["answer"][0]["rdata"]
+			this_soa_record = this_resp["answer"][0]["rdata"][0]
 			soa_record_parts = this_soa_record.split(" ")
 			this_soa = soa_record_parts[6]
 			insert_values = insert_values._replace(soa_found=this_soa)
