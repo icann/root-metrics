@@ -211,7 +211,7 @@ def process_one_incoming_file(full_file):
 			continue
 		insert_template = "insert into record_info ({}) values ({})".format(template_names_with_commas, percent_s_string)
 		# Note that the default value for is_correct is "?" so that the test for "has correctness been checked" can still be against "y" or "n", which is set below
-		insert_values = insert_values_template(filename_record="f{short_file}-{response_count}", date_derived=file_date, \
+		insert_values = insert_values_template(filename_record=f"{short_file}-{response_count}", date_derived=file_date, \
 			target=this_resp["target"], internet=this_resp["internet"], transport=this_resp["transport"], ip_addr=this_resp["ip_addr"], record_type=this_resp["test_type"], \
 			query_elapsed=0.0, timeout="", soa_found="", recent_soas=[], is_correct="?", failure_reason="", source_pickle=b"")
 		# If the response code is wrong, treat it as a timeout; use the response code as the timeout message
@@ -713,8 +713,8 @@ if __name__ == "__main__":
 	this_parser = argparse.ArgumentParser()
 	this_parser.add_argument("--test", action="store_true", dest="test",
 		help="Run tests on requests; must be run in the Tests directory")
-	this_parser.add_argument("--source", action="store", dest="source", default="skip",
-		help="Specify 'vps' or 'c01' or 'skip' to say where to pull recent files")
+	this_parser.add_argument("--source", action="store", dest="source", default="vps",
+		help="Specify 'vps' or 'skip' to say where to pull recent files")
 	this_parser.add_argument("--limit", action="store_true", dest="limit",
 		help="Limit procesing to {} items".format(limit_size))
 	
@@ -722,9 +722,9 @@ if __name__ == "__main__":
 	if opts.limit:
 		log("Limiting record processing to {} records".format(limit_size))
 
-	# Make sure opts.source is "vps" or "c01" or "skip"
-	if not opts.source in ("vps", "c01", "skip"):
-		die('The value for --source must be "vps" or "c01" or "skip"')
+	# Make sure opts.source is "vps" or "skip"
+	if not opts.source in ("vps", "skip"):
+		die('The value for --source must be "vps" or "skip"')
 
 	# Where the binaries are
 	target_dir = "/home/metrics/Target"	
