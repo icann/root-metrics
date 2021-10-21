@@ -219,7 +219,7 @@ def process_one_incoming_file(full_file):
 		#   For "C" records   [ote]
 		# NOERROR = 0  NXDOMIN = 3
 		this_response_code = this_resp.get("rcode")
-		if not ((insert_values.record_type == "S" and this_response_code in (0)) or (insert_values.record_type == "C" and this_response_code in (0, 3))):
+		if not ((insert_values.record_type == "S" and this_response_code in [0]) or (insert_values.record_type == "C" and this_response_code in [0, 3])):
 			insert_values = insert_values._replace(timeout=this_response_code)
 			insert_from_template(insert_template, insert_values)
 			continue
