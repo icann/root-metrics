@@ -61,7 +61,7 @@ def get_files_from_one_vp(this_vp):
 	########################################################################
 
 	# Used to rsync files from VPs under multiprocessing into incoming_dir; retuns error messages
-	(vp_number) = this_vp.split(".", maxsplit=1)
+	(vp_number, _) = this_vp.split(".", maxsplit=1)
 	pull_to_dir = f"{incoming_dir}/{vp_number}"
 	if not os.path.exists(pull_to_dir):
 		try:
