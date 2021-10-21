@@ -202,8 +202,8 @@ def process_one_incoming_file(full_file):
 		response_count += 1
 		# Each record is "S" for an SOA record or "C" for a correctness test
 		#   Sanity test that the type is S or C
-		if not this_resp[4] in ("S", "C"):
-			alert("Found a response type {}, which is not S or C, in record {} of {}".format(this_resp[4], response_count, full_file))
+		if not this_resp["test_type"] in ("S", "C"):
+			alert("Found a response type {}, which is not S or C, in record {} of {}".format(this_resp["test_type"], response_count, full_file))
 			continue
 		insert_template = "insert into record_info ({}) values ({})".format(template_names_with_commas, percent_s_string)
 		# Note that the default value for is_correct is "?" so that the test for "has correctness been checked" can still be against "y" or "n", which is set below
