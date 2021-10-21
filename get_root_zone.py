@@ -11,8 +11,8 @@ if __name__ == "__main__":
 	if not os.path.exists(log_dir):
 		os.mkdir(log_dir)
 	# Set up the logging and alert mechanisms
-	log_file_name = "{}/collector-log.txt".format(log_dir)
-	alert_file_name = "{}/collector-alert.txt".format(log_dir)
+	log_file_name = "{}/log.txt".format(log_dir)
+	alert_file_name = "{}/alert.txt".format(log_dir)
 	vp_log = logging.getLogger("logging")
 	vp_log.setLevel(logging.INFO)
 	log_handler = logging.FileHandler(log_file_name)

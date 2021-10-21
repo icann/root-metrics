@@ -4,7 +4,7 @@
 # Run as the metrics user
 # Three-letter items in square brackets (such as [xyz]) refer to parts of rssac-047.md
 
-import argparse, datetime, gzip, logging, os, pickle, psycopg2, socket, subprocess, shutil, tempfile, time
+import argparse, datetime, glob, gzip, logging, os, pickle, psycopg2, socket, subprocess, shutil, tempfile, time
 from pathlib import Path
 from concurrent import futures
 from collections import namedtuple
@@ -121,10 +121,10 @@ def process_one_incoming_file(full_file):
 	# If it is already there for some reason, just delete it
 	try:
 		shutil.move(full_file, original_dir_target)
-	except Exception as e:
+	except Exception:
 		try:
 			os.remove(full_file)
-		except Exception as e:
+		except Exception:
 			die(f"After failing to move {full_file}, could not delete the original.")
 
 	conn = psycopg2.connect(dbname="metrics", user="metrics")
@@ -337,11 +337,11 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 		start_date_minus_two = start_date - datetime.timedelta(days=2)
 		soa_matching_date_files = []
 		for this_start in [start_date, start_date_minus_one, start_date_minus_two]:
-			soa_matching_date_files.extend(Path(f"{saved_matching_dir}/{this_start.strftime('%Y%m%d')}").glob("*.matching.pickle"))
+			soa_matching_date_files.extend(glob.glob(str(Path(f"{saved_matching_dir}/{this_start.strftime('%Y%m%d')}" + "*.matching.pickle"))))
 		# See if any of the matching files are not listed in the recent_soas field in the record; if so, try the highest one
 		soa_matching_date_files = sorted(soa_matching_date_files, reverse=True)
 		if len(soa_matching_date_files) == 0:
-			alert("Found no SOA matching files for {} with dates starting {}".format(this_filename_record, start_date.strftime("%Y%m%d")))
+			alert(f"Found no SOA matching files for {this_filename_record} with dates starting {start_date.strftime('%Y%m%d')}")
 			return
 		try:
 			cur = conn.cursor()
