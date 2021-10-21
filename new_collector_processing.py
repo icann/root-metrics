@@ -109,7 +109,7 @@ def process_one_incoming_file(full_file):
 	if not ("v" in in_obj) and ("d" in in_obj) and ("e" in in_obj) and ("r" in in_obj) and ("s" in in_obj):
 		alert("Object in {} did not contain keys d, e, r, s, and v".format(full_file))
 
-	# Move the file to ~/Originals/yyyymm so it doesn't get processed again
+	# Move the file to ~/Originals so it doesn't get processed again
 	year_from_short_file = short_file[0:4]
 	month_from_short_file = short_file[4:6]
 	original_dir_target = os.path.expanduser("~/Originals/{}{}".format(year_from_short_file, month_from_short_file))
@@ -121,7 +121,11 @@ def process_one_incoming_file(full_file):
 	try:
 		shutil.move(full_file, original_dir_target)
 	except Exception as e:
-		die("Could not move {} to {}: '{}'".format(full_file, original_dir_target, e))
+		alert("Could not move {} to {}: '{}'".format(full_file, original_dir_target, e))
+		try:
+			os.remove(full_file)
+		except Exception as e:
+			die(f"After failing to move {full_file}, could not delete it.")
 
 	conn = psycopg2.connect(dbname="metrics", user="metrics")
 	conn.set_session(autocommit=True)
