@@ -4,7 +4,8 @@
 # Run as the metrics user
 # Three-letter items in square brackets (such as [xyz]) refer to parts of rssac-047.md
 
-import argparse, datetime, glob, gzip, logging, os, pickle, psycopg2, socket, subprocess, shutil, tempfile, time
+import argparse, datetime, gzip, logging, os, pickle, psycopg2, socket, subprocess, shutil, tempfile, time
+from pathlib import Path
 from concurrent import futures
 from collections import namedtuple
 
@@ -19,7 +20,7 @@ def run_tests_only():
 			exit("Did not find {} for running under --test. Exiting.".format(this_check))
 	# Test the positives
 	p_count = 0
-	for this_test_file in sorted(glob.glob("p-*")):
+	for this_test_file in sorted(Path(".").glob("p-*")):
 		p_count += 1
 		this_id = os.path.basename(this_test_file)
 		this_resp_pickle = pickle.dumps(open(this_test_file, mode="rb"))
@@ -30,7 +31,7 @@ def run_tests_only():
 	n_count = 0
 	# Collect the negative responses to put in a file
 	n_responses = {}
-	for this_test_file in sorted(glob.glob("n-*")):
+	for this_test_file in sorted(Path(".").glob("n-*")):
 		n_count += 1
 		this_id = os.path.basename(this_test_file)
 		in_lines = open(this_test_file, mode="rt").read().splitlines()
@@ -60,7 +61,8 @@ def get_files_from_one_vp(this_vp):
 	########################################################################
 
 	# Used to rsync files from VPs under multiprocessing into incoming_dir; retuns error messages
-	pull_to_dir = f"{incoming_dir}/{this_vp}"
+	(vp_number) = this_vp.split(".", max_split=1)
+	pull_to_dir = f"{incoming_dir}/{vp_number}"
 	if not os.path.exists(pull_to_dir):
 		try:
 			os.mkdir(pull_to_dir)
@@ -69,16 +71,16 @@ def get_files_from_one_vp(this_vp):
 	# rsync from the VP
 	for this_dir in ("Output", "Logs"):
 		try:
-			p = subprocess.run(f"rsync -av --timeout=5 metrics@{this_vp}.mtric.net:{this_dir} {pull_to_dir}/{this_vp}", shell=True, capture_output=True, text=True, check=True)
+			p = subprocess.run(f"rsync -av --timeout=5 metrics@{vp_number}.mtric.net:{this_dir} {pull_to_dir}/{this_dir}", shell=True, capture_output=True, text=True, check=True)
 		except Exception as e:
-			return f"For {this_vp}, failed to rsync {this_dir}: {e}"
+			return f"For {vp_number}, failed to rsync {this_dir}: {e}"
 		# Keep the log
 		try:
-			log_f = open(f"{pull_to_dir}/{this_vp}/rsync-log.txt", mode="at")
+			log_f = open(f"{pull_to_dir}/rsync-log.txt", mode="at")
 			log_f.write(p.stdout)
 			log_f.close()
 		except:
-			die(f"Could not write to log {pull_to_dir}/{this_vp}/rsync-log.txt") 
+			die(f"Could not write to log {pull_to_dir}/{vp_number}/rsync-log.txt") 
 	return ""
 
 ###############################################################
@@ -331,7 +333,7 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 		start_date_minus_two = start_date - datetime.timedelta(days=2)
 		soa_matching_date_files = []
 		for this_start in [start_date, start_date_minus_one, start_date_minus_two]:
-			soa_matching_date_files.extend(glob.glob("{}/{}*.matching.pickle".format(saved_matching_dir, this_start.strftime("%Y%m%d"))))
+			soa_matching_date_files.extend(Path(f"{saved_matching_dir}/{this_start.strftime('%Y%m%d')}").glob("*.matching.pickle"))
 		# See if any of the matching files are not listed in the recent_soas field in the record; if so, try the highest one
 		soa_matching_date_files = sorted(soa_matching_date_files, reverse=True)
 		if len(soa_matching_date_files) == 0:
@@ -761,38 +763,8 @@ if __name__ == "__main__":
 	###############################################################
 	
 	# First active step is to copy new files to the collector
-	#   opts.source is either c01 (to rsync from c01.mtric.net) or vps (to pull from vps)
 
-	if opts.source == "c01":
-		log("Running rsync from c01")
-		rsync_start = time.time()
-		rsync_files_cmd = 'rsync -av -e "ssh -l root -i /home/metrics/.ssh/metrics_id_rsa" root@c01.mtric.net:/home/metrics/Originals/ /home/metrics/FromC01'
-		rsync_actual = subprocess.run(rsync_files_cmd, shell=True, capture_output=True, text=True)
-		pickle_count = 0
-		for this_line in rsync_actual.stdout.splitlines():
-			if ".pickle.gz" in this_line:
-				pickle_count += 1
-		log("Rsync of vantage point files got {} files in {} seconds, return code {}".format(pickle_count, int(time.time() - rsync_start), rsync_actual.returncode))
-		# Get the RootMatching files
-		rsync_start = time.time()
-		rsync_matching_cmd = 'rsync -av -e "ssh -l root -i /home/metrics/.ssh/metrics_id_rsa" root@c01.mtric.net:/home/metrics/Output/RootMatching/ /home/metrics/Output/RootMatching'
-		rsync_root_matching = subprocess.run(rsync_matching_cmd, shell=True, capture_output=True, text=True)
-		pickle_count = 0
-		for this_line in rsync_root_matching.stdout.splitlines():
-			if ".matching.pickle" in this_line:
-				pickle_count += 1
-		log("Rsync of RootMatching got {} files in {} seconds, return code {}".format(pickle_count, int(time.time() - rsync_start), rsync_root_matching.returncode))
-		# Get the RootZones files
-		rsync_start = time.time()
-		rsync_zones_cmd = 'rsync -av -e "ssh -l root -i /home/metrics/.ssh/metrics_id_rsa" root@c01.mtric.net:/home/metrics/Output/RootZones/ /home/metrics/Output/RootZones'
-		rsync_root_zones = subprocess.run(rsync_zones_cmd, shell=True, capture_output=True, text=True)
-		pickle_count = 0
-		for this_line in rsync_root_zones.stdout.splitlines():
-			if ".root.txt" in this_line:
-				pickle_count += 1
-		log("Rsync of RootZones got {} files in {} seconds, return code {}".format(pickle_count, int(time.time() - rsync_start), rsync_root_zones.returncode))
-				
-	elif opts.source == "vps":
+	if opts.source == "vps":
 		# On each VP, find the files in /sftp/transfer/Output and get them one by one
 		#   For each file, after getting, move it to /sftp/transfer/AlreadySeen
 		# Get the list of VPs
@@ -828,7 +800,7 @@ if __name__ == "__main__":
 
 	# Go through the files in incoming_dir
 	log(f"Started going through {incoming_dir}")
-	all_files = list(glob.glob("{}/*".format(incoming_dir)))
+	all_files = list(Path(f"{incoming_dir}").glob("**/*.pickle.gz"))
 	# If limit is set, use only the first few
 	if opts.limit:
 		all_files = all_files[0:limit_size]
