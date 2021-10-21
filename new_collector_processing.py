@@ -117,11 +117,11 @@ def process_one_incoming_file(full_file):
 		try:
 			os.mkdir(original_dir_target)
 		except Exception:
-			log("Could not create {}; continuing")
+			log(f"Could not create {original_dir_target}; continuing")
 	try:
 		shutil.move(full_file, original_dir_target)
 	except Exception as e:
-		alert("Could not move {} to {}: '{}'".format(full_file, original_dir_target, e))
+		alert(f"Could not move {full_file} to {original_dir_target}: '{e}'")
 		try:
 			os.remove(full_file)
 		except Exception as e:
