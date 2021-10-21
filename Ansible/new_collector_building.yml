@@ -147,7 +147,7 @@
       disabled: yes
       name: Do all the processing
       minute: "4"
-      job: "/home/metrics/repo/collector_processing.py >>/home/metrics/Logs/cron-alert.txt 2>&1"
+      job: "/home/metrics/repo/new_collector_processing.py >>/home/metrics/Logs/cron-alert.txt 2>&1"
 - name: Do Postgres stuff
   hosts: c03
   remote_user: "{{ superuser }}"

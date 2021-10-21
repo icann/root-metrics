@@ -71,7 +71,7 @@ def get_files_from_one_vp(this_vp):
 	# rsync from the VP
 	for this_dir in ("Output", "Logs"):
 		try:
-			p = subprocess.run(f"rsync -av --timeout=5 metrics@{vp_number}.mtric.net:{this_dir} {pull_to_dir}/{this_dir}", shell=True, capture_output=True, text=True, check=True)
+			p = subprocess.run(f"rsync -av --timeout=5 metrics@{vp_number}.mtric.net:{this_dir} {pull_to_dir}/", shell=True, capture_output=True, text=True, check=True)
 		except Exception as e:
 			return f"For {vp_number}, failed to rsync {this_dir}: {e}"
 		# Keep the log
@@ -118,14 +118,14 @@ def process_one_incoming_file(full_file):
 			os.mkdir(original_dir_target)
 		except Exception:
 			log(f"Could not create {original_dir_target}; continuing")
+	# If it is already there for some reason, just delete it
 	try:
 		shutil.move(full_file, original_dir_target)
 	except Exception as e:
-		alert(f"Could not move {full_file} to {original_dir_target}: '{e}'")
 		try:
 			os.remove(full_file)
 		except Exception as e:
-			die(f"After failing to move {full_file}, could not delete it.")
+			die(f"After failing to move {full_file}, could not delete the original.")
 
 	conn = psycopg2.connect(dbname="metrics", user="metrics")
 	conn.set_session(autocommit=True)
@@ -295,13 +295,13 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 		this_found = cur.fetchall()
 		cur.close()
 		if len(this_found) > 1:
-			alert("When checking corrrectness on '{}', found more than one record: '{}'".format(this_filename_record, this_found))
+			alert(f"When checking correctness on {this_filename_record}, found {len(this_found)} records")
 			return
 		(this_timeout, this_resp_pickle) = this_found[0]
 	elif request_type == "test":
 		(this_timeout, this_resp_pickle) = this_found[0]
 	else:
-		alert("While running process_one_correctness_array on {}, got unknown first argument '{}'".format(this_filename_record, request_type))
+		alert(f"While running process_one_correctness_array on {this_filename_record}, got unknown first argument {request_type}")
 		return
 
 	# Before trying to load the pickled data, first see if it is a timeout; if so, set is_correct but move on [lbl]
@@ -686,8 +686,8 @@ if __name__ == "__main__":
 	if not os.path.exists(log_dir):
 		os.mkdir(log_dir)
 	# Set up the logging and alert mechanisms
-	log_file_name = "{}/collector-log.txt".format(log_dir)
-	alert_file_name = "{}/collector-alert.txt".format(log_dir)
+	log_file_name = "{}/log.txt".format(log_dir)
+	alert_file_name = "{}/alert.txt".format(log_dir)
 	vp_log = logging.getLogger("logging")
 	vp_log.setLevel(logging.INFO)
 	log_handler = logging.FileHandler(log_file_name)
@@ -728,10 +728,6 @@ if __name__ == "__main__":
 
 	# Where the binaries are
 	target_dir = "/home/metrics/Target"	
-	# Where to put the SFTP batch files
-	batch_dir = os.path.expanduser("{}/Batches".format(log_dir))
-	if not os.path.exists(batch_dir):
-		os.mkdir(batch_dir)
 	# Where to store the incoming files comeing from the vantage points
 	incoming_dir = os.path.expanduser("~/Incoming")
 	if not os.path.exists(incoming_dir):
@@ -769,8 +765,6 @@ if __name__ == "__main__":
 	# First active step is to copy new files to the collector
 
 	if opts.source == "vps":
-		# On each VP, find the files in /sftp/transfer/Output and get them one by one
-		#   For each file, after getting, move it to /sftp/transfer/AlreadySeen
 		# Get the list of VPs
 		log("Started pulling from VPs")
 		vp_list_filename = os.path.expanduser("~/vp_list.txt")
