@@ -146,7 +146,7 @@
     cron:
       disabled: yes
       name: Do all the processing
-      minute: "4,34"
+      minute: "4"
       job: "/home/metrics/repo/collector_processing.py >>/home/metrics/Logs/cron-alert.txt 2>&1"
 - name: Do Postgres stuff
   hosts: c03
@@ -187,13 +187,12 @@
       columns:
       - filename_record text
       - date_derived timestamp
-      - rsi text
+      - target text
       - internet text
       - transport text
       - ip_addr text
       - record_type text
-      - prog_elapsed real
-      - dig_elapsed real
+      - query_elapsed real
       - timeout text
       - soa_found text
       - recent_soas text[]
