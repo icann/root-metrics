@@ -398,7 +398,7 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 			for this_full_record in resp[this_section_name]:
 				rec_qname = this_full_record["name"]
 				rec_qtype = dns.rdatatype.to_text(this_full_record["rdtype"])
-				rec_rdata = this_full_record["rdata"]
+				rec_rdata = this_full_record["rdata"][0]
 				if not rec_qtype == "RRSIG":  # [ygx]
 					this_key = f"{rec_qname}/{rec_qtype}"
 					if not this_key in rrsets_for_checking:
@@ -486,7 +486,7 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 			for this_rec in resp["authority"]:
 				rec_qname = this_full_record["name"]
 				rec_qtype = dns.rdatatype.to_text(this_full_record["rdtype"])
-				rec_rdata = this_full_record["rdata"]
+				rec_rdata = this_full_record["rdata"][0]
 				if not rec_qtype == "RRSIG":  # [ygx]
 					if rec_qtype == "NS":
 						auth_ns_for_qname.add(rec_rdata)
@@ -503,7 +503,7 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 				for this_rec in resp["authority"]:
 					rec_qname = this_full_record["name"]
 					rec_qtype = dns.rdatatype.to_text(this_full_record["rdtype"])
-					rec_rdata = this_full_record["rdata"]
+					rec_rdata = this_full_record["rdata"][0]
 					if rec_qtype == "DS":
 						failure_reasons.append("Found DS in Authority section [bgr]")
 						break
@@ -512,7 +512,7 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 				for this_rec in resp["authority"]:
 					rec_qname = this_full_record["name"]
 					rec_qtype = dns.rdatatype.to_text(this_full_record["rdtype"])
-					rec_rdata = this_full_record["rdata"]
+					rec_rdata = this_full_record["rdata"][0]
 					if rec_qtype == "NSEC":
 						if rec_qname == this_qname:
 							has_covering_nsec = True
@@ -525,14 +525,14 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 			for this_rec in resp["authority"]:
 				rec_qname = this_full_record["name"]
 				rec_qtype = dns.rdatatype.to_text(this_full_record["rdtype"])
-				rec_rdata = this_full_record["rdata"]
+				rec_rdata = this_full_record["rdata"][0]
 				if rec_qtype == "NS":
 					found_NS_recs.append(rec_rdata)
 			found_qname_of_A_AAAA_recs = []
 			for this_rec in resp["additional"]:
 				rec_qname = this_full_record["name"]
 				rec_qtype = dns.rdatatype.to_text(this_full_record["rdtype"])
-				rec_rdata = this_full_record["rdata"]
+				rec_rdata = this_full_record["rdata"][0]
 				if rec_qtype in ("A", "AAAA"):
 					found_qname_of_A_AAAA_recs.append(rec_qname)
 			found_A_AAAA_NS_match = False
@@ -554,7 +554,7 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 				for this_rec in resp["answer"]:
 					rec_qname = this_full_record["name"]
 					rec_qtype = dns.rdatatype.to_text(this_full_record["rdtype"])
-					rec_rdata = this_full_record["rdata"]
+					rec_rdata = this_full_record["rdata"][0]
 					if rec_qtype == "DS":
 						if not rec_qname == this_qname:
 							failure_reasons.append("DS in Answer section had QNAME {} instead of {} [cpf]".format(rec_qname, this_qname))
@@ -624,7 +624,7 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 			for this_rec in resp["authority"]:
 				rec_qname = this_full_record["name"]
 				rec_qtype = dns.rdatatype.to_text(this_full_record["rdtype"])
-				rec_rdata = this_full_record["rdata"]
+				rec_rdata = this_full_record["rdata"][0]
 				if rec_qtype == "SOA":
 					if not rec_qname == ".":
 						failure_reasons.append("SOA in Authority section had QNAME {} instead of '.' [vcu]".format(rec_qname))
@@ -639,7 +639,7 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 			for this_rec in resp["authority"]:
 				rec_qname = this_full_record["name"]
 				rec_qtype = dns.rdatatype.to_text(this_full_record["rdtype"])
-				rec_rdata = this_full_record["rdata"]
+				rec_rdata = this_full_record["rdata"][0]
 				if rec_qtype == "NSEC":
 					nsec_parts = rec_rdata.split(" ")
 					nsec_parts_covered = nsec_parts[0]
@@ -659,7 +659,7 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 			for this_rec in resp["authority"]:
 				rec_qname = this_full_record["name"]
 				rec_qtype = dns.rdatatype.to_text(this_full_record["rdtype"])
-				rec_rdata = this_full_record["rdata"]
+				rec_rdata = this_full_record["rdata"][0]
 				if rec_qtype == "NSEC":
 					if rec_qname == ".":
 						nsec_with_owner_dot = True
