@@ -442,7 +442,7 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 		alert("Could not find {} for correctness validation, so skipping".format(recent_soa_root_filename))
 	else:
 		for this_section_name in [ "answer", "authority", "additional" ]:
-			this_section_rrs = resp.get(this_section_name, [])
+			this_section_rrs = resp.get(this_section_name["rdata"], [])
 			# Only act if this section has an RRSIG
 			rrsigs_over_rrtypes = set()
 			for this_in_rr_text in this_section_rrs:
@@ -469,7 +469,8 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 	
 	# Check that all the parts of the resp structure are correct, based on the type of answer
 	question_record = resp["question"][0]
-	(this_qname, _, this_qtype) = question_record.split(" ")
+	this_qname = question_record["name"]
+	this_qtype = dns.rdatatype.to_text(question_record["rdtype"])
 	if resp["rcode"] == 0:
 		if (this_qname != ".") and (this_qtype == "NS"):  # Processing for TLD / NS [hmk]
 			# The header AA bit is not set. [ujy]
