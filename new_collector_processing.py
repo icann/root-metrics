@@ -260,7 +260,7 @@ def check_for_signed_rr(list_of_records_from_section, name_of_rrtype):
 	#   See if there is a record in the list of the given RRtype, and make sure there is also an RRSIG for that RRtype
 	found_rrtype = False
 	for this_full_record in list_of_records_from_section:
-		rec_qtype = dns.rdatatype.to_text(this_full_record.rdtype)
+		rec_qtype = dns.rdatatype.to_text(this_full_record["rdtype"])
 		if rec_qtype == name_of_rrtype:
 			found_rrtype = True
 			break
@@ -268,7 +268,7 @@ def check_for_signed_rr(list_of_records_from_section, name_of_rrtype):
 		return "No record of type {} was found in that section".format(name_of_rrtype)
 	found_rrsig = False
 	for this_full_record in list_of_records_from_section:
-		rec_qtype = dns.rdatatype.to_text(this_full_record.rdtype)
+		rec_qtype = dns.rdatatype.to_text(this_full_record["rdtype"])
 		if rec_qtype == "RRSIG":
 			found_rrsig = True
 			break
@@ -396,12 +396,9 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 		if resp.get(this_section_name):
 			rrsets_for_checking = {}
 			for this_full_record in resp[this_section_name]:
-				try:
-					rec_qname = this_full_record.name
-				except:
-					die(f"Died with {this_full_record} in {this_section_name} as {resp[this_section_name]}")
-				rec_qtype = dns.rdatatype.to_text(this_full_record.rdtype)
-				rec_rdata = this_full_record.rdata
+				rec_qname = this_full_record["name"]
+				rec_qtype = dns.rdatatype.to_text(this_full_record["rdtype"])
+				rec_rdata = this_full_record["rdata"]
 				if not rec_qtype == "RRSIG":  # [ygx]
 					this_key = f"{rec_qname}/{rec_qtype}"
 					if not this_key in rrsets_for_checking:
@@ -487,9 +484,9 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 			root_ns_for_qname = root_to_check["{}/NS".format(this_qname)]
 			auth_ns_for_qname = set()
 			for this_rec in resp["authority"]:
-				rec_qname = this_full_record.name
-				rec_qtype = dns.rdatatype.to_text(this_full_record.rdtype)
-				rec_rdata = this_full_record.rdata
+				rec_qname = this_full_record["name"]
+				rec_qtype = dns.rdatatype.to_text(this_full_record["rdtype"])
+				rec_rdata = this_full_record["rdata"]
 				if not rec_qtype == "RRSIG":  # [ygx]
 					if rec_qtype == "NS":
 						auth_ns_for_qname.add(rec_rdata)
@@ -504,18 +501,18 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 			else:  # If the DS RRset for the query name does not exist in the zone: [fot]
 				# The Authority section contains no DS RRset. [bgr]
 				for this_rec in resp["authority"]:
-					rec_qname = this_full_record.name
-					rec_qtype = dns.rdatatype.to_text(this_full_record.rdtype)
-					rec_rdata = this_full_record.rdata
+					rec_qname = this_full_record["name"]
+					rec_qtype = dns.rdatatype.to_text(this_full_record["rdtype"])
+					rec_rdata = this_full_record["rdata"]
 					if rec_qtype == "DS":
 						failure_reasons.append("Found DS in Authority section [bgr]")
 						break
 				# The Authority section contains a signed NSEC RRset covering the query name. [mkl]
 				has_covering_nsec = False
 				for this_rec in resp["authority"]:
-					rec_qname = this_full_record.name
-					rec_qtype = dns.rdatatype.to_text(this_full_record.rdtype)
-					rec_rdata = this_full_record.rdata
+					rec_qname = this_full_record["name"]
+					rec_qtype = dns.rdatatype.to_text(this_full_record["rdtype"])
+					rec_rdata = this_full_record["rdata"]
 					if rec_qtype == "NSEC":
 						if rec_qname == this_qname:
 							has_covering_nsec = True
@@ -526,16 +523,16 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 			#    Collect the NS records from the Authority section
 			found_NS_recs = []
 			for this_rec in resp["authority"]:
-				rec_qname = this_full_record.name
-				rec_qtype = dns.rdatatype.to_text(this_full_record.rdtype)
-				rec_rdata = this_full_record.rdata
+				rec_qname = this_full_record["name"]
+				rec_qtype = dns.rdatatype.to_text(this_full_record["rdtype"])
+				rec_rdata = this_full_record["rdata"]
 				if rec_qtype == "NS":
 					found_NS_recs.append(rec_rdata)
 			found_qname_of_A_AAAA_recs = []
 			for this_rec in resp["additional"]:
-				rec_qname = this_full_record.name
-				rec_qtype = dns.rdatatype.to_text(this_full_record.rdtype)
-				rec_rdata = this_full_record.rdata
+				rec_qname = this_full_record["name"]
+				rec_qtype = dns.rdatatype.to_text(this_full_record["rdtype"])
+				rec_rdata = this_full_record["rdata"]
 				if rec_qtype in ("A", "AAAA"):
 					found_qname_of_A_AAAA_recs.append(rec_qname)
 			found_A_AAAA_NS_match = False
@@ -555,9 +552,9 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 			else:
 				# Make sure the DS is for the query name
 				for this_rec in resp["answer"]:
-					rec_qname = this_full_record.name
-					rec_qtype = dns.rdatatype.to_text(this_full_record.rdtype)
-					rec_rdata = this_full_record.rdata
+					rec_qname = this_full_record["name"]
+					rec_qtype = dns.rdatatype.to_text(this_full_record["rdtype"])
+					rec_rdata = this_full_record["rdata"]
 					if rec_qtype == "DS":
 						if not rec_qname == this_qname:
 							failure_reasons.append("DS in Answer section had QNAME {} instead of {} [cpf]".format(rec_qname, this_qname))
@@ -625,9 +622,9 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 		else:
 			# Make sure the SOA record is for .
 			for this_rec in resp["authority"]:
-				rec_qname = this_full_record.name
-				rec_qtype = dns.rdatatype.to_text(this_full_record.rdtype)
-				rec_rdata = this_full_record.rdata
+				rec_qname = this_full_record["name"]
+				rec_qtype = dns.rdatatype.to_text(this_full_record["rdtype"])
+				rec_rdata = this_full_record["rdata"]
 				if rec_qtype == "SOA":
 					if not rec_qname == ".":
 						failure_reasons.append("SOA in Authority section had QNAME {} instead of '.' [vcu]".format(rec_qname))
@@ -640,9 +637,9 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 			nsec_covers_query_name = False
 			nsecs_in_authority = []
 			for this_rec in resp["authority"]:
-				rec_qname = this_full_record.name
-				rec_qtype = dns.rdatatype.to_text(this_full_record.rdtype)
-				rec_rdata = this_full_record.rdata
+				rec_qname = this_full_record["name"]
+				rec_qtype = dns.rdatatype.to_text(this_full_record["rdtype"])
+				rec_rdata = this_full_record["rdata"]
 				if rec_qtype == "NSEC":
 					nsec_parts = rec_rdata.split(" ")
 					nsec_parts_covered = nsec_parts[0]
@@ -660,9 +657,9 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 			# The Authority section contains a signed NSEC record with owner name “.” proving no wildcard exists in the zone. [jhz]
 			nsec_with_owner_dot = False
 			for this_rec in resp["authority"]:
-				rec_qname = this_full_record.name
-				rec_qtype = dns.rdatatype.to_text(this_full_record.rdtype)
-				rec_rdata = this_full_record.rdata
+				rec_qname = this_full_record["name"]
+				rec_qtype = dns.rdatatype.to_text(this_full_record["rdtype"])
+				rec_rdata = this_full_record["rdata"]
 				if rec_qtype == "NSEC":
 					if rec_qname == ".":
 						nsec_with_owner_dot = True
