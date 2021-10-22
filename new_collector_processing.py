@@ -182,7 +182,7 @@ def process_one_incoming_file(full_file_name):
 	if not in_obj.get("s"):
 		alert("File {} did not have a route information record".format(full_file_name))
 	else:
-		update_string = "insert into route_info (filename, date_derived, route_string) values (%s, %s, %s)"
+		update_string = "insert into route_info (filename_short, date_derived, route_string) values (%s, %s, %s)"
 		update_values = (short_file_name, file_date, in_obj["s"]) 
 		try:
 			cur = conn.cursor()
