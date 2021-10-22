@@ -444,7 +444,7 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 		for this_section_name in [ "answer", "authority", "additional" ]:
 			if not resp.get(this_section_name):
 				continue
-			this_section_rrs = resp[this_section_name]["rdata"]
+			this_section_rrs = resp[this_section_name][0]["rdata"]
 			# Only act if this section has an RRSIG
 			rrsigs_over_rrtypes = set()
 			for this_in_rr_text in this_section_rrs:
