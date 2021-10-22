@@ -4,7 +4,7 @@
 # Run as the metrics user
 # Three-letter items in square brackets (such as [xyz]) refer to parts of rssac-047.md
 
-import argparse, datetime, glob, gzip, logging, os, pickle, psycopg2, socket, subprocess, shutil, tempfile, time
+import argparse, datetime, glob, gzip, logging, os, pickle, psycopg2, socket, subprocess, tempfile, time
 import dns.rdatatype
 from pathlib import Path
 from concurrent import futures
@@ -153,17 +153,6 @@ def process_one_incoming_file(full_file_name):
 	# Sanity check the record
 	if not ("v" in in_obj) and ("d" in in_obj) and ("e" in in_obj) and ("r" in in_obj) and ("s" in in_obj):
 		alert(f"Object in {full_file_name} did not contain keys d, e, r, s, and v")
-
-	# Move the file to ~/Originals so it doesn't get processed again
-	# If it is already there for some reason, just delete it
-	try:
-		shutil.move(full_file_name, originals_dir)
-	except Exception:
-		try:
-			os.remove(full_file_name)
-		except Exception:
-			die(f"After failing to move {full_file_name}, could not delete the original.")
-
 	
 	# Update the metadata
 	update_string = "update files_gotten set processed_at=%s, version=%s, delay=%s, elapsed=%s where filename_short=%s"
@@ -753,10 +742,6 @@ if __name__ == "__main__":
 	incoming_dir = f"{str(Path('~').expanduser())}/Incoming"
 	if not os.path.exists(incoming_dir):
 		os.mkdir(incoming_dir)
-	# Where to put the processed vantage point files after processing them; they are segregated by month
-	originals_dir = f"{str(Path('~').expanduser())}/Originals"
-	if not os.path.exists(originals_dir):
-		os.mkdir(originals_dir)
 	# Where to save things long-term
 	output_dir = f"{str(Path('~').expanduser())}/Output"
 	if not os.path.exists(output_dir):
