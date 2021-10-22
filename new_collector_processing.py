@@ -156,7 +156,7 @@ def process_one_incoming_file(full_file_name):
 	# Move the file to ~/Originals so it doesn't get processed again
 	# If it is already there for some reason, just delete it
 	try:
-		shutil.move(full_file_name, str(Path("~/Originals").expanduser()))
+		shutil.move(full_file_name, originals_dir)
 	except Exception:
 		try:
 			os.remove(full_file_name)
@@ -682,7 +682,7 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 
 if __name__ == "__main__":
 	# Get the base for the log directory
-	log_dir = f"{str(Path('~').expanduser)}/Logs"
+	log_dir = f"{str(Path('~').expanduser())}/Logs"
 	if not os.path.exists(log_dir):
 		os.mkdir(log_dir)
 	# Set up the logging and alert mechanisms
@@ -729,15 +729,15 @@ if __name__ == "__main__":
 	# Where the binaries are
 	target_dir = "/home/metrics/Target"	
 	# Where to store the incoming files comeing from the vantage points
-	incoming_dir = os.path.expanduser("~/Incoming")
+	incoming_dir = f"{str(Path('~').expanduser())}/Incoming"
 	if not os.path.exists(incoming_dir):
 		os.mkdir(incoming_dir)
 	# Where to put the processed vantage point files after processing them; they are segregated by month
-	originals_dir = os.path.expanduser("~/Originals")
+	originals_dir = f"{str(Path('~').expanduser())}/Originals"
 	if not os.path.exists(originals_dir):
 		os.mkdir(originals_dir)
 	# Where to save things long-term
-	output_dir = os.path.expanduser("~/Output")
+	output_dir = f"{str(Path('~').expanduser())}/Output"
 	if not os.path.exists(output_dir):
 		os.mkdir(output_dir)
 	# Subdirectories of log directory for root zones
@@ -767,14 +767,14 @@ if __name__ == "__main__":
 	if opts.source == "vps":
 		# Get the list of VPs
 		log("Started pulling from VPs")
-		vp_list_filename = os.path.expanduser("~/vp_list.txt")
+		vp_list_filename = f"{str(Path('~').expanduser())}/vp_list.txt"
 		try:
 			all_vps = open(vp_list_filename, mode="rt").read().splitlines()
 		except Exception as e:
 			die("Could not open {} and split the lines: '{}'".format(vp_list_filename, e))
 		# Make sure we have trusted each one
 		known_hosts_set = set()
-		known_host_lines = open(os.path.expanduser("~/.ssh/known_hosts"), mode="rt").readlines()
+		known_host_lines = open(f"{str(Path('~').expanduser())}/.ssh/known_hosts.txt", mode="rt").readlines()
 		for this_line in known_host_lines:
 			known_hosts_set.add(this_line.split(" ")[0])
 		for this_vp in all_vps:
