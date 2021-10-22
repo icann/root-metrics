@@ -442,7 +442,7 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 		alert("Could not find {} for correctness validation, so skipping".format(recent_soa_root_filename))
 	else:
 		for this_section_name in [ "answer", "authority", "additional" ]:
-			this_section_rrs = resp.get(this_section_name["rdata"], [])
+			this_section_rrs = resp[this_section_name["rdata"]
 			# Only act if this section has an RRSIG
 			rrsigs_over_rrtypes = set()
 			for this_in_rr_text in this_section_rrs:
