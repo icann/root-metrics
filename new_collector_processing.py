@@ -774,7 +774,7 @@ if __name__ == "__main__":
 			die("Could not open {} and split the lines: '{}'".format(vp_list_filename, e))
 		# Make sure we have trusted each one
 		known_hosts_set = set()
-		known_host_lines = open(f"{str(Path('~').expanduser())}/.ssh/known_hosts.txt", mode="rt").readlines()
+		known_host_lines = open(f"{str(Path('~').expanduser())}/.ssh/known_hosts", mode="rt").readlines()
 		for this_line in known_host_lines:
 			known_hosts_set.add(this_line.split(" ")[0])
 		for this_vp in all_vps:
