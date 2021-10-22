@@ -84,53 +84,16 @@ def get_files_from_one_vp(this_vp):
 	return ""
 
 ###############################################################
-def process_one_incoming_file(full_file):
+def process_one_incoming_file(full_file_name):
 	# Process an incoming file, and move it when done
 	#   Returns nothing
 	#   File-level errors cause "die", record-level errors cause "alert" and skipping the record
 	
-	# Check for bad file
-	if not full_file.endswith(".pickle.gz"):
-		alert("Found {} that did not end in .pickle.gz".format(full_file))
-		return
-	short_file = os.path.basename(full_file).replace(".pickle.gz", "")
-	# Ungz it
-	try:
-		with gzip.open(full_file, mode="rb") as pf:
-			in_pickle = pf.read()
-	except Exception as e:
-		die("Could not unzip {}: '{}'".format(full_file, e))
-	# Unpickle it
-	try:
-		in_obj = pickle.loads(in_pickle)
-	except Exception as e:
-		die("Could not unpickle {}: '{}'".format(full_file, e))
-	# Sanity check the record
-	if not ("v" in in_obj) and ("d" in in_obj) and ("e" in in_obj) and ("r" in in_obj) and ("s" in in_obj):
-		alert("Object in {} did not contain keys d, e, r, s, and v".format(full_file))
-
-	# Move the file to ~/Originals so it doesn't get processed again
-	year_from_short_file = short_file[0:4]
-	month_from_short_file = short_file[4:6]
-	original_dir_target = os.path.expanduser("~/Originals/{}{}".format(year_from_short_file, month_from_short_file))
-	if not os.path.exists(original_dir_target):
-		try:
-			os.mkdir(original_dir_target)
-		except Exception:
-			log(f"Could not create {original_dir_target}; continuing")
-	# If it is already there for some reason, just delete it
-	try:
-		shutil.move(full_file, original_dir_target)
-	except Exception:
-		try:
-			os.remove(full_file)
-		except Exception:
-			die(f"After failing to move {full_file}, could not delete the original.")
-
+	# Open the database so that we can define the insert function
 	conn = psycopg2.connect(dbname="metrics", user="metrics")
 	conn.set_session(autocommit=True)
 
-	# Function to insert records into one of the two databases
+	# First define a function to insert records into one of the two databases
 	def insert_from_template(this_update_cmd_string, this_update_values):
 		try:
 			curi = conn.cursor()
@@ -144,51 +107,89 @@ def process_one_incoming_file(full_file):
 		curi.close()
 		return
 
+	# Check for wrong type of file
+	if not full_file_name.endswith(".pickle.gz"):
+		alert("Found {} that did not end in .pickle.gz".format(full_file_name))
+		return
+	
+	short_file_name = os.path.basename(full_file_name).replace(".pickle.gz", "")
+	
+	# Check if it is already in 
+	
 	# See if this file has already been processed
-	this_pickle_gz = short_file + ".pickle.gz"
 	cur = conn.cursor()
-	cur.execute("select count(*) from files_gotten where filename_full = %s", (this_pickle_gz, ))
+	cur.execute("select count(*) from files_gotten where filename_short = %s", (short_file_name, ))
 	if cur.rowcount == -1:
-		alert("Got rowcount of -1 for {}; skipping this file".format(this_pickle_gz))
+		alert(f"Got rowcount of -1 for {short_file_name}; skipping this file")
 		conn.close()
 		return
 	files_gotten_check = cur.fetchone()
-	if files_gotten_check[0] > 1:
-		alert("Found mulitple instances of {} in files_gotten; ignoring this new one".format(short_file))
+	if files_gotten_check[0] > 0:
+		alert(f"Found exiting instance of {short_file_name} in files_gotten; removing {full_file_name}")
 		conn.close()
+		try:
+			os.remove(full_file_name)
+		except:
+			die(f"Could not remove {full_file_name} after finding {short_file_name} in files_gotten")
 		return
-	# If the file is not there, probably due to rsyncing from c01
-	insert_string = "insert into files_gotten (filename_full, retrieved_at) values (%s, %s);"
-	insert_values = (this_pickle_gz, datetime.datetime.now(datetime.timezone.utc))
+	# Insert the short file name into the files_gotten database
+	insert_string = "insert into files_gotten (filename_short, retrieved_at) values (%s, %s);"
+	insert_values = (short_file_name, datetime.datetime.now(datetime.timezone.utc))
 	insert_from_template(insert_string, insert_values)
 	cur.close()
 	
+	# Un-gzip it
+	try:
+		with gzip.open(full_file_name, mode="rb") as pf:
+			in_pickle = pf.read()
+	except Exception as e:
+		die(f"Could not unzip {full_file_name}: {e}")
+	# Unpickle it
+	try:
+		in_obj = pickle.loads(in_pickle)
+	except Exception as e:
+		die(f"Could not unpickle {full_file_name}: {e}")
+	# Sanity check the record
+	if not ("v" in in_obj) and ("d" in in_obj) and ("e" in in_obj) and ("r" in in_obj) and ("s" in in_obj):
+		alert(f"Object in {full_file_name} did not contain keys d, e, r, s, and v")
+
+	# Move the file to ~/Originals so it doesn't get processed again
+	# If it is already there for some reason, just delete it
+	try:
+		shutil.move(full_file_name, str(Path("~/Originals").expanduser()))
+	except Exception:
+		try:
+			os.remove(full_file_name)
+		except Exception:
+			die(f"After failing to move {full_file_name}, could not delete the original.")
+
+	
 	# Update the metadata
-	update_string = "update files_gotten set processed_at=%s, version=%s, delay=%s, elapsed=%s where filename_full=%s"
-	update_vales = (datetime.datetime.now(datetime.timezone.utc), in_obj["v"], in_obj["d"], in_obj["e"], this_pickle_gz) 
+	update_string = "update files_gotten set processed_at=%s, version=%s, delay=%s, elapsed=%s where filename_short=%s"
+	update_vales = (datetime.datetime.now(datetime.timezone.utc), in_obj["v"], in_obj["d"], in_obj["e"], short_file_name) 
 	insert_from_template(update_string, update_vales)
 
 	# Get the derived date and VP name from the file name
-	(file_date_text, _) = short_file.split("-")
+	(file_date_text, _) = short_file_name.split("-")
 	try:
 		file_date = datetime.datetime(int(file_date_text[0:4]), int(file_date_text[4:6]), int(file_date_text[6:8]),\
 			int(file_date_text[8:10]), int(file_date_text[10:12]))
 	except Exception as e:
 		conn.close()
-		die("Could not split the file name '{}' into a datetime: '{}'".format(short_file, e))
+		die("Could not split the file name '{}' into a datetime: '{}'".format(short_file_name, e))
 
 	# Log the route information from in_obj["s"]
 	if not in_obj.get("s"):
-		alert("File {} did not have a route information record".format(full_file))
+		alert("File {} did not have a route information record".format(full_file_name))
 	else:
 		update_string = "insert into route_info (filename, date_derived, route_string) values (%s, %s, %s)"
-		update_values = (short_file, file_date, in_obj["s"]) 
+		update_values = (short_file_name, file_date, in_obj["s"]) 
 		try:
 			cur = conn.cursor()
 			cur.execute(update_string, update_values)
 			cur.close()
 		except Exception as e:
-			alert("Could not insert into route_info for {}: '{}'".format(short_file, e))
+			alert("Could not insert into route_info for {}: '{}'".format(short_file_name, e))
 
 	# Named tuple for the record templates
 	template_names_raw = "filename_record date_derived target internet transport ip_addr record_type query_elapsed timeout soa_found " \
@@ -207,11 +208,11 @@ def process_one_incoming_file(full_file):
 		# Each record is "S" for an SOA record or "C" for a correctness test
 		#   Sanity test that the type is S or C
 		if not this_resp["test_type"] in ("S", "C"):
-			alert("Found a response type {}, which is not S or C, in record {} of {}".format(this_resp["test_type"], response_count, full_file))
+			alert("Found a response type {}, which is not S or C, in record {} of {}".format(this_resp["test_type"], response_count, full_file_name))
 			continue
 		insert_template = "insert into record_info ({}) values ({})".format(template_names_with_commas, percent_s_string)
 		# Note that the default value for is_correct is "?" so that the test for "has correctness been checked" can still be against "y" or "n", which is set below
-		insert_values = insert_values_template(filename_record=f"{short_file}-{response_count}", date_derived=file_date, \
+		insert_values = insert_values_template(filename_record=f"{short_file_name}-{response_count}", date_derived=file_date, \
 			target=this_resp["target"], internet=this_resp["internet"], transport=this_resp["transport"], ip_addr=this_resp["ip_addr"], record_type=this_resp["test_type"], \
 			query_elapsed=0.0, timeout="", soa_found="", recent_soas=[], is_correct="?", failure_reason="", source_pickle=b"")
 		# If the response code is wrong, treat it as a timeout; use the response code as the timeout message
@@ -227,12 +228,12 @@ def process_one_incoming_file(full_file):
 		# What is left is the normal responses
 		#   For these, leave the timeout as ""
 		if not this_resp.get("query_elapsed"):
-			alert("Found a message without query_elapsed in record {} of {}".format(response_count, full_file))
+			alert("Found a message without query_elapsed in record {} of {}".format(response_count, full_file_name))
 			continue
 		insert_values = insert_values._replace(query_elapsed=this_resp["query_elapsed"])  # [aym]
 		if insert_values.record_type == "S":
 			if this_resp.get("answer") == None or len(this_resp["answer"]) == 0:
-				alert("Found a message of type 'S' without an answer in record {} of {}".format(response_count, full_file))
+				alert("Found a message of type 'S' without an answer in record {} of {}".format(response_count, full_file_name))
 				continue
 			this_soa_record = this_resp["answer"][0]["rdata"][0]
 			soa_record_parts = this_soa_record.split(" ")
@@ -681,12 +682,12 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 
 if __name__ == "__main__":
 	# Get the base for the log directory
-	log_dir = "{}/Logs".format(os.path.expanduser("~"))
+	log_dir = f"{str(Path('~').expanduser)}/Logs"
 	if not os.path.exists(log_dir):
 		os.mkdir(log_dir)
 	# Set up the logging and alert mechanisms
-	log_file_name = "{}/log.txt".format(log_dir)
-	alert_file_name = "{}/alert.txt".format(log_dir)
+	log_file_name = f"{log_dir}/log.txt"
+	alert_file_name = f"{log_dir}/alert.txt"
 	vp_log = logging.getLogger("logging")
 	vp_log.setLevel(logging.INFO)
 	log_handler = logging.FileHandler(log_file_name)

@@ -164,7 +164,7 @@
       db: metrics
       name: files_gotten
       columns:
-      - filename_full text
+      - filename_short text
       - retrieved_at timestamp
       - processed_at timestamp
       - version int
@@ -176,7 +176,7 @@
       db: metrics
       name: route_info
       columns:
-      - filename text
+      - filename_short text
       - date_derived timestamp
       - route_string text
   - name: Create table for SOA and correctness records
