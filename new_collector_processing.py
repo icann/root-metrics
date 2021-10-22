@@ -382,8 +382,7 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 			alert("Could not unpickle {} while processing {} for correctness".format(root_file_to_check, this_filename_record))
 			return
 	
-	# Here if it is a dig MESSAGE type
-	#   failure_reasons holds an expanding set of reasons
+	# failure_reasons holds an expanding set of reasons
 	#   It is checked at the end of testing, and all "" entries eliminted
 	#   If it is empty, then all correctness tests passed
 	failure_reasons = []
@@ -396,10 +395,6 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 		if resp.get(this_section_name):
 			rrsets_for_checking = {}
 			for this_full_record in resp[this_section_name]:
-				# There is an error in BIND 9.16.1 and .2 where this_full_record might be a dict instead of a str. If so, ignore it. #######
-				if isinstance(this_full_record, dict):
-					alert("Found record with a dict in id {}, {} {}".format(this_filename_record, this_section_name, this_full_record))
-					return
 				(rec_qname, _, _, rec_qtype, rec_rdata) = this_full_record.split(" ", maxsplit=4)
 				if not rec_qtype == "RRSIG":  # [ygx]
 					this_key = "{}/{}".format(rec_qname, rec_qtype)

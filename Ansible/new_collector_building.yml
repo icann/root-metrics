@@ -67,6 +67,11 @@
       src: ../home_ssh_config
       dest: /home/metrics/.ssh/config
       mode: go-rwx
+  - name: Copy the startup script for testing
+    copy:
+      src: ../Local/c03startup.sh
+      dest: /home/metrics/c03startup.sh
+      mode: u+x
   - name: Get our empty version of known_hosts; it will be added to as VPs are added
     copy:
       src: ../vp_known_hosts
@@ -138,7 +143,7 @@
       version: no-transfer-user
   - name: Give the crontab entry for get_root_zone.py
     cron:   # [mba] [wca]
-      disabled: yes
+      disabled: no
       name: Get the new root zone
       minute: "0,15,30,45"
       job: "/home/metrics/repo/get_root_zone.py >>/home/metrics/Logs/cron-alert.txt 2>&1"
