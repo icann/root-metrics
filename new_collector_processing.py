@@ -450,8 +450,9 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 			for this_in_rr_text in this_section_rrs:
 				# The following splits into 5 parts to expose the first field of RRSIGs
 				rr_parts = this_in_rr_text.split(" ", maxsplit=5)
-				if rr_parts[3] == "RRSIG":
-					rrsigs_over_rrtypes.add(rr_parts[4])
+				if len(rr_parts) > 3:
+					if rr_parts[3] == "RRSIG":
+						rrsigs_over_rrtypes.add(rr_parts[4])
 			if len(rrsigs_over_rrtypes) > 0:
 				validate_f = tempfile.NamedTemporaryFile(mode="wt")
 				validate_fname = validate_f.name
