@@ -396,7 +396,10 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 		if resp.get(this_section_name):
 			rrsets_for_checking = {}
 			for this_full_record in resp[this_section_name]:
-				rec_qname = this_full_record.name
+				try:
+					rec_qname = this_full_record.name
+				except:
+					die(f"Died with {this_full_record} in {this_section_name} as {resp[this_section_name]}")
 				rec_qtype = dns.rdatatype.to_text(this_full_record.rdtype)
 				rec_rdata = this_full_record.rdata
 				if not rec_qtype == "RRSIG":  # [ygx]

@@ -12,7 +12,7 @@
   - name: Install all the needed packages
     apt:
       pkg: [acl, build-essential, curl, git, libcap-dev, libgetdns-dev, libidn11-dev, libldns-dev, libssl-dev, libtool, libtool-bin, libunbound-dev, libuv1-dev,
-        man, pkg-config, postgresql, pyflakes3, python-ply, python3-psycopg2, python3-paramiko, rsync, unzip]
+        man, pkg-config, postgresql, pyflakes3, python-ply, python3-psycopg2, python3-paramiko, python3-pip, rsync, unzip]
   - name: Put .bashrc for root
     copy:
       src: ../bashrc-for-metrics-and-root
@@ -153,6 +153,10 @@
       name: Do all the processing
       minute: "4"
       job: "/home/metrics/repo/new_collector_processing.py >>/home/metrics/Logs/cron-alert.txt 2>&1"
+  - name: get dnspython
+    shell:
+      cmd: "pip3 install --user dnspython"
+      creates: /home/metrics/.local/lib/python3.7/site-packages/dns
 - name: Do Postgres stuff
   hosts: c03
   remote_user: "{{ superuser }}"
