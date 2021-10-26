@@ -345,7 +345,7 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 		if len(this_found) > 1:
 			alert("When checking recent_soas in corrrectness on '{}', found more than one record: '{}'".format(this_filename_record, this_found))
 			return
-		found_recent_soas = this_found[0][0]
+		found_recent_soas = this_found[0]
 		root_file_to_check = ""
 		for this_file in soa_matching_date_files:
 			this_soa = os.path.basename(this_file)[0:8]
@@ -387,12 +387,12 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 			for this_full_record in resp[this_section_name]:
 				rec_qname = this_full_record["name"]
 				rec_qtype = dns.rdatatype.to_text(this_full_record["rdtype"])
-				rec_rdata = this_full_record["rdata"][0]
+				rec_rdata = this_full_record["rdata"]
 				if not rec_qtype == "RRSIG":  # [ygx]
 					this_key = f"{rec_qname}/{rec_qtype}"
 					if not this_key in rrsets_for_checking:
 						rrsets_for_checking[this_key] = set()
-					rrsets_for_checking[this_key].add(rec_rdata)
+					rrsets_for_checking[this_key].extend(rec_rdata)
 			for this_rrset_key in rrsets_for_checking:
 				if not this_rrset_key in root_to_check:
 					failure_reasons.append("'{}' was in '{}' in the response but not the root [vnk]".format(this_rrset_key, this_section_name))
