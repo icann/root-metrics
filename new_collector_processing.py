@@ -387,12 +387,12 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 			for this_full_record in resp[this_section_name]:
 				rec_qname = this_full_record["name"]
 				rec_qtype = dns.rdatatype.to_text(this_full_record["rdtype"])
-				rec_rdata = this_full_record["rdata"]
+				rec_rdata = set(this_full_record["rdata"])
 				if not rec_qtype == "RRSIG":  # [ygx]
 					this_key = f"{rec_qname}/{rec_qtype}"
 					if not this_key in rrsets_for_checking:
 						rrsets_for_checking[this_key] = set()
-					rrsets_for_checking[this_key].extend(rec_rdata)
+					rrsets_for_checking[this_key] = rec_rdata
 			for this_rrset_key in rrsets_for_checking:
 				if not this_rrset_key in root_to_check:
 					failure_reasons.append("'{}' was in '{}' in the response but not the root [vnk]".format(this_rrset_key, this_section_name))
