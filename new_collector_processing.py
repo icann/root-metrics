@@ -390,8 +390,9 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 				rec_qtype = dns.rdatatype.to_text(this_full_record["rdtype"])
 				rec_rdata = this_full_record["rdata"]
 				rdata_set = set()
-				for this_rdata in rec_rdata:
-					rdata_set.add(this_rdata.upper())
+				for this_set in rec_rdata:
+					for this_rec in this_set:
+						rdata_set.add(this_rec.upper())
 				if not rec_qtype == "RRSIG":  # [ygx]
 					this_key = f"{rec_qname}/{rec_qtype}"
 					if not this_key in rrsets_for_checking:
