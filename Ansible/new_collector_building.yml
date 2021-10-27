@@ -91,10 +91,6 @@
     file:
       path: /home/metrics/Incoming
       state: directory
-  - name: make Originals/
-    file:
-      path: /home/metrics/Originals
-      state: directory
   - name: make Logs/
     file:
       path: /home/metrics/Logs

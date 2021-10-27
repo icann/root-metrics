@@ -362,7 +362,7 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 					("n", "Tried with all SOAs for 48 hours", this_filename_record))
 				cur.close()
 			except Exception as e:
-				alert("Could not update record_info after end of SOAs in correctness checking after processing record {}: '{}'".format(this_filename_record, e))
+				alert(f"Could not update record_info after end of SOAs in correctness checking after processing record {this_filename_record}: {e}")
 			return
 
 		# Try to read the file	
@@ -370,7 +370,7 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 		try:
 			root_to_check = pickle.load(soa_f)
 		except:
-			alert("Could not unpickle {} while processing {} for correctness".format(root_file_to_check, this_filename_record))
+			alert(f"Could not unpickle root file {root_file_to_check} while processing {this_filename_record} for correctness")
 			return
 	
 	# failure_reasons holds an expanding set of reasons
@@ -388,13 +388,14 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 			for this_full_record in resp[this_section_name]:
 				rec_qname = this_full_record["name"]
 				rec_qtype = dns.rdatatype.to_text(this_full_record["rdtype"])
+				if rec_qtype == "RRSIG":  # [ygx]
+					continue
+				this_key = f"{rec_qname}/{rec_qtype}"
 				rec_rdata = this_full_record["rdata"]
-				if not rec_qtype == "RRSIG":  # [ygx]
-					this_key = f"{rec_qname}/{rec_qtype}"
-					if not this_key in rrsets_for_checking:
-						rrsets_for_checking[this_key] = set()
-					for this_rdata_record in rec_rdata:
-						rrsets_for_checking[this_key].add(this_rdata_record.upper())
+				if not this_key in rrsets_for_checking:
+					rrsets_for_checking[this_key] = set()
+				for this_rdata_record in rec_rdata:
+					rrsets_for_checking[this_key].add(this_rdata_record.upper())
 			for this_rrset_key in rrsets_for_checking:
 				if not this_rrset_key in root_to_check:
 					failure_reasons.append("'{}' was in '{}' in the response but not the root [vnk]".format(this_rrset_key, this_section_name))
