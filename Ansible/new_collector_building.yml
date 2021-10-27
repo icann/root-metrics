@@ -1,5 +1,5 @@
 - name: Set up the machine as root
-  hosts: c02
+  hosts: c03
   remote_user: "{{ superuser }}"
   tasks:
   - name: Initialize apt
@@ -12,16 +12,11 @@
   - name: Install all the needed packages
     apt:
       pkg: [acl, build-essential, curl, git, libcap-dev, libgetdns-dev, libidn11-dev, libldns-dev, libssl-dev, libtool, libtool-bin, libunbound-dev, libuv1-dev,
-        man, pkg-config, postgresql, pyflakes3, python-ply, python-psycopg2, python3-psycopg2, python3-paramiko, rsync, unzip]
+        man, pkg-config, postgresql, pyflakes3, python-ply, python3-psycopg2, python3-paramiko, python3-pip, rsync, unzip]
   - name: Put .bashrc for root
     copy:
       src: ../bashrc-for-metrics-and-root
       dest: /root/.bashrc
-  - name: Make /sftp for transfer user
-    file:
-      path: /sftp
-      state: directory
-      mode: go-w
   - name: Replace sshd_config
     copy:
       src: ../etc_sshd_config_shorter
@@ -31,11 +26,6 @@
       state: restarted
       name: sshd.service
       daemon_reload: yes      
-  - name: Make user 'transfer'
-    user:
-      name: transfer
-      home: /sftp/transfer
-      shell: /bin/bash
   - name: Make user 'metrics'
     user: 
       name: metrics
@@ -48,7 +38,7 @@
       name: metrics
       role_attr_flags: CREATEDB,NOSUPERUSER
 - name: Install things as metrics
-  hosts: c02  
+  hosts: c03  
   remote_user: "{{ superuser }}"
   become: true
   become_user: metrics
@@ -62,31 +52,26 @@
       path: /home/metrics/.ssh
       state: directory
       mode: go-rwx
-  - name: Copy public key for transfer
-    copy:
-      src: ../Local/transfer_id_rsa.pub
-      dest: /home/metrics/.ssh/id_rsa.pub
-      mode: go-rwx
-  - name: Copy private key for transfer
-    copy:
-      src: ../Local/transfer_id_rsa
-      dest: /home/metrics/.ssh/id_rsa
-      mode: go-rwx
   - name: Copy metrics public key
     copy:
       src: ../Local/metrics_id_rsa.pub
-      dest: /home/metrics/.ssh/metrics_id_rsa.pub
+      dest: /home/metrics/.ssh/id_rsa.pub
       mode: go-rwx
   - name: Copy metrics private key
     copy:
       src: ../Local/metrics_id_rsa
-      dest: /home/metrics/.ssh/metrics_id_rsa
+      dest: /home/metrics/.ssh/id_rsa
       mode: go-rwx
   - name: Turn off hashing of names in known_hosts
     copy:
       src: ../home_ssh_config
       dest: /home/metrics/.ssh/config
       mode: go-rwx
+  - name: Copy the startup script for testing
+    copy:
+      src: ../Local/c03startup.sh
+      dest: /home/metrics/c03startup.sh
+      mode: u+x
   - name: Get our empty version of known_hosts; it will be added to as VPs are added
     copy:
       src: ../vp_known_hosts
@@ -105,10 +90,6 @@
   - name: make Incoming/
     file:
       path: /home/metrics/Incoming
-      state: directory
-  - name: make Originals/
-    file:
-      path: /home/metrics/Originals
       state: directory
   - name: make Logs/
     file:
@@ -131,7 +112,7 @@
       creates: /home/metrics/Source/bind-9.16.20/config.log
   - name: Put vp_list.txt
     copy:
-      src: ../vp_list.txt
+      src: ../new_vp_list.txt
       dest: /home/metrics/vp_list.txt
   - name: Put the source for getdns_validate
     copy:
@@ -155,9 +136,10 @@
     git:
       repo: 'https://github.com/icann/root-metrics.git'
       dest: /home/metrics/repo
+      version: no-transfer-user
   - name: Give the crontab entry for get_root_zone.py
     cron:   # [mba] [wca]
-      disabled: yes
+      disabled: no
       name: Get the new root zone
       minute: "0,15,30,45"
       job: "/home/metrics/repo/get_root_zone.py >>/home/metrics/Logs/cron-alert.txt 2>&1"
@@ -165,10 +147,14 @@
     cron:
       disabled: yes
       name: Do all the processing
-      minute: "4,34"
-      job: "/home/metrics/repo/collector_processing.py >>/home/metrics/Logs/cron-alert.txt 2>&1"
+      minute: "4"
+      job: "/home/metrics/repo/new_collector_processing.py >>/home/metrics/Logs/cron-alert.txt 2>&1"
+  - name: get dnspython
+    shell:
+      cmd: "pip3 install --user dnspython"
+      creates: /home/metrics/.local/lib/python3.7/site-packages/dns
 - name: Do Postgres stuff
-  hosts: c02
+  hosts: c03
   remote_user: "{{ superuser }}"
   become: true
   become_user: metrics
@@ -183,7 +169,7 @@
       db: metrics
       name: files_gotten
       columns:
-      - filename_full text
+      - filename_short text
       - retrieved_at timestamp
       - processed_at timestamp
       - version int
@@ -195,7 +181,7 @@
       db: metrics
       name: route_info
       columns:
-      - filename text
+      - filename_short text
       - date_derived timestamp
       - route_string text
   - name: Create table for SOA and correctness records
@@ -206,13 +192,12 @@
       columns:
       - filename_record text
       - date_derived timestamp
-      - rsi text
+      - target text
       - internet text
       - transport text
       - ip_addr text
       - record_type text
-      - prog_elapsed real
-      - dig_elapsed real
+      - query_elapsed real
       - timeout text
       - soa_found text
       - recent_soas text[]

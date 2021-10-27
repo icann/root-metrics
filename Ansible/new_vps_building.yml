@@ -19,11 +19,6 @@
     copy:
       src: ../bashrc-for-metrics-and-root
       dest: /root/.bashrc
-  - name: Make /sftp for transfer user
-    file:
-      path: /sftp
-      state: directory
-      mode: go-w
   - name: Replace sshd_config
     copy:
       src: ../etc_sshd_config_shorter
@@ -33,42 +28,21 @@
       state: restarted
       name: sshd.service
       daemon_reload: yes      
-  - name: Make user 'transfer'
-    user:
-      name: transfer
-      home: /sftp/transfer
-      shell: /bin/bash
   - name: Make user 'metrics'
     user:
       name: metrics
       home: /home/metrics
       shell: /bin/bash
-- name: Set up transfer user
-  hosts: all_vps
-  remote_user: "{{ superuser }}"
-  become_user: transfer
-  become: yes
-  tasks:
-  - name: Set up id_rsa for transfer
-    authorized_key:
-      user: transfer
-      key: "{{ lookup('file', '../Local/transfer_id_rsa.pub') }}"
-  - name: Create Output/ for transfer
-    file:
-      path: /sftp/transfer/Output
-      mode: go+w
-      state: directory
-  - name: Create AlreadySeen/ for transfer
-    file:
-      path: /sftp/transfer/AlreadySeen
-      mode: go+w
-      state: directory
 - name: Set up metrics user
   hosts: all_vps
   remote_user: "{{ superuser }}"
   become_user: metrics
   become: yes
   tasks:
+  - name: Set up id_rsa for metrics
+    authorized_key:
+      user: metrics
+      key: "{{ lookup('file', '../Local/metrics_id_rsa.pub') }}"
   - name: Put .bashrc for metrics
     copy:
       src: ../bashrc-for-metrics-and-root
@@ -77,6 +51,11 @@
     template:
       src: ../short-host-name.txt
       dest: /home/metrics/short-host-name.txt
+  - name: make Output/
+    file:
+      path: /home/metrics/Output
+      mode: u+wrx,go+rx
+      state: directory
   - name: make Logs/
     file:
       path: /home/metrics/Logs
@@ -115,7 +94,7 @@
     git:
       repo: 'https://github.com/icann/root-metrics.git'
       dest: /home/metrics/repo
-      ####### version: dnspython
+      version: no-transfer-user
   - name: Give the crontab entry for new_vantage_point_metrics.py
     cron:   # [mba] [wca]
       name: Get measurements

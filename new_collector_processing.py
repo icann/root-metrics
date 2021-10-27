@@ -4,7 +4,9 @@
 # Run as the metrics user
 # Three-letter items in square brackets (such as [xyz]) refer to parts of rssac-047.md
 
-import argparse, datetime, glob, gzip, logging, os, pickle, psycopg2, socket, subprocess, shutil, tempfile, time
+import argparse, datetime, glob, gzip, logging, os, pickle, psycopg2, socket, subprocess, tempfile, time
+import dns.rdatatype
+from pathlib import Path
 from concurrent import futures
 from collections import namedtuple
 
@@ -19,7 +21,7 @@ def run_tests_only():
 			exit("Did not find {} for running under --test. Exiting.".format(this_check))
 	# Test the positives
 	p_count = 0
-	for this_test_file in sorted(glob.glob("p-*")):
+	for this_test_file in sorted(Path(".").glob("p-*")):
 		p_count += 1
 		this_id = os.path.basename(this_test_file)
 		this_resp_pickle = pickle.dumps(open(this_test_file, mode="rb"))
@@ -30,7 +32,7 @@ def run_tests_only():
 	n_count = 0
 	# Collect the negative responses to put in a file
 	n_responses = {}
-	for this_test_file in sorted(glob.glob("n-*")):
+	for this_test_file in sorted(Path(".").glob("n-*")):
 		n_count += 1
 		this_id = os.path.basename(this_test_file)
 		in_lines = open(this_test_file, mode="rt").read().splitlines()
@@ -56,110 +58,43 @@ def run_tests_only():
 
 def get_files_from_one_vp(this_vp):
 	##################### Remove this before deploying #####################
-	die("Was about to get_files_from_one_vp for {}".format(this_vp))
+	##### die("Was about to get_files_from_one_vp for {}".format(this_vp))
 	########################################################################
 
-	# Used to pull files from VPs under multiprocessing; retuns the number of files pulled from this VP
-	pulled_count = 0
-	# Make a batch file for sftp that gets the directory
-	dir_batch_filename = "{}/{}-dirbatchfile.txt".format(batch_dir, this_vp)
-	dir_f = open(dir_batch_filename, mode="wt")
-	dir_f.write("cd transfer/Output\ndir -1\n")
-	dir_f.close()
-	# Execuite sftp with the directory batch file
-	try:
-		p = subprocess.run("sftp -b {} transfer@{}".format(dir_batch_filename, this_vp), shell=True, capture_output=True, text=True, check=True)
-	except Exception as e:
-		log("Getting directory for {} ended with '{}'".format(dir_batch_filename, e))
-		return pulled_count
-	dir_lines = p.stdout.splitlines()
-
-	conn = psycopg2.connect(dbname="metrics", user="metrics")
-	conn.set_session(autocommit=True)
-	
-	# Get the filenames that end in .gz; some lines will be other cruft such as ">"
-	for this_filename in dir_lines:
-		if not this_filename.endswith(".gz"):
-			continue
-		# Create an sftp batch file for each file to get
-		get_batch_filename = "{}/{}-getbatchfile.txt".format(batch_dir, this_vp)
-		get_f = open(get_batch_filename, mode="wt")
-		# Get the file
-		get_cmd = "get transfer/Output/{} {}\n".format(this_filename, incoming_dir)
-		get_f.write(get_cmd)
-		get_f.close()
+	# Used to rsync files from VPs under multiprocessing into incoming_dir; retuns error messages
+	(vp_number, _) = this_vp.split(".", maxsplit=1)
+	pull_to_dir = f"{incoming_dir}/{vp_number}"
+	if not os.path.exists(pull_to_dir):
 		try:
-			p = subprocess.run("sftp -b {} transfer@{}".format(get_batch_filename, this_vp), shell=True, capture_output=True, text=True, check=True)
-		except Exception as e:
-			conn.close()
-			die("Running get for {} ended with '{}'".format(this_filename, e))
-		# Create an sftp batch file for each file to move
-		move_batch_filename = "{}/{}-movebatchfile.txt".format(batch_dir, this_vp)
-		move_f = open(move_batch_filename, mode="wt")
-		# Get the file
-		move_cmd = "rename transfer/Output/{0} transfer/AlreadySeen/{0}\n".format(this_filename)
-		move_f.write(move_cmd)
-		move_f.close()
+			os.mkdir(pull_to_dir)
+		except:
+			die(f"Could not create {pull_to_dir}")
+	# rsync from the VP
+	for this_dir in ("Output", "Logs"):
 		try:
-			p = subprocess.run("sftp -b {} transfer@{}".format(move_batch_filename, this_vp), shell=True, capture_output=True, text=True, check=True)
+			p = subprocess.run(f"rsync -av --timeout=5 metrics@{vp_number}.mtric.net:{this_dir} {pull_to_dir}/", shell=True, capture_output=True, text=True, check=True)
 		except Exception as e:
-			conn.close()
-			die("Running rename for {} ended with '{}'".format(this_filename, e))
-		pulled_count += 1
+			return f"For {vp_number}, failed to rsync {this_dir}: {e}"
+		# Keep the log
 		try:
-			cur = conn.cursor()
-			cur.execute("insert into files_gotten (filename_full, retrieved_at) values (%s, %s);", (this_filename, datetime.datetime.now(datetime.timezone.utc)))
-			cur.close()
-		except Exception as e:
-			conn.close()
-			die("Could not insert '{}' into files_gotten: '{}'".format(this_filename, e))
-	conn.close()
-	return pulled_count
+			log_f = open(f"{pull_to_dir}/rsync-log.txt", mode="at")
+			log_f.write(p.stdout)
+			log_f.close()
+		except:
+			die(f"Could not write to log {pull_to_dir}/{vp_number}/rsync-log.txt") 
+	return ""
 
 ###############################################################
-def process_one_incoming_file(full_file):
+def process_one_incoming_file(full_file_name):
 	# Process an incoming file, and move it when done
 	#   Returns nothing
 	#   File-level errors cause "die", record-level errors cause "alert" and skipping the record
 	
-	# Check for bad file
-	if not full_file.endswith(".pickle.gz"):
-		alert("Found {} that did not end in .pickle.gz".format(full_file))
-		return
-	short_file = os.path.basename(full_file).replace(".pickle.gz", "")
-	# Ungz it
-	try:
-		with gzip.open(full_file, mode="rb") as pf:
-			in_pickle = pf.read()
-	except Exception as e:
-		die("Could not unzip {}: '{}'".format(full_file, e))
-	# Unpickle it
-	try:
-		in_obj = pickle.loads(in_pickle)
-	except Exception as e:
-		die("Could not unpickle {}: '{}'".format(full_file, e))
-	# Sanity check the record
-	if not ("v" in in_obj) and ("d" in in_obj) and ("e" in in_obj) and ("r" in in_obj) and ("s" in in_obj):
-		alert("Object in {} did not contain keys d, e, r, s, and v".format(full_file))
-
-	# Move the file to ~/Originals/yyyymm so it doesn't get processed again
-	year_from_short_file = short_file[0:4]
-	month_from_short_file = short_file[4:6]
-	original_dir_target = os.path.expanduser("~/Originals/{}{}".format(year_from_short_file, month_from_short_file))
-	if not os.path.exists(original_dir_target):
-		try:
-			os.mkdir(original_dir_target)
-		except Exception:
-			log("Could not create {}; continuing")
-	try:
-		shutil.move(full_file, original_dir_target)
-	except Exception as e:
-		die("Could not move {} to {}: '{}'".format(full_file, original_dir_target, e))
-
+	# Open the database so that we can define the insert function
 	conn = psycopg2.connect(dbname="metrics", user="metrics")
 	conn.set_session(autocommit=True)
 
-	# Function to insert records into one of the two databases
+	# First define a function to insert records into one of the two databases
 	def insert_from_template(this_update_cmd_string, this_update_values):
 		try:
 			curi = conn.cursor()
@@ -173,54 +108,81 @@ def process_one_incoming_file(full_file):
 		curi.close()
 		return
 
+	# Check for wrong type of file
+	if not full_file_name.endswith(".pickle.gz"):
+		alert("Found {} that did not end in .pickle.gz".format(full_file_name))
+		return
+	
+	short_file_name = os.path.basename(full_file_name).replace(".pickle.gz", "")
+	
+	# Check if it is already in 
+	
 	# See if this file has already been processed
-	this_pickle_gz = short_file + ".pickle.gz"
 	cur = conn.cursor()
-	cur.execute("select count(*) from files_gotten where filename_full = %s", (this_pickle_gz, ))
+	cur.execute("select count(*) from files_gotten where filename_short = %s", (short_file_name, ))
 	if cur.rowcount == -1:
-		alert("Got rowcount of -1 for {}; skipping this file".format(this_pickle_gz))
+		alert(f"Got rowcount of -1 for {short_file_name}; skipping this file")
 		conn.close()
 		return
 	files_gotten_check = cur.fetchone()
-	if files_gotten_check[0] > 1:
-		alert("Found mulitple instances of {} in files_gotten; ignoring this new one".format(short_file))
+	if files_gotten_check[0] > 0:
+		alert(f"Found exiting instance of {short_file_name} in files_gotten; removing {full_file_name}")
 		conn.close()
+		try:
+			os.remove(full_file_name)
+		except:
+			die(f"Could not remove {full_file_name} after finding {short_file_name} in files_gotten")
 		return
-	# If the file is not there, probably due to rsyncing from c01
-	insert_string = "insert into files_gotten (filename_full, retrieved_at) values (%s, %s);"
-	insert_values = (this_pickle_gz, datetime.datetime.now(datetime.timezone.utc))
+	# Insert the short file name into the files_gotten database
+	insert_string = "insert into files_gotten (filename_short, retrieved_at) values (%s, %s);"
+	insert_values = (short_file_name, datetime.datetime.now(datetime.timezone.utc))
 	insert_from_template(insert_string, insert_values)
 	cur.close()
 	
+	# Un-gzip it
+	try:
+		with gzip.open(full_file_name, mode="rb") as pf:
+			in_pickle = pf.read()
+	except Exception as e:
+		die(f"Could not unzip {full_file_name}: {e}")
+	# Unpickle it
+	try:
+		in_obj = pickle.loads(in_pickle)
+	except Exception as e:
+		die(f"Could not unpickle {full_file_name}: {e}")
+	# Sanity check the record
+	if not ("v" in in_obj) and ("d" in in_obj) and ("e" in in_obj) and ("r" in in_obj) and ("s" in in_obj):
+		alert(f"Object in {full_file_name} did not contain keys d, e, r, s, and v")
+	
 	# Update the metadata
-	update_string = "update files_gotten set processed_at=%s, version=%s, delay=%s, elapsed=%s where filename_full=%s"
-	update_vales = (datetime.datetime.now(datetime.timezone.utc), in_obj["v"], in_obj["d"], in_obj["e"], this_pickle_gz) 
+	update_string = "update files_gotten set processed_at=%s, version=%s, delay=%s, elapsed=%s where filename_short=%s"
+	update_vales = (datetime.datetime.now(datetime.timezone.utc), in_obj["v"], in_obj["d"], in_obj["e"], short_file_name) 
 	insert_from_template(update_string, update_vales)
 
 	# Get the derived date and VP name from the file name
-	(file_date_text, _) = short_file.split("-")
+	(file_date_text, _) = short_file_name.split("-")
 	try:
 		file_date = datetime.datetime(int(file_date_text[0:4]), int(file_date_text[4:6]), int(file_date_text[6:8]),\
 			int(file_date_text[8:10]), int(file_date_text[10:12]))
 	except Exception as e:
 		conn.close()
-		die("Could not split the file name '{}' into a datetime: '{}'".format(short_file, e))
+		die("Could not split the file name '{}' into a datetime: '{}'".format(short_file_name, e))
 
 	# Log the route information from in_obj["s"]
 	if not in_obj.get("s"):
-		alert("File {} did not have a route information record".format(full_file))
+		alert("File {} did not have a route information record".format(full_file_name))
 	else:
-		update_string = "insert into route_info (filename, date_derived, route_string) values (%s, %s, %s)"
-		update_values = (short_file, file_date, in_obj["s"]) 
+		update_string = "insert into route_info (filename_short, date_derived, route_string) values (%s, %s, %s)"
+		update_values = (short_file_name, file_date, in_obj["s"]) 
 		try:
 			cur = conn.cursor()
 			cur.execute(update_string, update_values)
 			cur.close()
 		except Exception as e:
-			alert("Could not insert into route_info for {}: '{}'".format(short_file, e))
+			alert("Could not insert into route_info for {}: '{}'".format(short_file_name, e))
 
 	# Named tuple for the record templates
-	template_names_raw = "filename_record date_derived rsi internet transport ip_addr record_type prog_elapsed dig_elapsed timeout soa_found " \
+	template_names_raw = "filename_record date_derived target internet transport ip_addr record_type query_elapsed timeout soa_found " \
 		+ "recent_soas is_correct failure_reason source_pickle"
 	# Change spaces to ", "
 	template_names_with_commas = template_names_raw.replace(" ", ", ")
@@ -235,21 +197,20 @@ def process_one_incoming_file(full_file):
 		response_count += 1
 		# Each record is "S" for an SOA record or "C" for a correctness test
 		#   Sanity test that the type is S or C
-		if not this_resp[4] in ("S", "C"):
-			alert("Found a response type {}, which is not S or C, in record {} of {}".format(this_resp[4], response_count, full_file))
+		if not this_resp["test_type"] in ("S", "C"):
+			alert("Found a response type {}, which is not S or C, in record {} of {}".format(this_resp["test_type"], response_count, full_file_name))
 			continue
 		insert_template = "insert into record_info ({}) values ({})".format(template_names_with_commas, percent_s_string)
 		# Note that the default value for is_correct is "?" so that the test for "has correctness been checked" can still be against "y" or "n", which is set below
-		insert_values = insert_values_template(filename_record="{}-{}".format(short_file, response_count), date_derived=file_date, \
-			rsi=this_resp[0], internet=this_resp[1], transport=this_resp[2], ip_addr=this_resp[3], record_type=this_resp[4], prog_elapsed=this_resp[5], \
-			dig_elapsed=0.0, timeout="", soa_found="", recent_soas=[], is_correct="?", failure_reason="", source_pickle=b"")
-
+		insert_values = insert_values_template(filename_record=f"{short_file_name}-{response_count}", date_derived=file_date, \
+			target=this_resp["target"], internet=this_resp["internet"], transport=this_resp["transport"], ip_addr=this_resp["ip_addr"], record_type=this_resp["test_type"], \
+			query_elapsed=0.0, timeout="", soa_found="", recent_soas=[], is_correct="?", failure_reason="", source_pickle=b"")
 		# If the response code is wrong, treat it as a timeout; use the response code as the timeout message
 		#   For "S" records   [ppo]
 		#   For "C" records   [ote]
 		# NOERROR = 0  NXDOMIN = 3
-		this_response_code = this_resp["rcode"]
-		if not ((insert_values.record_type == "S" and this_response_code in (0)) or (insert_values.record_type == "C" and this_response_code in (0, 3))):
+		this_response_code = this_resp.get("rcode")
+		if not ((insert_values.record_type == "S" and this_response_code in [0]) or (insert_values.record_type == "C" and this_response_code in [0, 3])):
 			insert_values = insert_values._replace(timeout=this_response_code)
 			insert_from_template(insert_template, insert_values)
 			continue
@@ -257,14 +218,15 @@ def process_one_incoming_file(full_file):
 		# What is left is the normal responses
 		#   For these, leave the timeout as ""
 		if not this_resp.get("query_elapsed"):
-			alert("Found a message without query_elapsed or query_time in record {} of {}".format(response_count, full_file))
+			alert("Found a message without query_elapsed in record {} of {}".format(response_count, full_file_name))
 			continue
-		insert_values = insert_values._replace(this_resp["query_elapsed"])# [aym]
+		insert_values = insert_values._replace(query_elapsed=this_resp["query_elapsed"])  # [aym]
 		if insert_values.record_type == "S":
-			if len(this_resp["answer"]) == 0:
-				alert("Found a message of type 'S' without an answer in record {} of {}".format(response_count, full_file))
+			if this_resp.get("answer") == None or len(this_resp["answer"]) == 0:
+				alert("Found a message of type 'S' without an answer in record {} of {}".format(response_count, full_file_name))
 				continue
-			this_soa_record = this_resp["answer"][0]
+			# This chooses only the first SOA record
+			this_soa_record = this_resp["answer"][0]["rdata"][0]
 			soa_record_parts = this_soa_record.split(" ")
 			this_soa = soa_record_parts[6]
 			insert_values = insert_values._replace(soa_found=this_soa)
@@ -288,7 +250,7 @@ def check_for_signed_rr(list_of_records_from_section, name_of_rrtype):
 	#   See if there is a record in the list of the given RRtype, and make sure there is also an RRSIG for that RRtype
 	found_rrtype = False
 	for this_full_record in list_of_records_from_section:
-		(rec_qname, _, _, rec_qtype, rec_rdata) = this_full_record.split(" ", maxsplit=4)
+		rec_qtype = dns.rdatatype.to_text(this_full_record["rdtype"])
 		if rec_qtype == name_of_rrtype:
 			found_rrtype = True
 			break
@@ -296,7 +258,7 @@ def check_for_signed_rr(list_of_records_from_section, name_of_rrtype):
 		return "No record of type {} was found in that section".format(name_of_rrtype)
 	found_rrsig = False
 	for this_full_record in list_of_records_from_section:
-		(rec_qname, _, _, rec_qtype, rec_rdata) = this_full_record.split(" ", maxsplit=4)
+		rec_qtype = dns.rdatatype.to_text(this_full_record["rdtype"])
 		if rec_qtype == "RRSIG":
 			found_rrsig = True
 			break
@@ -325,13 +287,13 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 		this_found = cur.fetchall()
 		cur.close()
 		if len(this_found) > 1:
-			alert("When checking corrrectness on '{}', found more than one record: '{}'".format(this_filename_record, this_found))
+			alert(f"When checking correctness on {this_filename_record}, found {len(this_found)} records")
 			return
 		(this_timeout, this_resp_pickle) = this_found[0]
 	elif request_type == "test":
 		(this_timeout, this_resp_pickle) = this_found[0]
 	else:
-		alert("While running process_one_correctness_array on {}, got unknown first argument '{}'".format(this_filename_record, request_type))
+		alert(f"While running process_one_correctness_array on {this_filename_record}, got unknown first argument {request_type}")
 		return
 
 	# Before trying to load the pickled data, first see if it is a timeout; if so, set is_correct but move on [lbl]
@@ -349,7 +311,7 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 	
 	# Get the pickled object		
 	try:
-		this_resp_obj = pickle.loads(this_resp_pickle)
+		resp = pickle.loads(this_resp_pickle)
 	except Exception as e:
 		alert("Could not unpickle in record_info for {}: '{}'".format(this_filename_record, e))
 		return
@@ -367,11 +329,11 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 		start_date_minus_two = start_date - datetime.timedelta(days=2)
 		soa_matching_date_files = []
 		for this_start in [start_date, start_date_minus_one, start_date_minus_two]:
-			soa_matching_date_files.extend(glob.glob("{}/{}*.matching.pickle".format(saved_matching_dir, this_start.strftime("%Y%m%d"))))
+			soa_matching_date_files.extend(glob.glob(str(Path(f"{saved_matching_dir}/{this_start.strftime('%Y%m%d')}" + "*.matching.pickle"))))
 		# See if any of the matching files are not listed in the recent_soas field in the record; if so, try the highest one
 		soa_matching_date_files = sorted(soa_matching_date_files, reverse=True)
 		if len(soa_matching_date_files) == 0:
-			alert("Found no SOA matching files for {} with dates starting {}".format(this_filename_record, start_date.strftime("%Y%m%d")))
+			alert(f"Found no SOA matching files for {this_filename_record} with dates starting {start_date.strftime('%Y%m%d')}")
 			return
 		try:
 			cur = conn.cursor()
@@ -384,7 +346,7 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 		if len(this_found) > 1:
 			alert("When checking recent_soas in corrrectness on '{}', found more than one record: '{}'".format(this_filename_record, this_found))
 			return
-		found_recent_soas = this_found[0][0]
+		found_recent_soas = this_found[0]
 		root_file_to_check = ""
 		for this_file in soa_matching_date_files:
 			this_soa = os.path.basename(this_file)[0:8]
@@ -400,7 +362,7 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 					("n", "Tried with all SOAs for 48 hours", this_filename_record))
 				cur.close()
 			except Exception as e:
-				alert("Could not update record_info after end of SOAs in correctness checking after processing record {}: '{}'".format(this_filename_record, e))
+				alert(f"Could not update record_info after end of SOAs in correctness checking after processing record {this_filename_record}: {e}")
 			return
 
 		# Try to read the file	
@@ -408,34 +370,32 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 		try:
 			root_to_check = pickle.load(soa_f)
 		except:
-			alert("Could not unpickle {} while processing {} for correctness".format(root_file_to_check, this_filename_record))
+			alert(f"Could not unpickle root file {root_file_to_check} while processing {this_filename_record} for correctness")
 			return
 	
-	# Here if it is a dig MESSAGE type
-	#   failure_reasons holds an expanding set of reasons
+	# failure_reasons holds an expanding set of reasons
 	#   It is checked at the end of testing, and all "" entries eliminted
 	#   If it is empty, then all correctness tests passed
 	failure_reasons = []
-	resp = this_resp_obj[0]["message"]["response_message_data"]
 
 	# Check that each of the RRsets in the Answer, Authority, and Additional sections match RRsets found in the zone [vnk]
 	#   This check does not include any RRSIG RRsets that are not named in the matching tests below. [ygx]
 	# This check does not include any EDNS0 NSID RRset [pvz]
 	# After this check is done, we no longer need to check RRsets from the answer against the root zone
-	for this_section_name in [ "ANSWER_SECTION", "AUTHORITY_SECTION", "ADDITIONAL_SECTION" ]:
+	for this_section_name in [ "answer", "authority", "additional" ]:
 		if resp.get(this_section_name):
 			rrsets_for_checking = {}
 			for this_full_record in resp[this_section_name]:
-				# There is an error in BIND 9.16.1 and .2 where this_full_record might be a dict instead of a str. If so, ignore it. #######
-				if isinstance(this_full_record, dict):
-					alert("Found record with a dict in id {}, {} {}".format(this_filename_record, this_section_name, this_full_record))
-					return
-				(rec_qname, _, _, rec_qtype, rec_rdata) = this_full_record.split(" ", maxsplit=4)
-				if not rec_qtype == "RRSIG":  # [ygx]
-					this_key = "{}/{}".format(rec_qname, rec_qtype)
-					if not this_key in rrsets_for_checking:
-						rrsets_for_checking[this_key] = set()
-					rrsets_for_checking[this_key].add(rec_rdata)
+				rec_qname = this_full_record["name"]
+				rec_qtype = dns.rdatatype.to_text(this_full_record["rdtype"])
+				if rec_qtype == "RRSIG":  # [ygx]
+					continue
+				this_key = f"{rec_qname}/{rec_qtype}"
+				rec_rdata = this_full_record["rdata"]
+				if not this_key in rrsets_for_checking:
+					rrsets_for_checking[this_key] = set()
+				for this_rdata_record in rec_rdata:
+					rrsets_for_checking[this_key].add(this_rdata_record.upper())
 			for this_rrset_key in rrsets_for_checking:
 				if not this_rrset_key in root_to_check:
 					failure_reasons.append("'{}' was in '{}' in the response but not the root [vnk]".format(this_rrset_key, this_section_name))
@@ -469,19 +429,24 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 	if opts.test:
 		recent_soa_root_filename = "root_zone.txt"
 	else:
-		recent_soa_root_filename = "{}/{}.root.txt".format(saved_root_zone_dir, soa_file_used_for_testing)
+		recent_soa_root_filename = f"{saved_root_zone_dir}/{soa_file_used_for_testing}.root.txt"
 	if not os.path.exists(recent_soa_root_filename):
 		alert("Could not find {} for correctness validation, so skipping".format(recent_soa_root_filename))
 	else:
-		for this_section_name in [ "ANSWER_SECTION", "AUTHORITY_SECTION", "ADDITIONAL_SECTION" ]:
-			this_section_rrs = resp.get(this_section_name, [])
+		for this_section_name in [ "answer", "authority", "additional" ]:
+			if not resp.get(this_section_name):
+				continue
+			this_section_rrs = []
+			for this_rec_in_section in resp[this_section_name]:
+				this_section_rrs.extend(this_rec_in_section["rdata"])
 			# Only act if this section has an RRSIG
 			rrsigs_over_rrtypes = set()
 			for this_in_rr_text in this_section_rrs:
 				# The following splits into 5 parts to expose the first field of RRSIGs
 				rr_parts = this_in_rr_text.split(" ", maxsplit=5)
-				if rr_parts[3] == "RRSIG":
-					rrsigs_over_rrtypes.add(rr_parts[4])
+				if len(rr_parts) > 3:
+					if rr_parts[3] == "RRSIG":
+						rrsigs_over_rrtypes.add(rr_parts[4])
 			if len(rrsigs_over_rrtypes) > 0:
 				validate_f = tempfile.NamedTemporaryFile(mode="wt")
 				validate_fname = validate_f.name
@@ -500,44 +465,49 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 				validate_f.close()
 	
 	# Check that all the parts of the resp structure are correct, based on the type of answer
-	question_record = resp["QUESTION_SECTION"][0]
-	(this_qname, _, this_qtype) = question_record.split(" ")
-	if resp["status"] == "NOERROR":
+	#   Only look at the first record in the question section
+	question_record = resp["question"][0]
+	this_qname = question_record["name"]
+	this_qtype = dns.rdatatype.to_text(question_record["rdtype"])
+	if resp["rcode"] == 0:
 		if (this_qname != ".") and (this_qtype == "NS"):  # Processing for TLD / NS [hmk]
 			# The header AA bit is not set. [ujy]
 			if "aa" in resp["flags"]:
 				failure_reasons.append("AA bit was set [ujy]")
 			# The Answer section is empty. [aeg]
-			if resp.get("ANSWER_SECTION"):
+			if resp.get("answer"):
 				failure_reasons.append("Answer section was not empty [aeg]")
 			# The Authority section contains the entire NS RRset for the query name. [pdd]
-			if not resp.get("AUTHORITY_SECTION"):
+			if not resp.get("authority"):
 				failure_reasons.append("Authority section was empty [pdd]")
 			root_ns_for_qname = root_to_check["{}/NS".format(this_qname)]
 			auth_ns_for_qname = set()
-			for this_rec in resp["AUTHORITY_SECTION"]:
-				(rec_qname, _, _, rec_qtype, rec_rdata) = this_rec.split(" ", maxsplit=4)
-				if rec_qtype == "NS":
-					auth_ns_for_qname.add(rec_rdata)
+			for this_rec in resp["authority"]:
+				rec_qtype = dns.rdatatype.to_text(this_full_record["rdtype"])
+				rec_rdata = this_full_record["rdata"]
+				if not rec_qtype == "RRSIG":  # [ygx]
+					if rec_qtype == "NS":
+						auth_ns_for_qname.update(rec_rdata)
 			if not auth_ns_for_qname == root_ns_for_qname:
 				failure_reasons.append("NS RRset in Authority was '{}', but NS from root was '{}' [pdd]".format(auth_ns_for_qname, root_ns_for_qname))
 			# If the DS RRset for the query name exists in the zone: [hue]
 			if root_to_check.get("{}/DS".format(this_qname)):
 				# The Authority section contains the signed DS RRset for the query name. [kbd]
-				this_resp = check_for_signed_rr(resp["AUTHORITY_SECTION"], "DS")
+				this_resp = check_for_signed_rr(resp["authority"], "DS")
 				if this_resp:
 					failure_reasons.append("{} [kbd]".format(this_resp))
 			else:  # If the DS RRset for the query name does not exist in the zone: [fot]
 				# The Authority section contains no DS RRset. [bgr]
-				for this_rec in resp["AUTHORITY_SECTION"]:
-					(rec_qname, _, _, rec_qtype, _) = this_rec.split(" ", maxsplit=4)
+				for this_rec in resp["authority"]:
+					rec_qtype = dns.rdatatype.to_text(this_full_record["rdtype"])
 					if rec_qtype == "DS":
 						failure_reasons.append("Found DS in Authority section [bgr]")
 						break
 				# The Authority section contains a signed NSEC RRset covering the query name. [mkl]
 				has_covering_nsec = False
-				for this_rec in resp["AUTHORITY_SECTION"]:
-					(rec_qname, _, _, rec_qtype, rec_rdata) = this_rec.split(" ", maxsplit=4)
+				for this_rec in resp["authority"]:
+					rec_qname = this_full_record["name"]
+					rec_qtype = dns.rdatatype.to_text(this_full_record["rdtype"])
 					if rec_qtype == "NSEC":
 						if rec_qname == this_qname:
 							has_covering_nsec = True
@@ -547,13 +517,15 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 			# Additional section contains at least one A or AAAA record found in the zone associated with at least one NS record found in the Authority section. [cjm]
 			#    Collect the NS records from the Authority section
 			found_NS_recs = []
-			for this_rec in resp["AUTHORITY_SECTION"]:
-				(rec_qname, _, _, rec_qtype, rec_rdata) = this_rec.split(" ", maxsplit=4)
+			for this_rec in resp["authority"]:
+				rec_qtype = dns.rdatatype.to_text(this_full_record["rdtype"])
+				rec_rdata = this_full_record["rdata"]
 				if rec_qtype == "NS":
-					found_NS_recs.append(rec_rdata)
+					found_NS_recs.extend(rec_rdata)
 			found_qname_of_A_AAAA_recs = []
-			for this_rec in resp["ADDITIONAL_SECTION"]:
-				(rec_qname, _, _, rec_qtype, rec_rdata) = this_rec.split(" ", maxsplit=4)
+			for this_rec in resp["additional"]:
+				rec_qname = this_full_record["name"]
+				rec_qtype = dns.rdatatype.to_text(this_full_record["rdtype"])
 				if rec_qtype in ("A", "AAAA"):
 					found_qname_of_A_AAAA_recs.append(rec_qname)
 			found_A_AAAA_NS_match = False
@@ -568,37 +540,38 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 			if not "aa" in resp["flags"]:
 				failure_reasons.append("AA bit was not set [yot]")
 			# The Answer section contains the signed DS RRset for the query name. [cpf]
-			if not resp.get("ANSWER_SECTION"):
+			if not resp.get("answer"):
 				failure_reasons.append("Answer section was empty [cpf]")
 			else:
 				# Make sure the DS is for the query name
-				for this_rec in resp["ANSWER_SECTION"]:
-					(rec_qname, _, _, rec_qtype, _) = this_rec.split(" ", maxsplit=4)
+				for this_rec in resp["answer"]:
+					rec_qname = this_full_record["name"]
+					rec_qtype = dns.rdatatype.to_text(this_full_record["rdtype"])
 					if rec_qtype == "DS":
 						if not rec_qname == this_qname:
 							failure_reasons.append("DS in Answer section had QNAME {} instead of {} [cpf]".format(rec_qname, this_qname))
-				this_resp = check_for_signed_rr(resp["ANSWER_SECTION"], "DS")
+				this_resp = check_for_signed_rr(resp["answer"], "DS")
 				if this_resp:
 					failure_reasons.append("{} [cpf]".format(this_resp))
 			# The Authority section is empty. [xdu]
-			if resp.get("AUTHORITY_SECTION"):
+			if resp.get("authority"):
 				failure_reasons.append("Authority section was not empty [xdu]")
 			# The Additional section is empty. [mle]
-			if resp.get("ADDITIONAL_SECTION"):
+			if resp.get("additional"):
 				failure_reasons.append("Additional section was not empty [mle]")
 		elif (this_qname == ".") and (this_qtype == "SOA"):  # Processing for . / SOA [owf]
 			# The header AA bit is set. [xhr]
 			if not "aa" in resp["flags"]:
 				failure_reasons.append("AA bit was not set [xhr]")
 			# The Answer section contains the signed SOA record for the root. [obw]
-			this_resp = check_for_signed_rr(resp["ANSWER_SECTION"], "SOA")
+			this_resp = check_for_signed_rr(resp["answer"], "SOA")
 			if this_resp:
 				failure_reasons.append("{} [obw]".format(this_resp))
 			# The Authority section contains the signed NS RRset for the root. [ktm]
-			if not resp.get("AUTHORITY_SECTION"):
+			if not resp.get("authority"):
 				failure_reasons.append("The Authority section was empty [ktm]")
 			else:
-				this_resp = check_for_signed_rr(resp["AUTHORITY_SECTION"], "NS")
+				this_resp = check_for_signed_rr(resp["authority"], "NS")
 				if this_resp:
 					failure_reasons.append("{} [ktm]".format(this_resp))
 		elif (this_qname == ".") and (this_qtype == "NS"):  # Processing for . / NS [amj]
@@ -606,46 +579,47 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 			if not "aa" in resp["flags"]:
 				failure_reasons.append("AA bit was not set [csz]")
 			# The Answer section contains the signed NS RRset for the root. [wal]
-			this_resp = check_for_signed_rr(resp["ANSWER_SECTION"], "NS")
+			this_resp = check_for_signed_rr(resp["answer"], "NS")
 			if this_resp:
 				failure_reasons.append("{} [wal]".format(this_resp))
 			# The Authority section is empty. [eyk]
-			if resp.get("AUTHORITY_SECTION"):
+			if resp.get("authority"):
 				failure_reasons.append("Authority section was not empty [eyk]")
 		elif (this_qname == ".") and (this_qtype == "DNSKEY"):  # Processing for . / DNSKEY [djd]
 			# The header AA bit is set. [occ]
 			if not "aa" in resp["flags"]:
 				failure_reasons.append("AA bit was not set [occ]")
 			# The Answer section contains the signed DNSKEY RRset for the root. [eou]
-			this_resp = check_for_signed_rr(resp["ANSWER_SECTION"], "DNSKEY")
+			this_resp = check_for_signed_rr(resp["answer"], "DNSKEY")
 			if this_resp:
 				failure_reasons.append("{} [eou]".format(this_resp))
 			# The Authority section is empty. [kka]
-			if resp.get("AUTHORITY_SECTION"):
+			if resp.get("authority"):
 				failure_reasons.append("Authority section was not empty [kka]")
 			# The Additional section is empty. [jws]
-			if resp.get("ADDITIONAL_SECTION"):
+			if resp.get("additional"):
 				failure_reasons.append("Additional section was not empty [jws]")
 		else:
 			failure_reasons.append("Not matched: when checking NOERROR statuses, found unexpected name/type of {}/{}".format(this_qname, this_qtype))
-	elif resp["status"] == "NXDOMAIN":  # Processing for negative responses [vcu]
+	elif resp["rcode"] == 3:  # Processing for negative responses [vcu]
 		# The header AA bit is set. [gpl]
 		if not "aa" in resp["flags"]:
 			failure_reasons.append("AA bit was not set [gpl]")
 		# The Answer section is empty. [dvh]
-		if resp.get("ANSWER_SECTION"):
+		if resp.get("answer"):
 			failure_reasons.append("Answer section was not empty [dvh]")
 		# The Authority section contains the signed . / SOA record. [axj]
-		if not resp.get("AUTHORITY_SECTION"):
+		if not resp.get("authority"):
 			failure_reasons.append("Authority section was empty [axj]")
 		else:
 			# Make sure the SOA record is for .
-			for this_rec in resp["AUTHORITY_SECTION"]:
-				(rec_qname, _, _, rec_qtype, _) = this_rec.split(" ", maxsplit=4)
+			for this_rec in resp["authority"]:
+				rec_qname = this_full_record["name"]
+				rec_qtype = dns.rdatatype.to_text(this_full_record["rdtype"])
 				if rec_qtype == "SOA":
 					if not rec_qname == ".":
 						failure_reasons.append("SOA in Authority section had QNAME {} instead of '.' [vcu]".format(rec_qname))
-			this_resp = check_for_signed_rr(resp["AUTHORITY_SECTION"], "SOA")
+			this_resp = check_for_signed_rr(resp["authority"], "SOA")
 			if this_resp:
 				failure_reasons.append("{} [axj]".format(this_resp))
 			# The Authority section contains a signed NSEC record covering the query name. [czb]
@@ -653,10 +627,13 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 			this_qname_TLD = this_qname.split(".")[-2] + "."
 			nsec_covers_query_name = False
 			nsecs_in_authority = []
-			for this_rec in resp["AUTHORITY_SECTION"]:
-				(rec_qname, _, _, rec_qtype, rec_rdata) = this_rec.split(" ", maxsplit=4)
+			for this_rec in resp["authority"]:
+				rec_qname = this_full_record["name"]
+				rec_qtype = dns.rdatatype.to_text(this_full_record["rdtype"])
+				rec_rdata = this_full_record["rdata"]
 				if rec_qtype == "NSEC":
-					nsec_parts = rec_rdata.split(" ")
+					# Just looking at the first NSEC record
+					nsec_parts = rec_rdata[0].split(" ")
 					nsec_parts_covered = nsec_parts[0]
 					# Sorting against "." doesn't work, so instead use the longest TLD that could be in the root zone
 					if nsec_parts_covered == ".":
@@ -671,8 +648,9 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 				failure_reasons.append("NSECs in Authority '{}' did not cover qname '{}' [czb]".format(nsecs_in_authority, this_qname))
 			# The Authority section contains a signed NSEC record with owner name “.” proving no wildcard exists in the zone. [jhz]
 			nsec_with_owner_dot = False
-			for this_rec in resp["AUTHORITY_SECTION"]:
-				(rec_qname, _, _, rec_qtype, rec_rdata) = this_rec.split(" ", maxsplit=4)
+			for this_rec in resp["authority"]:
+				rec_qname = this_full_record["name"]
+				rec_qtype = dns.rdatatype.to_text(this_full_record["rdtype"])
 				if rec_qtype == "NSEC":
 					if rec_qname == ".":
 						nsec_with_owner_dot = True
@@ -680,7 +658,7 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 			if not 	nsec_with_owner_dot:
 				failure_reasons.append("Authority section did not contain a signed NSEC record with owner name '.' [jzh]")
 		# The Additional section is empty. [trw]
-		if resp.get("ADDITIONAL_SECTION"):
+		if resp.get("additional"):
 			failure_reasons.append("Additional section was not empty [trw]")
 	else:
 		failure_reasons.append("Response had a status other than NOERROR and NXDOMAIN")
@@ -712,12 +690,12 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 
 if __name__ == "__main__":
 	# Get the base for the log directory
-	log_dir = "{}/Logs".format(os.path.expanduser("~"))
+	log_dir = f"{str(Path('~').expanduser())}/Logs"
 	if not os.path.exists(log_dir):
 		os.mkdir(log_dir)
 	# Set up the logging and alert mechanisms
-	log_file_name = "{}/collector-log.txt".format(log_dir)
-	alert_file_name = "{}/collector-alert.txt".format(log_dir)
+	log_file_name = f"{log_dir}/log.txt"
+	alert_file_name = f"{log_dir}/alert.txt"
 	vp_log = logging.getLogger("logging")
 	vp_log.setLevel(logging.INFO)
 	log_handler = logging.FileHandler(log_file_name)
@@ -743,8 +721,8 @@ if __name__ == "__main__":
 	this_parser = argparse.ArgumentParser()
 	this_parser.add_argument("--test", action="store_true", dest="test",
 		help="Run tests on requests; must be run in the Tests directory")
-	this_parser.add_argument("--source", action="store", dest="source", default="skip",
-		help="Specify 'vps' or 'c01' or 'skip' to say where to pull recent files")
+	this_parser.add_argument("--source", action="store", dest="source", default="vps",
+		help="Specify 'vps' or 'skip' to say where to pull recent files")
 	this_parser.add_argument("--limit", action="store_true", dest="limit",
 		help="Limit procesing to {} items".format(limit_size))
 	
@@ -752,26 +730,18 @@ if __name__ == "__main__":
 	if opts.limit:
 		log("Limiting record processing to {} records".format(limit_size))
 
-	# Make sure opts.source is "vps" or "c01" or "skip"
-	if not opts.source in ("vps", "c01", "skip"):
-		die('The value for --source must be "vps" or "c01" or "skip"')
+	# Make sure opts.source is "vps" or "skip"
+	if not opts.source in ("vps", "skip"):
+		die('The value for --source must be "vps" or "skip"')
 
 	# Where the binaries are
 	target_dir = "/home/metrics/Target"	
-	# Where to put the SFTP batch files
-	batch_dir = os.path.expanduser("{}/Batches".format(log_dir))
-	if not os.path.exists(batch_dir):
-		os.mkdir(batch_dir)
 	# Where to store the incoming files comeing from the vantage points
-	incoming_dir = os.path.expanduser("~/Incoming")
+	incoming_dir = f"{str(Path('~').expanduser())}/Incoming"
 	if not os.path.exists(incoming_dir):
 		os.mkdir(incoming_dir)
-	# Where to put the processed vantage point files after processing them; they are segregated by month
-	originals_dir = os.path.expanduser("~/Originals")
-	if not os.path.exists(originals_dir):
-		os.mkdir(originals_dir)
 	# Where to save things long-term
-	output_dir = os.path.expanduser("~/Output")
+	output_dir = f"{str(Path('~').expanduser())}/Output"
 	if not os.path.exists(output_dir):
 		os.mkdir(output_dir)
 	# Subdirectories of log directory for root zones
@@ -797,50 +767,18 @@ if __name__ == "__main__":
 	###############################################################
 	
 	# First active step is to copy new files to the collector
-	#   opts.source is either c01 (to rsync from c01.mtric.net) or vps (to pull from vps)
 
-	if opts.source == "c01":
-		log("Running rsync from c01")
-		rsync_start = time.time()
-		rsync_files_cmd = 'rsync -av -e "ssh -l root -i /home/metrics/.ssh/metrics_id_rsa" root@c01.mtric.net:/home/metrics/Originals/ /home/metrics/FromC01'
-		rsync_actual = subprocess.run(rsync_files_cmd, shell=True, capture_output=True, text=True)
-		pickle_count = 0
-		for this_line in rsync_actual.stdout.splitlines():
-			if ".pickle.gz" in this_line:
-				pickle_count += 1
-		log("Rsync of vantage point files got {} files in {} seconds, return code {}".format(pickle_count, int(time.time() - rsync_start), rsync_actual.returncode))
-		# Get the RootMatching files
-		rsync_start = time.time()
-		rsync_matching_cmd = 'rsync -av -e "ssh -l root -i /home/metrics/.ssh/metrics_id_rsa" root@c01.mtric.net:/home/metrics/Output/RootMatching/ /home/metrics/Output/RootMatching'
-		rsync_root_matching = subprocess.run(rsync_matching_cmd, shell=True, capture_output=True, text=True)
-		pickle_count = 0
-		for this_line in rsync_root_matching.stdout.splitlines():
-			if ".matching.pickle" in this_line:
-				pickle_count += 1
-		log("Rsync of RootMatching got {} files in {} seconds, return code {}".format(pickle_count, int(time.time() - rsync_start), rsync_root_matching.returncode))
-		# Get the RootZones files
-		rsync_start = time.time()
-		rsync_zones_cmd = 'rsync -av -e "ssh -l root -i /home/metrics/.ssh/metrics_id_rsa" root@c01.mtric.net:/home/metrics/Output/RootZones/ /home/metrics/Output/RootZones'
-		rsync_root_zones = subprocess.run(rsync_zones_cmd, shell=True, capture_output=True, text=True)
-		pickle_count = 0
-		for this_line in rsync_root_zones.stdout.splitlines():
-			if ".root.txt" in this_line:
-				pickle_count += 1
-		log("Rsync of RootZones got {} files in {} seconds, return code {}".format(pickle_count, int(time.time() - rsync_start), rsync_root_zones.returncode))
-				
-	elif opts.source == "vps":
-		# On each VP, find the files in /sftp/transfer/Output and get them one by one
-		#   For each file, after getting, move it to /sftp/transfer/AlreadySeen
+	if opts.source == "vps":
 		# Get the list of VPs
 		log("Started pulling from VPs")
-		vp_list_filename = os.path.expanduser("~/vp_list.txt")
+		vp_list_filename = f"{str(Path('~').expanduser())}/vp_list.txt"
 		try:
 			all_vps = open(vp_list_filename, mode="rt").read().splitlines()
 		except Exception as e:
 			die("Could not open {} and split the lines: '{}'".format(vp_list_filename, e))
 		# Make sure we have trusted each one
 		known_hosts_set = set()
-		known_host_lines = open(os.path.expanduser("~/.ssh/known_hosts"), mode="rt").readlines()
+		known_host_lines = open(f"{str(Path('~').expanduser())}/.ssh/known_hosts", mode="rt").readlines()
 		for this_line in known_host_lines:
 			known_hosts_set.add(this_line.split(" ")[0])
 		for this_vp in all_vps:
@@ -850,12 +788,11 @@ if __name__ == "__main__":
 					log("Added {} to known_hosts".format(this_vp))
 				except Exception as e:
 					die("Could not run ssh-keyscan on {}: {}".format(this_vp, e))
-		total_pulled = 0
 		with futures.ProcessPoolExecutor() as executor:
-			for (this_vp, pulled_count) in zip(all_vps, executor.map(get_files_from_one_vp, all_vps)):
-				if pulled_count:
-					total_pulled += pulled_count
-		log("Finished pulling from VPs; got {} files from {} VPs".format(total_pulled, len(all_vps)))
+			for (this_vp, this_ret) in zip(all_vps, executor.map(get_files_from_one_vp, all_vps)):
+				if not this_ret == "":
+					alert(this_ret)
+		log("Finished pulling from VPs; got files from {} VPs".format(len(all_vps)))
 	
 	elif opts.source == "skip":
 		# Don't do any source gathering
@@ -863,9 +800,9 @@ if __name__ == "__main__":
 
 	###############################################################
 
-	# Go through the files in ~/Incoming
-	log("Started going through ~/Incoming")
-	all_files = list(glob.glob("{}/*".format(incoming_dir)))
+	# Go through the files in incoming_dir
+	log(f"Started going through {incoming_dir}")
+	all_files = [ str(x) for x in Path(f"{incoming_dir}").glob("**/*.pickle.gz") ]
 	# If limit is set, use only the first few
 	if opts.limit:
 		all_files = all_files[0:limit_size]
