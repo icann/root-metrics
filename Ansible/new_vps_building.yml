@@ -94,7 +94,7 @@
     git:
       repo: 'https://github.com/icann/root-metrics.git'
       dest: /home/metrics/repo
-      version: no-transfer-user
+      version: main   # no-transfer-user
   - name: Give the crontab entry for new_vantage_point_metrics.py
     cron:   # [mba] [wca]
       name: Get measurements

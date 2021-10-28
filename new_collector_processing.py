@@ -208,7 +208,6 @@ def process_one_incoming_file(full_file_name):
 		# If the response code is wrong, treat it as a timeout; use the response code as the timeout message
 		#   For "S" records   [ppo]
 		#   For "C" records   [ote]
-		# NOERROR = 0  NXDOMIN = 3
 		this_response_code = this_resp.get("rcode")
 		if not ((insert_values.record_type == "S" and this_response_code in [0]) or (insert_values.record_type == "C" and this_response_code in [0, 3])):
 			insert_values = insert_values._replace(timeout=this_response_code)
@@ -250,7 +249,7 @@ def check_for_signed_rr(list_of_records_from_section, name_of_rrtype):
 	#   See if there is a record in the list of the given RRtype, and make sure there is also an RRSIG for that RRtype
 	found_rrtype = False
 	for this_full_record in list_of_records_from_section:
-		rec_qtype = dns.rdatatype.to_text(this_full_record["rdtype"])
+		rec_qtype = this_full_record["rdtype"]
 		if rec_qtype == name_of_rrtype:
 			found_rrtype = True
 			break
@@ -258,7 +257,7 @@ def check_for_signed_rr(list_of_records_from_section, name_of_rrtype):
 		return "No record of type {} was found in that section".format(name_of_rrtype)
 	found_rrsig = False
 	for this_full_record in list_of_records_from_section:
-		rec_qtype = dns.rdatatype.to_text(this_full_record["rdtype"])
+		rec_qtype = this_full_record["rdtype"]
 		if rec_qtype == "RRSIG":
 			found_rrsig = True
 			break
@@ -387,7 +386,7 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 			rrsets_for_checking = {}
 			for this_full_record in resp[this_section_name]:
 				rec_qname = this_full_record["name"]
-				rec_qtype = dns.rdatatype.to_text(this_full_record["rdtype"])
+				rec_qtype = this_full_record["rdtype"]
 				if rec_qtype == "RRSIG":  # [ygx]
 					continue
 				this_key = f"{rec_qname}/{rec_qtype}"
@@ -468,8 +467,8 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 	#   Only look at the first record in the question section
 	question_record = resp["question"][0]
 	this_qname = question_record["name"]
-	this_qtype = dns.rdatatype.to_text(question_record["rdtype"])
-	if resp["rcode"] == 0:
+	this_qtype = question_record["rdtype"]
+	if resp["rcode"] == "NOERROR":
 		if (this_qname != ".") and (this_qtype == "NS"):  # Processing for TLD / NS [hmk]
 			# The header AA bit is not set. [ujy]
 			if "aa" in resp["flags"]:
@@ -483,7 +482,7 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 			root_ns_for_qname = root_to_check["{}/NS".format(this_qname)]
 			auth_ns_for_qname = set()
 			for this_rec in resp["authority"]:
-				rec_qtype = dns.rdatatype.to_text(this_full_record["rdtype"])
+				rec_qtype = this_full_record["rdtype"]
 				rec_rdata = this_full_record["rdata"]
 				if not rec_qtype == "RRSIG":  # [ygx]
 					if rec_qtype == "NS":
@@ -499,7 +498,7 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 			else:  # If the DS RRset for the query name does not exist in the zone: [fot]
 				# The Authority section contains no DS RRset. [bgr]
 				for this_rec in resp["authority"]:
-					rec_qtype = dns.rdatatype.to_text(this_full_record["rdtype"])
+					rec_qtype = this_full_record["rdtype"]
 					if rec_qtype == "DS":
 						failure_reasons.append("Found DS in Authority section [bgr]")
 						break
@@ -507,7 +506,7 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 				has_covering_nsec = False
 				for this_rec in resp["authority"]:
 					rec_qname = this_full_record["name"]
-					rec_qtype = dns.rdatatype.to_text(this_full_record["rdtype"])
+					rec_qtype = this_full_record["rdtype"]
 					if rec_qtype == "NSEC":
 						if rec_qname == this_qname:
 							has_covering_nsec = True
@@ -518,14 +517,14 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 			#    Collect the NS records from the Authority section
 			found_NS_recs = []
 			for this_rec in resp["authority"]:
-				rec_qtype = dns.rdatatype.to_text(this_full_record["rdtype"])
+				rec_qtype = this_full_record["rdtype"]
 				rec_rdata = this_full_record["rdata"]
 				if rec_qtype == "NS":
 					found_NS_recs.extend(rec_rdata)
 			found_qname_of_A_AAAA_recs = []
 			for this_rec in resp["additional"]:
 				rec_qname = this_full_record["name"]
-				rec_qtype = dns.rdatatype.to_text(this_full_record["rdtype"])
+				rec_qtype = this_full_record["rdtype"]
 				if rec_qtype in ("A", "AAAA"):
 					found_qname_of_A_AAAA_recs.append(rec_qname)
 			found_A_AAAA_NS_match = False
@@ -546,7 +545,7 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 				# Make sure the DS is for the query name
 				for this_rec in resp["answer"]:
 					rec_qname = this_full_record["name"]
-					rec_qtype = dns.rdatatype.to_text(this_full_record["rdtype"])
+					rec_qtype = this_full_record["rdtype"]
 					if rec_qtype == "DS":
 						if not rec_qname == this_qname:
 							failure_reasons.append("DS in Answer section had QNAME {} instead of {} [cpf]".format(rec_qname, this_qname))
@@ -601,7 +600,7 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 				failure_reasons.append("Additional section was not empty [jws]")
 		else:
 			failure_reasons.append("Not matched: when checking NOERROR statuses, found unexpected name/type of {}/{}".format(this_qname, this_qtype))
-	elif resp["rcode"] == 3:  # Processing for negative responses [vcu]
+	elif resp["rcode"] == "NXDOMAIN":  # Processing for negative responses [vcu]
 		# The header AA bit is set. [gpl]
 		if not "aa" in resp["flags"]:
 			failure_reasons.append("AA bit was not set [gpl]")
@@ -615,7 +614,7 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 			# Make sure the SOA record is for .
 			for this_rec in resp["authority"]:
 				rec_qname = this_full_record["name"]
-				rec_qtype = dns.rdatatype.to_text(this_full_record["rdtype"])
+				rec_qtype = this_full_record["rdtype"]
 				if rec_qtype == "SOA":
 					if not rec_qname == ".":
 						failure_reasons.append("SOA in Authority section had QNAME {} instead of '.' [vcu]".format(rec_qname))
@@ -629,7 +628,7 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 			nsecs_in_authority = []
 			for this_rec in resp["authority"]:
 				rec_qname = this_full_record["name"]
-				rec_qtype = dns.rdatatype.to_text(this_full_record["rdtype"])
+				rec_qtype = this_full_record["rdtype"]
 				rec_rdata = this_full_record["rdata"]
 				if rec_qtype == "NSEC":
 					# Just looking at the first NSEC record
@@ -650,7 +649,7 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 			nsec_with_owner_dot = False
 			for this_rec in resp["authority"]:
 				rec_qname = this_full_record["name"]
-				rec_qtype = dns.rdatatype.to_text(this_full_record["rdtype"])
+				rec_qtype = this_full_record["rdtype"]
 				if rec_qtype == "NSEC":
 					if rec_qname == ".":
 						nsec_with_owner_dot = True
