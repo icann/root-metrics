@@ -393,7 +393,7 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 				if not this_key in rrsets_for_checking:
 					rrsets_for_checking[this_key] = set()
 				for this_rdata_record in rec_rdata:
-					rrsets_for_checking[this_key].add(this_rdata_record.upper())
+					rrsets_for_checking[this_key].add(this_rdata_record)
 			for this_rrset_key in rrsets_for_checking:
 				if not this_rrset_key in root_to_check:
 					failure_reasons.append(f"{this_rrset_key} was in the {this_section_name} section in the response, but not the root [vnk]")
@@ -402,7 +402,12 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 						failure_reasons.append("RRset {} in {} in response has a different length than {} in root zone [vnk]".\
 							format(rrsets_for_checking[this_rrset_key], this_section_name, root_to_check[this_rrset_key]))
 						continue
-					if not rrsets_for_checking[this_rrset_key] == (root_to_check[this_rrset_key]).upper():
+					# Need to match case, so uppercase all the records in both sets
+					for this_comparator in [rrsets_for_checking[this_rrset_key], root_to_check[this_rrset_key]]:
+						for this_rdata in this_comparator:
+							this_comparator.remove(this_rdata)
+							this_comparator.add(this_rdata.upper())
+					if not rrsets_for_checking[this_rrset_key] == root_to_check[this_rrset_key]:
 						# Before giving up, see if it is a mismatch in the text for IPv6 addresses
 						#   First see if they are sets of one; if not, this will be a normal mismatch failure
 						if len(rrsets_for_checking[this_rrset_key]) != 1 or len(root_to_check[this_rrset_key]) != 1:
