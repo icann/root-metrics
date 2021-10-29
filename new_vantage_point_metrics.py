@@ -4,7 +4,7 @@
 # Three-letter items in square brackets (such as [xyz]) refer to parts of rssac-047.md
 
 import argparse, concurrent.futures, gzip, logging, os, pickle, random, re, requests, socket, subprocess, time
-import dns.edns, dns.message, dns.query, dns.rdataclass, dns.rdatatype
+import dns.edns, dns.message, dns.query, dns.rdatatype
 
 # New class for errors from dnspython queries
 class QueryError(Exception):
@@ -85,7 +85,6 @@ def do_one_query(target, internet, ip_addr, transport, query, test_type):
 	# Collect all the response data
 	try:
 		r_dict["id"] = r.id
-		r_dict["opcode"] = r.opcode()
 		r_dict["rcode"] = dns.rcode.to_text(r.rcode())
 		r_dict["flags"] = dns.flags.to_text(r.flags)
 		r_dict["edns"] = {}
@@ -98,7 +97,7 @@ def do_one_query(target, internet, ip_addr, transport, query, test_type):
 		for (this_section_number, this_section_name) in enumerate(get_sections):
 			r_dict[this_section_name] = []
 			for this_rrset in r.section_from_number(this_section_number):
-				this_rrset_dict = {"name": this_rrset.name.to_text(), "ttl": this_rrset.ttl, "class": this_rrset.rdclass, "rdtype": dns.rdatatype.to_text(this_rrset.rdtype), "rdata": []}
+				this_rrset_dict = {"name": this_rrset.name.to_text(), "ttl": this_rrset.ttl, "rdtype": dns.rdatatype.to_text(this_rrset.rdtype), "rdata": []}
 				for this_record in this_rrset:
 					this_rrset_dict["rdata"].append(this_record.to_text())
 				r_dict[this_section_name].append(this_rrset_dict)

@@ -5,7 +5,6 @@
 # Three-letter items in square brackets (such as [xyz]) refer to parts of rssac-047.md
 
 import argparse, datetime, glob, gzip, logging, os, pickle, psycopg2, socket, subprocess, tempfile, time
-import dns.rdatatype
 from pathlib import Path
 from concurrent import futures
 from collections import namedtuple
@@ -209,7 +208,7 @@ def process_one_incoming_file(full_file_name):
 		#   For "S" records   [ppo]
 		#   For "C" records   [ote]
 		this_response_code = this_resp.get("rcode")
-		if not ((insert_values.record_type == "S" and this_response_code in [0]) or (insert_values.record_type == "C" and this_response_code in [0, 3])):
+		if not ((insert_values.record_type == "S" and this_response_code in ["NOERROR"]) or (insert_values.record_type == "C" and this_response_code in ["NOERROR", "NXDOMAIN"])):
 			insert_values = insert_values._replace(timeout=this_response_code)
 			insert_from_template(insert_template, insert_values)
 			continue
