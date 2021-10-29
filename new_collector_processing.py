@@ -396,13 +396,13 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 					rrsets_for_checking[this_key].add(this_rdata_record.upper())
 			for this_rrset_key in rrsets_for_checking:
 				if not this_rrset_key in root_to_check:
-					failure_reasons.append("'{}' was in '{}' in the response but not the root [vnk]".format(this_rrset_key, this_section_name))
+					failure_reasons.append(f"{this_rrset_key} was in the {this_section_name} section in the response, but not the root [vnk]")
 				else:
 					if not len(rrsets_for_checking[this_rrset_key]) == len(root_to_check[this_rrset_key]):
-						failure_reasons.append("RRset '{}' in {} in response has a different length than '{}' in root zone [vnk]".\
+						failure_reasons.append("RRset {} in {} in response has a different length than {} in root zone [vnk]".\
 							format(rrsets_for_checking[this_rrset_key], this_section_name, root_to_check[this_rrset_key]))
 						continue
-					if not rrsets_for_checking[this_rrset_key] == root_to_check[this_rrset_key]:
+					if not rrsets_for_checking[this_rrset_key] == (root_to_check[this_rrset_key]).upper():
 						# Before giving up, see if it is a mismatch in the text for IPv6 addresses
 						#   First see if they are sets of one; if not, this will be a normal mismatch failure
 						if len(rrsets_for_checking[this_rrset_key]) != 1 or len(root_to_check[this_rrset_key]) != 1:
@@ -470,7 +470,7 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 	if resp["rcode"] == "NOERROR":
 		if (this_qname != ".") and (this_qtype == "NS"):  # Processing for TLD / NS [hmk]
 			# The header AA bit is not set. [ujy]
-			if "aa" in resp["flags"]:
+			if "AA" in resp["flags"]:
 				failure_reasons.append("AA bit was set [ujy]")
 			# The Answer section is empty. [aeg]
 			if resp.get("answer"):
@@ -535,7 +535,7 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 				failure_reasons.append("No QNAMEs from A and AAAA in Additional {} matched NS from Authority {} [cjm]".format(found_qname_of_A_AAAA_recs, found_NS_recs))
 		elif (this_qname != ".") and (this_qtype == "DS"):  # Processing for TLD / DS [dru]
 			# The header AA bit is set. [yot]
-			if not "aa" in resp["flags"]:
+			if not "AA" in resp["flags"]:
 				failure_reasons.append("AA bit was not set [yot]")
 			# The Answer section contains the signed DS RRset for the query name. [cpf]
 			if not resp.get("answer"):
@@ -559,7 +559,7 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 				failure_reasons.append("Additional section was not empty [mle]")
 		elif (this_qname == ".") and (this_qtype == "SOA"):  # Processing for . / SOA [owf]
 			# The header AA bit is set. [xhr]
-			if not "aa" in resp["flags"]:
+			if not "AA" in resp["flags"]:
 				failure_reasons.append("AA bit was not set [xhr]")
 			# The Answer section contains the signed SOA record for the root. [obw]
 			this_resp = check_for_signed_rr(resp["answer"], "SOA")
@@ -574,7 +574,7 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 					failure_reasons.append("{} [ktm]".format(this_resp))
 		elif (this_qname == ".") and (this_qtype == "NS"):  # Processing for . / NS [amj]
 			# The header AA bit is set. [csz]
-			if not "aa" in resp["flags"]:
+			if not "AA" in resp["flags"]:
 				failure_reasons.append("AA bit was not set [csz]")
 			# The Answer section contains the signed NS RRset for the root. [wal]
 			this_resp = check_for_signed_rr(resp["answer"], "NS")
@@ -585,7 +585,7 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 				failure_reasons.append("Authority section was not empty [eyk]")
 		elif (this_qname == ".") and (this_qtype == "DNSKEY"):  # Processing for . / DNSKEY [djd]
 			# The header AA bit is set. [occ]
-			if not "aa" in resp["flags"]:
+			if not "AA" in resp["flags"]:
 				failure_reasons.append("AA bit was not set [occ]")
 			# The Answer section contains the signed DNSKEY RRset for the root. [eou]
 			this_resp = check_for_signed_rr(resp["answer"], "DNSKEY")
@@ -601,7 +601,7 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 			failure_reasons.append("Not matched: when checking NOERROR statuses, found unexpected name/type of {}/{}".format(this_qname, this_qtype))
 	elif resp["rcode"] == "NXDOMAIN":  # Processing for negative responses [vcu]
 		# The header AA bit is set. [gpl]
-		if not "aa" in resp["flags"]:
+		if not "AA" in resp["flags"]:
 			failure_reasons.append("AA bit was not set [gpl]")
 		# The Answer section is empty. [dvh]
 		if resp.get("answer"):
