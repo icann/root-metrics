@@ -403,6 +403,7 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 							format(rrsets_for_checking[this_rrset_key], this_section_name, root_to_check[this_rrset_key]))
 						continue
 					# Need to match case, so uppercase all the records in both sets
+					#   It is OK to do this for any type that is not displayed as Base64, and RRSIG is already excluded by [ygx]
 					for this_comparator in [rrsets_for_checking[this_rrset_key], root_to_check[this_rrset_key]]:
 						for this_rdata in this_comparator:
 							this_comparator.remove(this_rdata)
