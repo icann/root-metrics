@@ -404,10 +404,14 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 						continue
 					# Need to match case, so uppercase all the records in both sets
 					#   It is OK to do this for any type that is not displayed as Base64, and RRSIG is already excluded by [ygx]
+					#   But don't change case on DNSKEY
 					for this_comparator in [rrsets_for_checking[this_rrset_key], root_to_check[this_rrset_key]]:
 						for this_rdata in this_comparator:
 							this_comparator.remove(this_rdata)
-							this_comparator.add(this_rdata.upper())
+							if this_rrset_key.endswith("/DNSKEY"):
+								this_comparator.add(this_rdata)
+							else:
+								this_comparator.add(this_rdata.upper())
 					if not rrsets_for_checking[this_rrset_key] == root_to_check[this_rrset_key]:
 						# Before giving up, see if it is a mismatch in the text for IPv6 addresses
 						#   First see if they are sets of one; if not, this will be a normal mismatch failure
