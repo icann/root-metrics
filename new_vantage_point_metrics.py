@@ -4,7 +4,7 @@
 # Three-letter items in square brackets (such as [xyz]) refer to parts of rssac-047.md
 
 import argparse, concurrent.futures, gzip, logging, os, pickle, random, re, requests, socket, subprocess, time
-import dns.edns, dns.message, dns.query, dns.rdatatype
+import dns.edns, dns.flags, dns.message, dns.query, dns.rdatatype
 
 # New class for errors from dnspython queries
 class QueryError(Exception):
@@ -37,6 +37,8 @@ def do_one_query(target, internet, ip_addr, transport, query, test_type):
 	except:
 		raise QueryError(f"Unknown qtype: {qtype} in {id_string}")
 	q = dns.message.make_query(qname_processed, qtype_processed)
+	# Turn off the RD bit
+	q.flags &= ~dns.flags.RD
 	# If test_type is "C", set the buffer size to 1220 [rja] and add DO bit
 	#    Include NSID over EDNS0 [mgj] for both "S" and "C"
 	nsid_option = dns.edns.GenericOption(dns.edns.OptionType.NSID, b'')
