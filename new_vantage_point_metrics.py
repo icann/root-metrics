@@ -105,45 +105,55 @@ def do_one_query(target, internet, ip_addr, transport, query, test_type):
 		raise QueryError(f"Dict failure; {e} in {id_string}")
 	return r_dict
 
+def cleanup(text_from_zone_file):
+	''' Clean up the text by collapsing whitespaces and removing comments '''
+	# Turn tabs into spaces
+	text_from_zone_file = re.sub("\t", " ", text_from_zone_file)
+	# Turn runs of spaces into a single space
+	text_from_zone_file = re.sub(" +", " ", text_from_zone_file)
+	# Get the output after removing comments
+	out_root_text = ""
+	# Remove the comments
+	for this_line in text_from_zone_file.splitlines():
+		if not this_line.startswith(";"):
+			out_root_text += this_line + "\n"
+	return out_root_text
+
+def get_names_and_types(in_text):
+	''' Takes a string that is the root zone, returns a dict of name/type: rdata '''
+	root_name_and_types = {}
+	for this_line in in_text.splitlines():
+		(this_name, _, _, this_type, this_rdata) = this_line.split(" ", maxsplit=4)
+		this_key = "{}/{}".format(this_name, this_type)
+		if not this_key in root_name_and_types:
+			root_name_and_types[this_key] = set()
+		root_name_and_types[this_key].add(this_rdata)
+	return root_name_and_types
+
+def find_soa(in_dict):
+	''' Returns an SOA or dies if it cannot find it '''
+	try:
+		this_soa_record = list(in_dict[("./SOA")])[0]
+	except:
+		die("The root zone just received didn't have an SOA record.")
+	try:
+		this_soa = this_soa_record.split(" ")[2]
+	except Exception as e:
+		die("Splitting the SOA from the root zone just received failed with '{}'".format(e))
+	return this_soa
+
 # Make a list candidate RRsets for the correctness testing
 def update_rr_list(file_to_write):
 	# Returns nothing
 	internic_url = "https://www.internic.net/domain/root.zone"
 	try:
-		r = requests.get(internic_url)
+		root_zone_request = requests.get(internic_url)
 	except Exception as e:
-		alert(f"Could not do the requests.get on {internic_url}: '{e}'")
+		alert(f"Could not do the requests.get on {internic_url}: {e}")
 		return
-	# Save it as a temp file to use named-compilezone
-	temp_latest_zone_name = f"{log_dir}/temp_latest_zone"
-	temp_latest_zone_f = open(temp_latest_zone_name, mode="wt")
-	temp_latest_zone_f.write(r.text)
-	temp_latest_zone_f.close()
-	# Give the named-compilezone command, then post-process
-	try:
-		named_compilezone_p = subprocess.run(f"/home/metrics/Target/sbin/named-compilezone -q -i none -r ignore -o - . '{temp_latest_zone_name}'",\
-			shell=True, text=True, check=True, capture_output=True)
-	except Exception as e:
-		alert(f"named-compilezone failed with '{e}'")
-	new_root_text_in = named_compilezone_p.stdout
-	# Turn tabs into spaces
-	new_root_text_in = re.sub("\t", " ", new_root_text_in)
-	# Turn runs of spaces into a single space
-	new_root_text_in = re.sub(" +", " ", new_root_text_in)
-	# Get the output after removing comments
-	new_root_text = ""
-	# Remove the comments
-	for this_line in new_root_text_in.splitlines():
-		if not this_line.startswith(";"):
-			new_root_text += f"{this_line}\n"	
-	root_name_and_types = {}
-	for (line_num, this_line) in enumerate(new_root_text.splitlines()):
-		(this_name, _, _, this_type, rdata) = this_line.split(" ", maxsplit=4)
-		this_key = f"{this_name}/{this_type}"
-		if this_key in root_name_and_types:
-			root_name_and_types[this_key].append(rdata)
-		else:
-			root_name_and_types[this_key] = [ rdata ]
+	new_root_text = cleanup(root_zone_request.text)
+	root_name_and_types = get_names_and_types(new_root_text)
+	this_soa = find_soa(root_name_and_types)
 	try:
 		this_soa_record = root_name_and_types[("./SOA")][0]
 	except:
@@ -151,7 +161,7 @@ def update_rr_list(file_to_write):
 	try:
 		this_soa = this_soa_record.split(" ")[2]
 	except Exception as e:
-		die(f"Splitting the SOA from the root zone just received failed with '{e}'")
+		die(f"Splitting the SOA from the root zone just received failed: {e}")
 	log(f"Got a new root zone with SOA {this_soa}")
 	# Create a new root_auth_file, which has the same qname / qtypes as the processed file but only for authoritative zones
 	root_auth_text = ""
@@ -164,10 +174,9 @@ def update_rr_list(file_to_write):
 			or ((this_name != ".") and (this_name.count(".") == 1) and (this_type == "NS") and (this_name != "arpa.")) \
 			or ((this_name != ".") and (this_name.count(".") == 1) and (this_type == "DS")) ):
 			root_auth_text += f"{this_key}\n"
-	root_auth_out_f = open(file_to_write, mode="wt")
-	root_auth_out_f.write(root_auth_text)
-	root_auth_out_f.close()
-	log(f"Wrote out new {os.path.basename(file_to_write)}")
+	with open(file_to_write, mode="wt") as root_auth_out_f:
+		root_auth_out_f.write(root_auth_text)
+		log(f"Wrote out new {os.path.basename(file_to_write)}")
 	return
 
 # Main program starts here
