@@ -156,14 +156,6 @@ def update_rr_list(file_to_write):
 	new_root_text = cleanup(root_zone_request.text)
 	root_name_and_types = get_names_and_types(new_root_text)
 	this_soa = find_soa(root_name_and_types)
-	try:
-		this_soa_record = root_name_and_types[("./SOA")][0]
-	except:
-		die("The root zone just received didn't have an SOA record.")
-	try:
-		this_soa = this_soa_record.split(" ")[2]
-	except Exception as e:
-		die(f"Splitting the SOA from the root zone just received failed: {e}")
 	log(f"Got a new root zone with SOA {this_soa}")
 	# Create a new root_auth_file, which has the same qname / qtypes as the processed file but only for authoritative zones
 	root_auth_text = ""

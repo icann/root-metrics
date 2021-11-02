@@ -100,3 +100,21 @@
       name: Get measurements
       minute: "0-59/5"
       job: "/home/metrics/repo/new_vantage_point_metrics.py >>/home/metrics/Logs/cron-alert.txt 2>&1"
+- name: Create rc.local after making dnscap
+  hosts: all_vps  
+  remote_user: "{{ superuser }}"
+  become_user: root
+  become: yes
+  tasks:
+  - name: Put /etc/rc.local
+    copy:
+      src: ../rc-local-for-metrics
+      dest: /etc/rc.local
+      mode: u+x
+  - name: Enable new rc.local
+    ansible.builtin.systemd:
+      name: rc-local
+      enabled: yes
+      daemon_reload: yes
+
+      
