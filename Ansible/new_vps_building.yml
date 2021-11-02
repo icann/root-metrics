@@ -116,5 +116,7 @@
       name: rc-local
       enabled: yes
       daemon_reload: yes
+      state: started
+      
 
       
