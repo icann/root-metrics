@@ -2,3 +2,4 @@
 PS1='`whoami|tr a-z A-Z`:\h:`pwd`# '
 alias dir='ls -lah '
 export LESS='-X'
+export MANPATH=$MANPATH:/home/metrics/Target/share/man
