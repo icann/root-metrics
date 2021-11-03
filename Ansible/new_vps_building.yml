@@ -71,6 +71,11 @@
       path: /home/metrics/Target
       mode: u+wrx,go+rx
       state: directory
+  - name: make Captures/
+    file:
+      path: /home/metrics/Captures
+      mode: u+wrx,go+rx
+      state: directory
   - name: Get dnscap tarball
     get_url:
       url: https://www.dns-oarc.net/files/dnscap/dnscap-2.0.1.tar.gz
@@ -111,13 +116,9 @@
       src: ../rc-local-for-metrics
       dest: /etc/rc.local
       mode: u+x
-  - name: Enable new rc.local
+  - name: Enable and start new rc.local
     ansible.builtin.systemd:
       name: rc-local
       enabled: yes
       daemon_reload: yes
-  - name: Start rc.local
-    ansible.builtin.systemd:
-      name: rc-local
       state: started
-      
