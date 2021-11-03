@@ -13,7 +13,7 @@
       force: true
   - name: Install all the needed packages
     apt:
-      pkg: [build-essential, curl, git, libbind-dev, libldns-dev, libpcap-dev, libssl-dev, libyaml-perl, pkg-config,
+      pkg: [build-essential, curl, git, libbind-dev, libldns-dev, libpcap-dev, libssl-dev, libyaml-perl, man, pkg-config,
         pyflakes3, python3-pip, python3-requests, rsync, scamper, sudo, traceroute, unzip, zlib1g-dev]
   - name: Put .bashrc for root
     copy:
