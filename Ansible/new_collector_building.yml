@@ -31,6 +31,11 @@
       name: metrics
       home: /home/metrics
       shell: /bin/bash
+  - name: Copy the .psqlrc to make display easier
+    copy:
+      src: ../dot-psqlrc
+      dest: /root/.psqlrc
+      mode: a+r
   - name: Initialize Postgres for metrics
     become_user: postgres
     become: true
@@ -72,6 +77,11 @@
       src: ../Local/c03startup.sh
       dest: /home/metrics/c03startup.sh
       mode: u+x
+  - name: Copy the .psqlrc to make display easier
+    copy:
+      src: ../dot-psqlrc
+      dest: /home/metrics/.psqlrc
+      mode: a+r
   - name: Get our empty version of known_hosts; it will be added to as VPs are added
     copy:
       src: ../vp_known_hosts
