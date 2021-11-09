@@ -492,7 +492,8 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 			auth_ns_for_qname = set()
 			for this_rec_dict in resp["authority"]:
 				if this_rec_dict["rdtype"] == "NS":
-					auth_ns_for_qname.update(this_rec_dict["rdata"])
+					for this_ns in this_rec_dict["rdata"]:
+						auth_ns_for_qname.add(this_ns.upper())
 			if not auth_ns_for_qname == root_ns_for_qname:
 				failure_reasons.append(f"NS RRset in Authority was {auth_ns_for_qname}, but NS from root was {root_ns_for_qname} [pdd]")
 			# If the DS RRset for the query name exists in the zone: [hue]
