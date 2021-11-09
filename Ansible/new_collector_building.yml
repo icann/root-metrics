@@ -137,7 +137,7 @@
       disabled: no
       name: Get the new root zone
       minute: "0,15,30,45"
-      job: "/home/metrics/repo/get_root_zone.py >>/home/metrics/Logs/cron-alert.txt 2>&1"
+      job: "/home/metrics/repo/new_get_root_zone.py >>/home/metrics/Logs/cron-alert.txt 2>&1"
   - name: Give the crontab entry for collector_processing.py
     cron:
       disabled: yes
