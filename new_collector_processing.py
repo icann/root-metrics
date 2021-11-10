@@ -406,31 +406,14 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 					#   It is OK to do this for any type that is not displayed as Base64, and RRSIG is already excluded by [ygx]
 					#   But don't change case on DNSKEY
 					for this_comparator in [rrsets_for_checking[this_rrset_key], root_to_check[this_rrset_key]]:
-						for this_rdata in this_comparator:
+						for this_rdata in this_comparator.copy():
 							this_comparator.remove(this_rdata)
 							if this_rrset_key.endswith("/DNSKEY"):
 								this_comparator.add(this_rdata)
 							else:
 								this_comparator.add(this_rdata.upper())
 					if not rrsets_for_checking[this_rrset_key] == root_to_check[this_rrset_key]:
-						# Before giving up, see if it is a mismatch in the text for IPv6 addresses
-						#   First see if they are sets of one; if not, this will be a normal mismatch failure
-						if len(rrsets_for_checking[this_rrset_key]) != 1 or len(root_to_check[this_rrset_key]) != 1:
-							pass
-						else:
-							resp_val = rrsets_for_checking[this_rrset_key].pop()
-							root_val = root_to_check[this_rrset_key].pop()
-							try:
-								resp_ipv6 = socket.inet_pton(socket.AF_INET6, resp_val)
-								root_ipv6 = socket.inet_pton(socket.AF_INET6, root_val)
-								if resp_ipv6 == root_ipv6:
-									continue
-							except:
-								failure_reasons.append("RRset value '{}' in {} in response is different than '{}' in root zone [vnk]".\
-									format(resp_val, this_section_name, root_val))
-								continue
-						failure_reasons.append("RRset value '{}' in {} in response is different than '{}' in root zone [vnk]".\
-							format(rrsets_for_checking[this_rrset_key], this_section_name, root_to_check[this_rrset_key]))
+						failure_reasons.append(f"RRset value {rrsets_for_checking[this_rrset_key]} in {this_section_name} in response is different than {root_to_check[this_rrset_key]} in root zone [vnk]")
 
 	# Check that each of the RRsets that are signed have their signatures validated. [yds]
 	#   Send all the records in each section to the function that checks for validity
