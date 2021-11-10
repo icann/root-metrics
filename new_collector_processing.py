@@ -413,7 +413,21 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 							else:
 								this_comparator.add(this_rdata.upper())
 					if not rrsets_for_checking[this_rrset_key] == root_to_check[this_rrset_key]:
-						failure_reasons.append(f"RRset value {rrsets_for_checking[this_rrset_key]} in {this_section_name} in response is different than {root_to_check[this_rrset_key]} in root zone [vnk]")
+						# Before giving up, see if it is a mismatch in the text for IPv6 addresses
+						#   Only check sets that contain exactly one record (IPv6 records in the root zone are this way, hopefully)
+						if len(rrsets_for_checking[this_rrset_key]) == 1 and len(root_to_check[this_rrset_key]) == 1:
+							resp_val = rrsets_for_checking[this_rrset_key].pop()
+							root_val = root_to_check[this_rrset_key].pop()
+							try:
+								resp_ipv6 = socket.inet_pton(socket.AF_INET6, resp_val)
+								root_ipv6 = socket.inet_pton(socket.AF_INET6, root_val)
+								if resp_ipv6 == root_ipv6:
+									continue
+							except:
+								failure_reasons.append(f"Single RRset value {resp_val} in {this_section_name} in response is different than {root_val} in root zone [vnk]")
+								continue
+						# Here if IPv6 testing failed, but still have RRsets being unequal
+						failure_reasons.append(f"Set of RRset value {rrsets_for_checking[this_rrset_key]} in {this_section_name} in response is different than {root_to_check[this_rrset_key]} in root zone [vnk]")
 
 	# Check that each of the RRsets that are signed have their signatures validated. [yds]
 	#   Send all the records in each section to the function that checks for validity
