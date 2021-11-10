@@ -247,16 +247,16 @@ def check_for_signed_rr(list_of_records_from_section, name_of_rrtype):
 	# Part of correctness checking
 	#   See if there is a record in the list of the given RRtype, and make sure there is also an RRSIG for that RRtype
 	found_rrtype = False
-	for this_full_record in list_of_records_from_section:
-		rec_qtype = this_full_record["rdtype"]
+	for this_rec_dict in list_of_records_from_section:
+		rec_qtype = this_rec_dict["rdtype"]
 		if rec_qtype == name_of_rrtype:
 			found_rrtype = True
 			break
 	if not found_rrtype:
 		return "No record of type {} was found in that section".format(name_of_rrtype)
 	found_rrsig = False
-	for this_full_record in list_of_records_from_section:
-		rec_qtype = this_full_record["rdtype"]
+	for this_rec_dict in list_of_records_from_section:
+		rec_qtype = this_rec_dict["rdtype"]
 		if rec_qtype == "RRSIG":
 			found_rrsig = True
 			break
@@ -383,13 +383,13 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 	for this_section_name in [ "answer", "authority", "additional" ]:
 		if resp.get(this_section_name):
 			rrsets_for_checking = {}
-			for this_full_record in resp[this_section_name]:
-				rec_qname = this_full_record["name"]
-				rec_qtype = this_full_record["rdtype"]
+			for this_rec_dict in resp[this_section_name]:
+				rec_qname = this_rec_dict["name"]
+				rec_qtype = this_rec_dict["rdtype"]
 				if rec_qtype == "RRSIG":  # [ygx]
 					continue
 				this_key = f"{rec_qname}/{rec_qtype}"
-				rec_rdata = this_full_record["rdata"]
+				rec_rdata = this_rec_dict["rdata"]
 				if not this_key in rrsets_for_checking:
 					rrsets_for_checking[this_key] = set()
 				for this_rdata_record in rec_rdata:
@@ -474,9 +474,9 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 	
 	# Check that all the parts of the resp structure are correct, based on the type of answer
 	#   Only look at the first record in the question section
-	question_record = resp["question"][0]
-	this_qname = question_record["name"]
-	this_qtype = question_record["rdtype"]
+	question_record_dict = resp["question"][0]
+	this_qname = question_record_dict["name"]
+	this_qtype = question_record_dict["rdtype"]
 	if resp["rcode"] == "NOERROR":
 		if (this_qname != ".") and (this_qtype == "NS"):  # Processing for TLD / NS [hmk]
 			# The header AA bit is not set. [ujy]
@@ -504,36 +504,34 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 					failure_reasons.append("{} [kbd]".format(this_resp))
 			else:  # If the DS RRset for the query name does not exist in the zone: [fot]
 				# The Authority section contains no DS RRset. [bgr]
-				for this_rec in resp["authority"]:
-					rec_qtype = this_full_record["rdtype"]
+				for this_rec_dict in resp["authority"]:
+					rec_qtype = this_rec_dict["rdtype"]
 					if rec_qtype == "DS":
 						failure_reasons.append("Found DS in Authority section [bgr]")
 						break
 				# The Authority section contains a signed NSEC RRset covering the query name. [mkl]
 				has_covering_nsec = False
-				for this_rec in resp["authority"]:
-					rec_qname = this_full_record["name"]
-					rec_qtype = this_full_record["rdtype"]
+				for this_rec_dict in resp["authority"]:
+					rec_qtype = this_rec_dict["rdtype"]
 					if rec_qtype == "NSEC":
-						if rec_qname == this_qname:
+						if rec_qname == this_rec_dict["name"]:
 							has_covering_nsec = True
 							break
 				if not has_covering_nsec:
 					failure_reasons.append("Authority section had no covering NSEC record [mkl]")
 			# Additional section contains at least one A or AAAA record found in the zone associated with at least one NS record found in the Authority section. [cjm]
 			#    Collect the NS records from the Authority section
-			found_NS_recs = []
-			for this_rec in resp["authority"]:
-				rec_qtype = this_full_record["rdtype"]
-				rec_rdata = this_full_record["rdata"]
+			found_NS_recs = set()
+			for this_rec_dict in resp["authority"]:
+				rec_qtype = this_rec_dict["rdtype"]
 				if rec_qtype == "NS":
-					found_NS_recs.extend(rec_rdata)
-			found_qname_of_A_AAAA_recs = []
-			for this_rec in resp["additional"]:
-				rec_qname = this_full_record["name"]
-				rec_qtype = this_full_record["rdtype"]
+					for this_ns in this_rec_dict["rdata"]:
+						found_NS_recs.add(this_ns.upper())
+			found_qname_of_A_AAAA_recs = set()
+			for this_rec_dict in resp["additional"]:
+				rec_qtype = this_rec_dict["rdtype"]
 				if rec_qtype in ("A", "AAAA"):
-					found_qname_of_A_AAAA_recs.append(rec_qname)
+					found_qname_of_A_AAAA_recs.add((this_rec_dict["name"]).upper())
 			found_A_AAAA_NS_match = False
 			for a_aaaa_qname in found_qname_of_A_AAAA_recs:
 					if a_aaaa_qname in found_NS_recs:
@@ -550,9 +548,9 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 				failure_reasons.append("Answer section was empty [cpf]")
 			else:
 				# Make sure the DS is for the query name
-				for this_rec in resp["answer"]:
-					rec_qname = this_full_record["name"]
-					rec_qtype = this_full_record["rdtype"]
+				for this_rec_dict in resp["answer"]:
+					rec_qname = this_rec_dict["name"]
+					rec_qtype = this_rec_dict["rdtype"]
 					if rec_qtype == "DS":
 						if not rec_qname == this_qname:
 							failure_reasons.append("DS in Answer section had QNAME {} instead of {} [cpf]".format(rec_qname, this_qname))
@@ -619,9 +617,9 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 			failure_reasons.append("Authority section was empty [axj]")
 		else:
 			# Make sure the SOA record is for .
-			for this_rec in resp["authority"]:
-				rec_qname = this_full_record["name"]
-				rec_qtype = this_full_record["rdtype"]
+			for this_rec_dict in resp["authority"]:
+				rec_qname = this_rec_dict["name"]
+				rec_qtype = this_rec_dict["rdtype"]
 				if rec_qtype == "SOA":
 					if not rec_qname == ".":
 						failure_reasons.append("SOA in Authority section had QNAME {} instead of '.' [vcu]".format(rec_qname))
@@ -632,11 +630,11 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 			#   Note that the query name might have multiple labels, so only compare against the last label
 			this_qname_TLD = this_qname.split(".")[-2] + "."
 			nsec_covers_query_name = False
-			nsecs_in_authority = []
-			for this_rec in resp["authority"]:
-				rec_qname = this_full_record["name"]
-				rec_qtype = this_full_record["rdtype"]
-				rec_rdata = this_full_record["rdata"]
+			nsecs_in_authority = set()
+			for this_rec_dict in resp["authority"]:
+				rec_qname = this_rec_dict["name"]
+				rec_qtype = this_rec_dict["rdtype"]
+				rec_rdata = this_rec_dict["rdata"]
 				if rec_qtype == "NSEC":
 					# Just looking at the first NSEC record
 					nsec_parts = rec_rdata[0].split(" ")
@@ -644,7 +642,7 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 					# Sorting against "." doesn't work, so instead use the longest TLD that could be in the root zone
 					if nsec_parts_covered == ".":
 						nsec_parts_covered = "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"
-					nsecs_in_authority.append("{}|{}".format(rec_qname, nsec_parts_covered))
+					nsecs_in_authority.add(f"{rec_qname}|{nsec_parts_covered}")
 					# Make a list of the three strings, then make sure the original QNAME is in the middle
 					test_sort = sorted([rec_qname, nsec_parts_covered, this_qname_TLD])
 					if test_sort[1] == this_qname_TLD:
@@ -654,9 +652,9 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 				failure_reasons.append("NSECs in Authority '{}' did not cover qname '{}' [czb]".format(nsecs_in_authority, this_qname))
 			# The Authority section contains a signed NSEC record with owner name “.” proving no wildcard exists in the zone. [jhz]
 			nsec_with_owner_dot = False
-			for this_rec in resp["authority"]:
-				rec_qname = this_full_record["name"]
-				rec_qtype = this_full_record["rdtype"]
+			for this_rec_dict in resp["authority"]:
+				rec_qname = this_rec_dict["name"]
+				rec_qtype = this_rec_dict["rdtype"]
 				if rec_qtype == "NSEC":
 					if rec_qname == ".":
 						nsec_with_owner_dot = True
