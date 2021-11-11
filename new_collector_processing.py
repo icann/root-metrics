@@ -151,12 +151,12 @@ def process_one_incoming_file(full_file_name):
 		die(f"Could not unpickle {full_file_name}: {e}")
 	# Sanity check the record
 	if not ("v" in in_obj) and ("d" in in_obj) and ("e" in in_obj) and ("r" in in_obj) and ("s" in in_obj):
-		alert(f"Object in {full_file_name} did not contain keys d, e, r, s, and v")
+		die(f"Object in {full_file_name} did not contain keys d, e, r, s, and v")
 	
 	# Update the metadata
 	update_string = "update files_gotten set processed_at=%s, version=%s, delay=%s, elapsed=%s where filename_short=%s"
-	update_vales = (datetime.datetime.now(datetime.timezone.utc), in_obj["v"], in_obj["d"], in_obj["e"], short_file_name) 
-	insert_from_template(update_string, update_vales)
+	update_values = (datetime.datetime.now(datetime.timezone.utc), in_obj["v"], in_obj["d"], in_obj["e"], short_file_name) 
+	insert_from_template(update_string, update_values)
 
 	# Get the derived date and VP name from the file name
 	(file_date_text, _) = short_file_name.split("-")
@@ -165,20 +165,12 @@ def process_one_incoming_file(full_file_name):
 			int(file_date_text[8:10]), int(file_date_text[10:12]))
 	except Exception as e:
 		conn.close()
-		die("Could not split the file name '{}' into a datetime: '{}'".format(short_file_name, e))
+		die(f"Could not split the file name {short_file_name} into a datetime: {e}")
 
 	# Log the route information from in_obj["s"]
-	if not in_obj.get("s"):
-		alert("File {} did not have a route information record".format(full_file_name))
-	else:
-		update_string = "insert into route_info (filename_short, date_derived, route_string) values (%s, %s, %s)"
-		update_values = (short_file_name, file_date, in_obj["s"]) 
-		try:
-			cur = conn.cursor()
-			cur.execute(update_string, update_values)
-			cur.close()
-		except Exception as e:
-			alert("Could not insert into route_info for {}: '{}'".format(short_file_name, e))
+	update_string = "insert into route_info (filename_short, date_derived, route_string) values (%s, %s, %s)"
+	update_values = (short_file_name, file_date, in_obj["s"]) 
+	insert_from_template(update_string, update_values)
 
 	# Named tuple for the record templates
 	template_names_raw = "filename_record date_derived target internet transport ip_addr record_type query_elapsed timeout soa_found " \
@@ -193,17 +185,16 @@ def process_one_incoming_file(full_file_name):
 	# Go throught each response item
 	response_count = 0
 	for this_resp in in_obj["r"]:
-		response_count += 1
+		response_count += 1  # response_count is 1-based, not 0-based
 		# Each record is "S" for an SOA record or "C" for a correctness test
 		#   Sanity test that the type is S or C
 		if not this_resp["test_type"] in ("S", "C"):
-			alert("Found a response type {}, which is not S or C, in record {} of {}".format(this_resp["test_type"], response_count, full_file_name))
+			alert(f"Found a response type {this_resp['test_type']}, which is not S or C, in record {response_count} of {full_file_name}")
 			continue
-		insert_template = "insert into record_info ({}) values ({})".format(template_names_with_commas, percent_s_string)
-		# Note that the default value for is_correct is "?" so that the test for "has correctness been checked" can still be against "y" or "n", which is set below
+		insert_template = f"insert into record_info ({template_names_with_commas}) values ({percent_s_string})"
 		insert_values = insert_values_template(filename_record=f"{short_file_name}-{response_count}", date_derived=file_date, \
 			target=this_resp["target"], internet=this_resp["internet"], transport=this_resp["transport"], ip_addr=this_resp["ip_addr"], record_type=this_resp["test_type"], \
-			query_elapsed=0.0, timeout="", soa_found="", recent_soas=[], is_correct="?", failure_reason="", source_pickle=b"")
+			query_elapsed=0.0, timeout="", soa_found="", recent_soas=[], is_correct="", failure_reason="", source_pickle=b"")
 		# If the response code is wrong, treat it as a timeout; use the response code as the timeout message
 		#   For "S" records   [ppo]
 		#   For "C" records   [ote]
@@ -216,14 +207,14 @@ def process_one_incoming_file(full_file_name):
 		# What is left is the normal responses
 		#   For these, leave the timeout as ""
 		if not this_resp.get("query_elapsed"):
-			alert("Found a message without query_elapsed in record {} of {}".format(response_count, full_file_name))
+			alert(f"Found a message without query_elapsed in record {response_count} of {full_file_name}")
 			continue
 		insert_values = insert_values._replace(query_elapsed=this_resp["query_elapsed"])  # [aym]
 		if insert_values.record_type == "S":
 			if this_resp.get("answer") == None or len(this_resp["answer"]) == 0:
-				alert("Found a message of type 'S' without an answer in record {} of {}".format(response_count, full_file_name))
+				alert(f"Found a message of type 'S' without an answer in record {response_count} of {full_file_name}")
 				continue
-			# This chooses only the first SOA record
+			# This chooses only the first SOA record; there really should only be one SOA record in the response
 			this_soa_record = this_resp["answer"][0]["rdata"][0]
 			soa_record_parts = this_soa_record.split(" ")
 			this_soa = soa_record_parts[6]
@@ -237,7 +228,6 @@ def process_one_incoming_file(full_file_name):
 		insert_from_template(insert_template, insert_values)
 		continue
 	# End of response items loop
-
 	cur.close()
 	return
 
