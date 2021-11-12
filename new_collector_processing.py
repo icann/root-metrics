@@ -113,9 +113,7 @@ def process_one_incoming_file(full_file_name):
 		return
 	
 	short_file_name = os.path.basename(full_file_name).replace(".pickle.gz", "")
-	
-	# Check if it is already in 
-	
+		
 	# See if this file has already been processed
 	cur = conn.cursor()
 	cur.execute("select count(*) from files_gotten where filename_short = %s", (short_file_name, ))
@@ -263,45 +261,42 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 	# Normally, this function returns nothing because it is writing the results into the record_info database
 	#    However, if the type is "test", the function does not write into the database but instead returns the results as text
 	(request_type, this_filename_record) = tuple_of_type_and_filename_record
-	conn = psycopg2.connect(dbname="metrics", user="metrics")
-	conn.set_session(autocommit=True)
-	if request_type == "normal":
-		try:
-			cur = conn.cursor()
-			cur.execute("select timeout, source_pickle from record_info where filename_record = %s", (this_filename_record, ))
-		except Exception as e:
-			alert("Unable to start check correctness on '{}': '{}'".format(this_filename_record, e))
-			return
-		this_found = cur.fetchall()
-		cur.close()
-		if len(this_found) > 1:
-			alert(f"When checking correctness on {this_filename_record}, found {len(this_found)} records")
-			return
-		(this_timeout, this_resp_pickle) = this_found[0]
-	elif request_type == "test":
-		(this_timeout, this_resp_pickle) = this_found[0]
-	else:
+	if not request_type in ("normal", "test"):
 		alert(f"While running process_one_correctness_array on {this_filename_record}, got unknown first argument {request_type}")
 		return
+	conn = psycopg2.connect(dbname="metrics", user="metrics")
+	conn.set_session(autocommit=True)
+	try:
+		cur = conn.cursor()
+		cur.execute("select timeout, source_pickle from record_info where filename_record = %s", (this_filename_record, ))
+	except Exception as e:
+		alert(f"Unable to start check correctness on {this_filename_record}: {e}")
+		return
+	this_found = cur.fetchall()
+	cur.close()
+	if len(this_found) > 1:
+		alert(f"When checking correctness on {this_filename_record}, found {len(this_found)} records instead of just 1")
+		return
+	(this_timeout, this_resp_pickle) = this_found[0]
 
 	# Before trying to load the pickled data, first see if it is a timeout; if so, set is_correct but move on [lbl]
 	if not this_timeout == "":
 		if opts.test:
-			return "Timeout '{}' [lbl]".format(this_timeout)
+			return f"Timeout {this_timeout} [lbl]"
 		else:
 			try:
 				cur = conn.cursor()
 				cur.execute("update record_info set (is_correct, failure_reason) = (%s, %s) where filename_record = %s", ("y", "timeout", this_filename_record))
 				cur.close()
 			except Exception as e:
-				alert("Could not update record_info for timed-out {}: '{}'".format(this_filename_record, e))
+				alert(f"Could not update record_info for timed-out {this_filename_record}: {e}")
 			return
 	
 	# Get the pickled object		
 	try:
 		resp = pickle.loads(this_resp_pickle)
 	except Exception as e:
-		alert("Could not unpickle in record_info for {}: '{}'".format(this_filename_record, e))
+		alert(f"Could not unpickle the source_pickle in {this_filename_record}: {e}")
 		return
 	
 	# root_to_check is one of the roots from the 48 hours preceding the record
@@ -309,7 +304,8 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 		try:
 			root_to_check = pickle.load(open("root_name_and_types.pickle", mode="rb"))
 		except:
-			exit("While running under --test, could not find and unpickle 'root_name_and_types.pickle'. Exiting.")
+			alert("While running under --test, could not find and unpickle 'root_name_and_types.pickle'. Exiting.")
+			return
 	else:
 		# Get the starting date from the file name, then pick all zone files whose names have that date or the date from the two days before
 		start_date = datetime.date(int(this_filename_record[0:4]), int(this_filename_record[4:6]), int(this_filename_record[6:8]))
@@ -327,12 +323,12 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 			cur = conn.cursor()
 			cur.execute("select recent_soas from record_info where filename_record = %s", (this_filename_record, ))
 		except Exception as e:
-			alert("Unable to select recent_soas in correctness on '{}': '{}'".format(this_filename_record, e))
+			alert(f"Unable to select recent_soas in correctness on {this_filename_record}: {e}")
 			return
 		this_found = cur.fetchall()
 		cur.close()
 		if len(this_found) > 1:
-			alert("When checking recent_soas in corrrectness on '{}', found more than one record: '{}'".format(this_filename_record, this_found))
+			alert(f"When checking recent_soas in corrrectness on {this_filename_record}, found more than one record: {this_found}")
 			return
 		found_recent_soas = this_found[0]
 		root_file_to_check = ""

@@ -12,7 +12,7 @@ class QueryError(Exception):
 
 # Run one command; to be used under concurrent.futures
 def do_one_query(target, internet, ip_addr, transport, query, test_type):
-	''' Send one ./SOA query over UDP/TPC and v4/v6; return a dict of results '''
+	''' Send one query; return a dict of results '''
 	id_string = f"{target}|{internet}|{transport}|{query}|{test_type}"
 	r_dict = { "id_string": id_string, "error": "", "target": target, "internet": internet, "ip_addr": ip_addr,
 		"transport": transport, "query": query, "test_type": test_type }
@@ -39,9 +39,9 @@ def do_one_query(target, internet, ip_addr, transport, query, test_type):
 	q = dns.message.make_query(qname_processed, qtype_processed)
 	# Turn off the RD bit
 	q.flags &= ~dns.flags.RD
-	# If test_type is "C", set the buffer size to 1220 [rja] and add DO bit
-	#    Include NSID over EDNS0 [mgj] for both "S" and "C"
+	# Include NSID over EDNS0 [mgj] for both "S" and "C"
 	nsid_option = dns.edns.GenericOption(dns.edns.OptionType.NSID, b'')
+	# If test_type is "C", set the buffer size to 1220 [rja] and add DO bit
 	if test_type == "C":
 		q.use_edns(edns=0, payload=1220, ednsflags=dns.flags.DO, options=[nsid_option])
 	else:
@@ -297,7 +297,6 @@ if __name__ == "__main__":
 	commands_clock_start = int(time.time())
 	with concurrent.futures.ThreadPoolExecutor() as executor:
 		# Calling sequence for do_one_query() is: target, internet, ip_addr, transport, query, test_type
-		#   query is None for ./SOA, or "<qname>/<qtype>" for correctness
 		returned_futures = {}
 		# First launch the ./SOA queries (S)
 		for (this_target, this_dict) in test_targets.items():
