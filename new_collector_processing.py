@@ -180,7 +180,7 @@ def process_one_incoming_file(full_file_name):
 	# Create the template
 	insert_values_template = namedtuple("insert_values_template", field_names=template_names_with_commas)
 	
-	# Go throught each response item
+	# Go through each response item
 	#   This is a bit funky, because in this loop, only values for S records are written out.
 	#   C records are saved for a different loop after this in order to give a likely SOA for the record
 	c_records_for_later = {}
@@ -274,28 +274,29 @@ def check_for_signed_rr(list_of_records_from_section, name_of_rrtype):
 	
 ###############################################################
 
-def process_one_correctness_tuple(tuple_of_type_and_filename_record_and_likely_soa):
+def process_one_correctness_tuple(in_tuple):
+	# Tuple is (request_type, filename_record)
 	# request_type is "test" or "normal"
 	#    For "normal", process one filename_record
 	#    For "test", process one id/pickle_blob pair
 	# Normally, this function returns nothing because it is writing the results into the record_info database
 	#    However, if the type is "test", the function does not write into the database but instead returns the results as text
-	(request_type, this_filename_record, soa_to_check) = tuple_of_type_and_filename_record_and_likely_soa
+	(request_type, in_filename_record) = in_tuple
 	if not request_type in ("normal", "test"):
-		alert(f"While running process_one_correctness_tuple on {this_filename_record}, got unknown first argument {request_type}")
+		alert(f"While running process_one_correctness_tuple on {in_filename_record}, got unknown first argument {request_type}")
 		return
 	conn = psycopg2.connect(dbname="metrics", user="metrics")
 	conn.set_session(autocommit=True)
 	try:
 		cur = conn.cursor()
-		cur.execute("select timeout, source_pickle from record_info where filename_record = %s", (this_filename_record, ))
+		cur.execute("select timeout, source_pickle from record_info where filename_record = %s", (in_filename_record, ))
 	except Exception as e:
-		alert(f"Unable to start check correctness on {this_filename_record}: {e}")
+		alert(f"Unable to start check correctness on {in_filename_record}: {e}")
 		return
 	this_found = cur.fetchall()
 	cur.close()
 	if len(this_found) > 1:
-		alert(f"When checking correctness on {this_filename_record}, found {len(this_found)} records instead of just 1")
+		alert(f"When checking correctness on {in_filename_record}, found {len(this_found)} records instead of just 1")
 		return
 	(this_timeout, this_resp_pickle) = this_found[0]
 
@@ -306,17 +307,21 @@ def process_one_correctness_tuple(tuple_of_type_and_filename_record_and_likely_s
 		else:
 			try:
 				cur = conn.cursor()
-				cur.execute("update record_info set (is_correct, failure_reason) = (%s, %s) where filename_record = %s", ("y", "timeout", this_filename_record))
+				cur.execute("update record_info set (is_correct, failure_reason) = (%s, %s) where filename_record = %s", ("y", "timeout", in_filename_record))
 				cur.close()
 			except Exception as e:
-				alert(f"Could not update record_info for timed-out {this_filename_record}: {e}")
+				alert(f"Could not update record_info for timed-out {in_filename_record}: {e}")
 			return
 	
 	# Get the pickled object		
 	try:
 		resp = pickle.loads(this_resp_pickle)
 	except Exception as e:
-		alert(f"Could not unpickle the source_pickle in {this_filename_record}: {e}")
+		alert(f"Could not unpickle the source_pickle in {in_filename_record}: {e}")
+		return
+	soa_to_check = resp.get("likely_soa")
+	if not soa_to_check:
+		alert(f"Record {in_filename_record} did not have a likely_soa value")
 		return
 	
 	# root_to_check is known for opts.test; for the normal checking, it is the likely_soa
@@ -329,16 +334,37 @@ def process_one_correctness_tuple(tuple_of_type_and_filename_record_and_likely_s
 	else:
 		root_file_to_check = f"{saved_matching_dir}/{soa_to_check}.matching.pickle"
 		if not os.path.exists(root_file_to_check):
-			alert(f"When checking correctness on {this_filename_record}, could not find root file {root_file_to_check}")
+			alert(f"When checking correctness on {in_filename_record}, could not find root file {root_file_to_check}")
 			return
 		# Try to read the file	
 		soa_f = open(root_file_to_check, mode="rb")
 		try:
 			root_to_check = pickle.load(soa_f)
 		except:
-			alert(f"Could not unpickle root file {root_file_to_check} while processing {this_filename_record} for correctness")
+			alert(f"Could not unpickle root file {root_file_to_check} while processing {in_filename_record} for correctness")
 			return
 	
+	# Get the question
+	#   Only look at the first record in the question section
+	question_record_dict = resp["question"][0]
+	this_qname = question_record_dict["name"]
+	this_qtype = question_record_dict["rdtype"]
+	# See if the question is ./SOA; if so, check that the answer is the same as the soa_to_check
+	#   If not, stop right here and ask for a retry
+	if this_qname == "." and this_qtype == "SOA":
+		this_soa_record = resp["answer"][0]["rdata"][0]
+		soa_record_parts = this_soa_record.split(" ")
+		soa_in_answer = soa_record_parts[2]
+		if not soa_in_answer == soa_to_check:
+			try:
+				cur = conn.cursor()
+				cur.execute("update record_info set (is_correct, failure_reason) = (%s, %s) where filename_record = %s", \
+					("r", "./SOA did not match likely_soa", in_filename_record))
+				cur.close()
+			except Exception as e:
+				alert(f"Could not update record_info in correctness checking after processing record {in_filename_record}: {e}")
+			return
+
 	# failure_reasons holds an expanding set of reasons
 	#   It is checked at the end of testing, and all "" entries eliminted
 	#   If it is empty, then all correctness tests passed
@@ -442,15 +468,11 @@ def process_one_correctness_tuple(tuple_of_type_and_filename_record_and_likely_s
 					validate_output = validate_p.stdout.splitlines()[0]
 					(validate_return, _) = validate_output.split(" ", maxsplit=1)
 					if not validate_return == "400":
-						failure_reasons.append("Validating {this_section_name} in {this_filename_record} got error of {validate_return} [yds]")
+						failure_reasons.append("Validating {this_section_name} in {in_filename_record} got error of {validate_return} [yds]")
 	######################################################################## TEMPORARILY NOT VALIDATING #####################################################################
 	"""
 	
 	# Check that all the parts of the resp structure are correct, based on the type of answer
-	#   Only look at the first record in the question section
-	question_record_dict = resp["question"][0]
-	this_qname = question_record_dict["name"]
-	this_qtype = question_record_dict["rdtype"]
 	if resp["rcode"] == "NOERROR":
 		if (this_qname != ".") and (this_qtype == "NS"):  # Processing for TLD / NS [hmk]
 			# The header AA bit is not set. [ujy]
@@ -652,17 +674,17 @@ def process_one_correctness_tuple(tuple_of_type_and_filename_record_and_likely_s
 	if failure_reason_text == "":
 		make_is_correct = "y"
 	else:
-		make_is_correct = "n"	
+		make_is_correct = "r"	
 	if opts.test:
 		return failure_reason_text
 	else:
 		try:
 			cur = conn.cursor()
 			cur.execute("update record_info set (is_correct, failure_reason) = (%s, %s) where filename_record = %s", \
-				(make_is_correct, failure_reason_text, this_filename_record))
+				(make_is_correct, failure_reason_text, in_filename_record))
 			cur.close()
 		except Exception as e:
-			alert(f"Could not update record_info in correctness checking after processing record {this_filename_record}: {e}")
+			alert(f"Could not update record_info in correctness checking after processing record {in_filename_record}: {e}")
 		return
 
 ###############################################################
@@ -802,7 +824,7 @@ if __name__ == "__main__":
 	try:
 		conn = psycopg2.connect(dbname="metrics", user="metrics")
 		cur = conn.cursor()
-		cur.execute("select filename_record, likely_soa from record_info where record_type = 'C' and is_correct = '?'")
+		cur.execute("select filename_record from record_info where record_type = 'C' and is_correct = '?'")
 	except Exception as e:
 		conn.close()
 		die(f"Unable to start processing correctness with 'select' request: {e}")
@@ -811,7 +833,7 @@ if __name__ == "__main__":
 	# Make a list of tuples with the filename_record
 	full_correctness_list = []
 	for this_initial_correct in initial_correct_to_check:
-		full_correctness_list.append(("normal", this_initial_correct[0], this_initial_correct[1]))
+		full_correctness_list.append(("normal", this_initial_correct[0]))
 	# If limit is set, use only the first few
 	if opts.limit:
 		full_correctness_list = full_correctness_list[0:limit_size]
@@ -833,7 +855,7 @@ if __name__ == "__main__":
 import glob
 	# root_to_check is one of the roots from the 48 hours preceding the record
 		# Get the starting date from the file name, then pick all zone files whose names have that date or the date from the two days before
-		start_date = datetime.date(int(this_filename_record[0:4]), int(this_filename_record[4:6]), int(this_filename_record[6:8]))
+		start_date = datetime.date(int(in_filename_record[0:4]), int(in_filename_record[4:6]), int(in_filename_record[6:8]))
 		start_date_minus_one = start_date - datetime.timedelta(days=1)
 		start_date_minus_two = start_date - datetime.timedelta(days=2)
 		soa_matching_date_files = []
@@ -842,18 +864,18 @@ import glob
 		# See if any of the matching files are not listed in the recent_soas field in the record; if so, try the highest one
 		soa_matching_date_files = sorted(soa_matching_date_files, reverse=True)
 		if len(soa_matching_date_files) == 0:
-			alert(f"Found no SOA matching files for {this_filename_record} with dates starting {start_date.strftime('%Y%m%d')}")
+			alert(f"Found no SOA matching files for {in_filename_record} with dates starting {start_date.strftime('%Y%m%d')}")
 			return
 		try:
 			cur = conn.cursor()
-			cur.execute("select recent_soas from record_info where filename_record = %s", (this_filename_record, ))
+			cur.execute("select recent_soas from record_info where filename_record = %s", (in_filename_record, ))
 		except Exception as e:
-			alert(f"Unable to select recent_soas in correctness on {this_filename_record}: {e}")
+			alert(f"Unable to select recent_soas in correctness on {in_filename_record}: {e}")
 			return
 		this_found = cur.fetchall()
 		cur.close()
 		if len(this_found) > 1:
-			alert(f"When checking recent_soas in corrrectness on {this_filename_record}, found more than one record: {this_found}")
+			alert(f"When checking recent_soas in corrrectness on {in_filename_record}, found more than one record: {this_found}")
 			return
 		found_recent_soas = this_found[0]
 		root_file_to_check = ""
@@ -868,9 +890,9 @@ import glob
 			try:
 				cur = conn.cursor()
 				cur.execute("update record_info set (is_correct, failure_reason) = (%s, %s) where filename_record = %s", \
-					("n", "Tried with all SOAs for 48 hours", this_filename_record))
+					("n", "Tried with all SOAs for 48 hours", in_filename_record))
 				cur.close()
 			except Exception as e:
-				alert(f"Could not update record_info after end of SOAs in correctness checking after processing record {this_filename_record}: {e}")
+				alert(f"Could not update record_info after end of SOAs in correctness checking after processing record {in_filename_record}: {e}")
 			return
 """
