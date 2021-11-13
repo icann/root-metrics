@@ -725,7 +725,7 @@ if __name__ == "__main__":
 	saved_root_zone_dir = f"{output_dir}/RootZones"
 	if not os.path.exists(saved_root_zone_dir):
 		os.mkdir(saved_root_zone_dir)
-	saved_matching_dir = "f{output_dir}/RootMatching"
+	saved_matching_dir = f"{output_dir}/RootMatching"
 	if not os.path.exists(saved_matching_dir):
 		os.mkdir(saved_matching_dir)
 
