@@ -280,7 +280,7 @@ def process_one_correctness_tuple(tuple_of_type_and_filename_record_and_likely_s
 	#    For "test", process one id/pickle_blob pair
 	# Normally, this function returns nothing because it is writing the results into the record_info database
 	#    However, if the type is "test", the function does not write into the database but instead returns the results as text
-	(request_type, this_filename_record) = tuple_of_type_and_filename_record_and_likely_soa
+	(request_type, this_filename_record, soa_to_check) = tuple_of_type_and_filename_record_and_likely_soa
 	if not request_type in ("normal", "test"):
 		alert(f"While running process_one_correctness_tuple on {this_filename_record}, got unknown first argument {request_type}")
 		return
@@ -327,11 +327,6 @@ def process_one_correctness_tuple(tuple_of_type_and_filename_record_and_likely_s
 			alert("While running under --test, could not find and unpickle 'root_name_and_types.pickle'. Exiting.")
 			return
 	else:
-		try:
-			soa_to_check = resp["likely_soa"]
-		except:
-			alert(f"When checking correctness on {this_filename_record}, did not find a likely_soa field")
-			return
 		root_file_to_check = f"{saved_matching_dir}/{soa_to_check}.matching.pickle"
 		if not os.path.exists(root_file_to_check):
 			alert(f"When checking correctness on {this_filename_record}, could not find root file {root_file_to_check}")
