@@ -400,6 +400,8 @@ def process_one_correctness_tuple(tuple_of_type_and_filename_record_and_likely_s
 						root_fail = root_to_check[this_rrset_key]
 						failure_reasons.append(f"Set of RRset value {rr_fail} in {this_section_name} in response is different than {root_fail} in root zone [vnk]")
 
+	"""
+	######################################################################## TEMPORARILY NOT VALIDATING #####################################################################
 	# Check that each of the RRsets that are signed have their signatures validated. [yds]
 	#   Send all the records in each section to the function that checks for validity
 	if opts.test:
@@ -407,7 +409,7 @@ def process_one_correctness_tuple(tuple_of_type_and_filename_record_and_likely_s
 	else:
 		recent_soa_root_filename = f"{saved_root_zone_dir}/{soa_to_check}.root.txt"
 	if not os.path.exists(recent_soa_root_filename):
-		alert("Could not find {} for correctness validation, so skipping".format(recent_soa_root_filename))
+		alert(f"Could not find {recent_soa_root_filename} for correctness validation, so skipping")
 	else:
 		for this_section_name in [ "answer", "authority", "additional" ]:
 			if not resp.get(this_section_name):
@@ -424,21 +426,21 @@ def process_one_correctness_tuple(tuple_of_type_and_filename_record_and_likely_s
 					if rr_parts[3] == "RRSIG":
 						rrsigs_over_rrtypes.add(rr_parts[4])
 			if len(rrsigs_over_rrtypes) > 0:
-				validate_f = tempfile.NamedTemporaryFile(mode="wt")
-				validate_fname = validate_f.name
-				# Go through each record, and only save the RRSIGs and the records they cover
-				for this_in_rr_text in this_section_rrs:
-					rr_parts = this_in_rr_text.split(" ", maxsplit=4)
-					if (rr_parts[3] == "RRSIG") or (rr_parts[3] in rrsigs_over_rrtypes):
-						validate_f.write(this_in_rr_text+"\n")
-				validate_f.seek(0)
-				validate_p = subprocess.run("{}/getdns_validate -s {} {}".format(target_dir, recent_soa_root_filename, validate_fname),
-					shell=True, text=True, check=True, capture_output=True)
-				validate_output = validate_p.stdout.splitlines()[0]
-				(validate_return, _) = validate_output.split(" ", maxsplit=1)
-				if not validate_return == "400":
-					failure_reasons.append("Validating {} in {} got error of '{}' [yds]".format(this_section_name, this_filename_record, validate_return))
-				validate_f.close()
+				with tempfile.NamedTemporaryFile(mode="wt") as validate_f:
+					validate_fname = validate_f.name
+					# Go through each record, and only save the RRSIGs and the records they cover
+					for this_in_rr_text in this_section_rrs:
+						rr_parts = this_in_rr_text.split(" ", maxsplit=4)
+						if (rr_parts[3] == "RRSIG") or (rr_parts[3] in rrsigs_over_rrtypes):
+							validate_f.write(this_in_rr_text+"\n")
+					validate_f.seek(0)
+					validate_p = subprocess.run(f"{target_dir}/getdns_validate -s {recent_soa_root_filename} {validate_fname}", shell=True, text=True, check=True, capture_output=True)
+					validate_output = validate_p.stdout.splitlines()[0]
+					(validate_return, _) = validate_output.split(" ", maxsplit=1)
+					if not validate_return == "400":
+						failure_reasons.append("Validating {this_section_name} in {this_filename_record} got error of {validate_return} [yds]")
+	######################################################################## TEMPORARILY NOT VALIDATING #####################################################################
+	"""
 	
 	# Check that all the parts of the resp structure are correct, based on the type of answer
 	#   Only look at the first record in the question section
@@ -480,6 +482,7 @@ def process_one_correctness_tuple(tuple_of_type_and_filename_record_and_likely_s
 				# The Authority section contains a signed NSEC RRset covering the query name. [mkl]
 				has_covering_nsec = False
 				for this_rec_dict in resp["authority"]:
+					rec_qname = this_rec_dict["name"]
 					rec_qtype = this_rec_dict["rdtype"]
 					if rec_qtype == "NSEC":
 						if rec_qname == this_rec_dict["name"]:
