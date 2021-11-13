@@ -289,7 +289,7 @@ def process_one_correctness_tuple(in_tuple):
 	conn.set_session(autocommit=True)
 	try:
 		cur = conn.cursor()
-		cur.execute("select timeout, source_pickle from record_info where filename_record = %s", (in_filename_record, ))
+		cur.execute("select timeout, likely_soa, is_correct, source_pickle from record_info where filename_record = %s", (in_filename_record, ))
 	except Exception as e:
 		alert(f"Unable to start check correctness on {in_filename_record}: {e}")
 		return
@@ -298,7 +298,10 @@ def process_one_correctness_tuple(in_tuple):
 	if len(this_found) > 1:
 		alert(f"When checking correctness on {in_filename_record}, found {len(this_found)} records instead of just 1")
 		return
-	(this_timeout, this_resp_pickle) = this_found[0]
+	(this_timeout, this_soa_to_check, this_is_correct, this_resp_pickle) = this_found[0]
+	if not this_soa_to_check:
+		alert(f"Record {in_filename_record} did not have a likely_soa value")
+		return
 
 	# Before trying to load the pickled data, first see if it is a timeout; if so, set is_correct but move on [lbl]
 	if not this_timeout == "":
@@ -319,10 +322,6 @@ def process_one_correctness_tuple(in_tuple):
 	except Exception as e:
 		alert(f"Could not unpickle the source_pickle in {in_filename_record}: {e}")
 		return
-	soa_to_check = resp.get("likely_soa")
-	if not soa_to_check:
-		alert(f"Record {in_filename_record} did not have a likely_soa value")
-		return
 	
 	# root_to_check is known for opts.test; for the normal checking, it is the likely_soa
 	if opts.test:
@@ -332,7 +331,7 @@ def process_one_correctness_tuple(in_tuple):
 			alert("While running under --test, could not find and unpickle 'root_name_and_types.pickle'. Exiting.")
 			return
 	else:
-		root_file_to_check = f"{saved_matching_dir}/{soa_to_check}.matching.pickle"
+		root_file_to_check = f"{saved_matching_dir}/{this_soa_to_check}.matching.pickle"
 		if not os.path.exists(root_file_to_check):
 			alert(f"When checking correctness on {in_filename_record}, could not find root file {root_file_to_check}")
 			return
@@ -349,13 +348,13 @@ def process_one_correctness_tuple(in_tuple):
 	question_record_dict = resp["question"][0]
 	this_qname = question_record_dict["name"]
 	this_qtype = question_record_dict["rdtype"]
-	# See if the question is ./SOA; if so, check that the answer is the same as the soa_to_check
+	# See if the question is ./SOA; if so, check that the answer is the same as the this_soa_to_check
 	#   If not, stop right here and ask for a retry
 	if this_qname == "." and this_qtype == "SOA":
 		this_soa_record = resp["answer"][0]["rdata"][0]
 		soa_record_parts = this_soa_record.split(" ")
 		soa_in_answer = soa_record_parts[2]
-		if not soa_in_answer == soa_to_check:
+		if not soa_in_answer == this_soa_to_check:
 			try:
 				cur = conn.cursor()
 				cur.execute("update record_info set (is_correct, failure_reason) = (%s, %s) where filename_record = %s", \
@@ -437,7 +436,7 @@ def process_one_correctness_tuple(in_tuple):
 	if opts.test:
 		recent_soa_root_filename = "root_zone.txt"
 	else:
-		recent_soa_root_filename = f"{saved_root_zone_dir}/{soa_to_check}.root.txt"
+		recent_soa_root_filename = f"{saved_root_zone_dir}/{this_soa_to_check}.root.txt"
 	if not os.path.exists(recent_soa_root_filename):
 		alert(f"Could not find {recent_soa_root_filename} for correctness validation, so skipping")
 	else:
