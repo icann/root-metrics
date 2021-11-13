@@ -4,7 +4,7 @@
 # Run as the metrics user
 # Three-letter items in square brackets (such as [xyz]) refer to parts of rssac-047.md
 
-import argparse, datetime, glob, gzip, logging, os, pickle, psycopg2, socket, subprocess, tempfile, time
+import argparse, datetime, gzip, logging, os, pickle, psycopg2, socket, subprocess, tempfile, time
 from pathlib import Path
 from concurrent import futures
 from collections import namedtuple
@@ -24,7 +24,7 @@ def run_tests_only():
 		p_count += 1
 		this_id = os.path.basename(this_test_file)
 		this_resp_pickle = pickle.dumps(open(this_test_file, mode="rb"))
-		this_response = ("test", process_one_correctness_array(["", [ "test" ], this_resp_pickle]))
+		this_response = ("test", process_one_correctness_tuple(["", [ "test" ], this_resp_pickle]))
 		if this_response:
 			log("Expected pass, but got failure, on {}\n{}\n".format(this_id, this_response))
 	# Test the negatives
@@ -38,7 +38,7 @@ def run_tests_only():
 		n_responses[this_id] = {}
 		n_responses[this_id]["desc"] = in_lines[0]
 		this_resp_pickle = pickle.dumps(open(this_test_file, mode="rt"))
-		this_response = ("test", process_one_correctness_array(["", [ "test" ], this_resp_pickle]))
+		this_response = ("test", process_one_correctness_tuple(["", [ "test" ], this_resp_pickle]))
 		if not this_response:
 			log("Expected failure, but got pass, on {}".format(this_id))
 		else:
@@ -172,7 +172,7 @@ def process_one_incoming_file(full_file_name):
 
 	# Named tuple for the record templates
 	template_names_raw = "filename_record date_derived target internet transport ip_addr record_type query_elapsed timeout soa_found " \
-		+ "recent_soas is_correct failure_reason source_pickle"
+		+ "likely_soa is_correct failure_reason source_pickle"
 	# Change spaces to ", "
 	template_names_with_commas = template_names_raw.replace(" ", ", ")
 	# List of "%s, " for Postgres "insert" commands; remove trailing ", "
@@ -181,6 +181,10 @@ def process_one_incoming_file(full_file_name):
 	insert_values_template = namedtuple("insert_values_template", field_names=template_names_with_commas)
 	
 	# Go throught each response item
+	#   This is a bit funky, because in this loop, only values for S records are written out.
+	#   C records are saved for a different loop after this in order to give a likely SOA for the record
+	c_records_for_later = {}
+	presumed_soas = {}
 	response_count = 0
 	for this_resp in in_obj["r"]:
 		response_count += 1  # response_count is 1-based, not 0-based
@@ -189,10 +193,11 @@ def process_one_incoming_file(full_file_name):
 		if not this_resp["test_type"] in ("S", "C"):
 			alert(f"Found a response type {this_resp['test_type']}, which is not S or C, in record {response_count} of {full_file_name}")
 			continue
+		short_name_and_count = f"{short_file_name}-{response_count}"
 		insert_template = f"insert into record_info ({template_names_with_commas}) values ({percent_s_string})"
-		insert_values = insert_values_template(filename_record=f"{short_file_name}-{response_count}", date_derived=file_date, \
+		insert_values = insert_values_template(filename_record=short_name_and_count, date_derived=file_date, \
 			target=this_resp["target"], internet=this_resp["internet"], transport=this_resp["transport"], ip_addr=this_resp["ip_addr"], record_type=this_resp["test_type"], \
-			query_elapsed=0.0, timeout="", soa_found="", recent_soas=[], is_correct="", failure_reason="", source_pickle=b"")
+			query_elapsed=0.0, timeout="", soa_found="", likely_soa="", is_correct="", failure_reason="", source_pickle=b"")
 		# If the response code is wrong, treat it as a timeout; use the response code as the timeout message
 		#   For "S" records   [ppo]
 		#   For "C" records   [ote]
@@ -201,9 +206,7 @@ def process_one_incoming_file(full_file_name):
 			insert_values = insert_values._replace(timeout=this_response_code)
 			insert_from_template(insert_template, insert_values)
 			continue
-
-		# What is left is the normal responses
-		#   For these, leave the timeout as ""
+		# What is left is responses that didn't time out
 		if not this_resp.get("query_elapsed"):
 			alert(f"Found a message without query_elapsed in record {response_count} of {full_file_name}")
 			continue
@@ -217,14 +220,31 @@ def process_one_incoming_file(full_file_name):
 			soa_record_parts = this_soa_record.split(" ")
 			this_soa = soa_record_parts[6]
 			insert_values = insert_values._replace(soa_found=this_soa)
-		if insert_values.record_type == "C":
-			# The correctness response contains the pickle of the whole response; to save space, don't do this for "S" records
+			# Write out this SOA in the presumed_soas by target, to be used by the C values
+			presumed_soas[insert_values.target] = this_soa
+			# Set is_correct to "x" because correctness is not being checked for record_type = s
+			insert_values = insert_values._replace(is_correct="s")
+			# Write out this record
+			insert_from_template(insert_template, insert_values)
+		elif insert_values.record_type == "C":
 			insert_values = insert_values._replace(source_pickle=pickle.dumps(this_resp))
-			# Set is_correct to "?" so it can be checked later
-			insert_values = insert_values._replace(is_correct="?")
+			c_records_for_later[short_name_and_count] = insert_values
+		
+	# After all the S records are written, get the C records from c_records_for_later, add the presumed SOA, and write them to the database
+	for this_record in c_records_for_later:
+		insert_values = c_records_for_later[this_record]
+		# Set the presumed SOA
+		try:
+			this_likely_soa = presumed_soas[insert_values.target]
+		except:
+			alert(f"Did not find earlier target of '{insert_values.target}' for record {response_count} of {full_file_name}")
+			continue
+		insert_values = insert_values._replace(likely_soa=this_likely_soa)
+		# Set is_correct to "?" so it can be checked later
+		insert_values = insert_values._replace(is_correct="?")
 		# Write out this record
 		insert_from_template(insert_template, insert_values)
-		continue
+
 	# End of response items loop
 	cur.close()
 	return
@@ -254,7 +274,7 @@ def check_for_signed_rr(list_of_records_from_section, name_of_rrtype):
 	
 ###############################################################
 
-def process_one_correctness_array(tuple_of_type_and_filename_record):
+def process_one_correctness_tuple(tuple_of_type_and_filename_record):
 	# request_type is "test" or "normal"
 	#    For "normal", process one filename_record
 	#    For "test", process one id/pickle_blob pair
@@ -262,7 +282,7 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 	#    However, if the type is "test", the function does not write into the database but instead returns the results as text
 	(request_type, this_filename_record) = tuple_of_type_and_filename_record
 	if not request_type in ("normal", "test"):
-		alert(f"While running process_one_correctness_array on {this_filename_record}, got unknown first argument {request_type}")
+		alert(f"While running process_one_correctness_tuple on {this_filename_record}, got unknown first argument {request_type}")
 		return
 	conn = psycopg2.connect(dbname="metrics", user="metrics")
 	conn.set_session(autocommit=True)
@@ -299,7 +319,7 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 		alert(f"Could not unpickle the source_pickle in {this_filename_record}: {e}")
 		return
 	
-	# root_to_check is one of the roots from the 48 hours preceding the record
+	# root_to_check is known for opts.test; for the normal checking, it is the likely_soa
 	if opts.test:
 		try:
 			root_to_check = pickle.load(open("root_name_and_types.pickle", mode="rb"))
@@ -307,48 +327,15 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 			alert("While running under --test, could not find and unpickle 'root_name_and_types.pickle'. Exiting.")
 			return
 	else:
-		# Get the starting date from the file name, then pick all zone files whose names have that date or the date from the two days before
-		start_date = datetime.date(int(this_filename_record[0:4]), int(this_filename_record[4:6]), int(this_filename_record[6:8]))
-		start_date_minus_one = start_date - datetime.timedelta(days=1)
-		start_date_minus_two = start_date - datetime.timedelta(days=2)
-		soa_matching_date_files = []
-		for this_start in [start_date, start_date_minus_one, start_date_minus_two]:
-			soa_matching_date_files.extend(glob.glob(str(Path(f"{saved_matching_dir}/{this_start.strftime('%Y%m%d')}" + "*.matching.pickle"))))
-		# See if any of the matching files are not listed in the recent_soas field in the record; if so, try the highest one
-		soa_matching_date_files = sorted(soa_matching_date_files, reverse=True)
-		if len(soa_matching_date_files) == 0:
-			alert(f"Found no SOA matching files for {this_filename_record} with dates starting {start_date.strftime('%Y%m%d')}")
-			return
 		try:
-			cur = conn.cursor()
-			cur.execute("select recent_soas from record_info where filename_record = %s", (this_filename_record, ))
-		except Exception as e:
-			alert(f"Unable to select recent_soas in correctness on {this_filename_record}: {e}")
+			soa_to_check = resp["likely_soa"]
+		except:
+			alert(f"When checking correctness on {this_filename_record}, did not find a likely_soa field")
 			return
-		this_found = cur.fetchall()
-		cur.close()
-		if len(this_found) > 1:
-			alert(f"When checking recent_soas in corrrectness on {this_filename_record}, found more than one record: {this_found}")
+		root_file_to_check = f"{saved_matching_dir}/{soa_to_check}.matching.pickle"
+		if not os.path.exists(root_file_to_check):
+			alert(f"When checking correctness on {this_filename_record}, could not find root file {root_file_to_check}")
 			return
-		found_recent_soas = this_found[0]
-		root_file_to_check = ""
-		for this_file in soa_matching_date_files:
-			this_soa = os.path.basename(this_file)[0:8]
-			if this_soa in found_recent_soas:
-				continue
-			else:
-				root_file_to_check = this_file
-				soa_file_used_for_testing = os.path.basename(this_file)[0:10]
-		if root_file_to_check == "":
-			try:
-				cur = conn.cursor()
-				cur.execute("update record_info set (is_correct, failure_reason) = (%s, %s) where filename_record = %s", \
-					("n", "Tried with all SOAs for 48 hours", this_filename_record))
-				cur.close()
-			except Exception as e:
-				alert(f"Could not update record_info after end of SOAs in correctness checking after processing record {this_filename_record}: {e}")
-			return
-
 		# Try to read the file	
 		soa_f = open(root_file_to_check, mode="rb")
 		try:
@@ -413,14 +400,17 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 								failure_reasons.append(f"Single RRset value {resp_val} in {this_section_name} in response is different than {root_val} in root zone [vnk]")
 								continue
 						# Here if IPv6 testing failed, but still have RRsets being unequal
-						failure_reasons.append(f"Set of RRset value {rrsets_for_checking[this_rrset_key]} in {this_section_name} in response is different than {root_to_check[this_rrset_key]} in root zone [vnk]")
+						#   Shorten the failure_reason
+						rr_fail = rrsets_for_checking[this_rrset_key]
+						root_fail = root_to_check[this_rrset_key]
+						failure_reasons.append(f"Set of RRset value {rr_fail} in {this_section_name} in response is different than {root_fail} in root zone [vnk]")
 
 	# Check that each of the RRsets that are signed have their signatures validated. [yds]
 	#   Send all the records in each section to the function that checks for validity
 	if opts.test:
 		recent_soa_root_filename = "root_zone.txt"
 	else:
-		recent_soa_root_filename = f"{saved_root_zone_dir}/{soa_file_used_for_testing}.root.txt"
+		recent_soa_root_filename = f"{saved_root_zone_dir}/{soa_to_check}.root.txt"
 	if not os.path.exists(recent_soa_root_filename):
 		alert("Could not find {} for correctness validation, so skipping".format(recent_soa_root_filename))
 	else:
@@ -587,7 +577,7 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 			if resp.get("additional"):
 				failure_reasons.append("Additional section was not empty [jws]")
 		else:
-			failure_reasons.append("Not matched: when checking NOERROR statuses, found unexpected name/type of {}/{}".format(this_qname, this_qtype))
+			failure_reasons.append(f"Not matched: when checking NOERROR statuses, found unexpected name/type of {this_qname}/{this_qtype}")
 	elif resp["rcode"] == "NXDOMAIN":  # Processing for negative responses [vcu]
 		# The header AA bit is set. [gpl]
 		if not "AA" in resp["flags"]:
@@ -605,7 +595,7 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 				rec_qtype = this_rec_dict["rdtype"]
 				if rec_qtype == "SOA":
 					if not rec_qname == ".":
-						failure_reasons.append("SOA in Authority section had QNAME {} instead of '.' [vcu]".format(rec_qname))
+						failure_reasons.append(f"SOA in Authority section had QNAME {rec_qname} instead of '.' [vcu]")
 			this_resp = check_for_signed_rr(resp["authority"], "SOA")
 			if this_resp:
 				failure_reasons.append("{} [axj]".format(this_resp))
@@ -632,7 +622,7 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 						nsec_covers_query_name = True
 						break
 			if not nsec_covers_query_name:
-				failure_reasons.append("NSECs in Authority '{}' did not cover qname '{}' [czb]".format(nsecs_in_authority, this_qname))
+				failure_reasons.append(f"NSECs in Authority {nsecs_in_authority} did not cover qname {this_qname} [czb]")
 			# The Authority section contains a signed NSEC record with owner name “.” proving no wildcard exists in the zone. [jhz]
 			nsec_with_owner_dot = False
 			for this_rec_dict in resp["authority"]:
@@ -670,7 +660,7 @@ def process_one_correctness_array(tuple_of_type_and_filename_record):
 				(make_is_correct, failure_reason_text, this_filename_record))
 			cur.close()
 		except Exception as e:
-			alert("Could not update record_info in correctness checking after processing record {}: '{}'".format(this_filename_record, e))
+			alert(f"Could not update record_info in correctness checking after processing record {this_filename_record}: {e}")
 		return
 
 ###############################################################
@@ -732,10 +722,10 @@ if __name__ == "__main__":
 	if not os.path.exists(output_dir):
 		os.mkdir(output_dir)
 	# Subdirectories of log directory for root zones
-	saved_root_zone_dir = "{}/RootZones".format(output_dir)
+	saved_root_zone_dir = "f{output_dir}/RootZones"
 	if not os.path.exists(saved_root_zone_dir):
 		os.mkdir(saved_root_zone_dir)
-	saved_matching_dir = "{}/RootMatching".format(output_dir)
+	saved_matching_dir = "f{output_dir}/RootMatching"
 	if not os.path.exists(saved_matching_dir):
 		os.mkdir(saved_matching_dir)
 
@@ -762,7 +752,7 @@ if __name__ == "__main__":
 		try:
 			all_vps = open(vp_list_filename, mode="rt").read().splitlines()
 		except Exception as e:
-			die("Could not open {} and split the lines: '{}'".format(vp_list_filename, e))
+			die(f"Could not open {vp_list_filename} and split the lines: {e}")
 		# Make sure we have trusted each one
 		known_hosts_set = set()
 		known_host_lines = open(f"{str(Path('~').expanduser())}/.ssh/known_hosts", mode="rt").readlines()
@@ -771,15 +761,15 @@ if __name__ == "__main__":
 		for this_vp in all_vps:
 			if not this_vp in known_hosts_set:
 				try:
-					subprocess.run("ssh-keyscan -4 -t rsa {} >> ~/.ssh/known_hosts".format(this_vp), shell=True, capture_output=True, check=True)
-					log("Added {} to known_hosts".format(this_vp))
+					subprocess.run(f"ssh-keyscan -4 -t rsa {this_vp} >> ~/.ssh/known_hosts", shell=True, capture_output=True, check=True)
+					log(f"Added {this_vp} to known_hosts")
 				except Exception as e:
-					die("Could not run ssh-keyscan on {}: {}".format(this_vp, e))
+					die(f"Could not run ssh-keyscan on {this_vp}: {e}")
 		with futures.ProcessPoolExecutor() as executor:
 			for (this_vp, this_ret) in zip(all_vps, executor.map(get_files_from_one_vp, all_vps)):
 				if not this_ret == "":
 					alert(this_ret)
-		log("Finished pulling from VPs; got files from {} VPs".format(len(all_vps)))
+		log(f"Finished pulling from VPs; got files from {len(all_vps)} VPs")
 	
 	elif opts.source == "skip":
 		# Don't do any source gathering
@@ -798,13 +788,13 @@ if __name__ == "__main__":
 	with futures.ProcessPoolExecutor() as executor:
 		for (this_file, _) in zip(all_files, executor.map(process_one_incoming_file, all_files)):
 			processed_incoming_count += 1
-	log("Finished processing {} files in Incoming in {} seconds".format(processed_incoming_count, int(time.time() - processed_incoming_start)))
+	log(f"Finished processing {processed_incoming_count} files in Incoming in {int(time.time() - processed_incoming_start)} seconds")
 
 	###############################################################
 
 	# Now that all the measurements are in, go through all records in record_info where is_correct is "?"
-	#   This is done separately in order to catch all earlier attempts where there was not a good root zone file to compare
-	#   This does not log or alert; that is left for a different program checking when is_correct is not "?"
+	#   This finds record_type = "C" records that have not been evaluated yet
+	#   This does not log or alert
 
 	# Iterate over the records where is_correct is "?"
 	try:
@@ -813,7 +803,7 @@ if __name__ == "__main__":
 		cur.execute("select filename_record from record_info where record_type = 'C' and is_correct = '?'")
 	except Exception as e:
 		conn.close()
-		die("Unable to start processing correctness with 'select' request: '{}'".format(e))
+		die(f"Unable to start processing correctness with 'select' request: {e}")
 	initial_correct_to_check = cur.fetchall()
 	conn.close()
 	# Make a list of tuples with the filename_record
@@ -823,19 +813,62 @@ if __name__ == "__main__":
 	# If limit is set, use only the first few
 	if opts.limit:
 		full_correctness_list = full_correctness_list[0:limit_size]
-	log("Started correctness checking on {} found".format(len(full_correctness_list)))
+	log(f"Started correctness checking on {len(full_correctness_list)} found")
 	processed_correctness_count = 0
 	processed_correctness_start = time.time()
 	with futures.ProcessPoolExecutor() as executor:
-		for (this_correctness, _) in zip(full_correctness_list, executor.map(process_one_correctness_array, full_correctness_list, chunksize=1000)):
+		for (this_correctness, _) in zip(full_correctness_list, executor.map(process_one_correctness_tuple, full_correctness_list, chunksize=1000)):
 			processed_correctness_count += 1
-	log("Finished correctness checking {} files in {} seconds".format(processed_correctness_count, int(time.time() - processed_correctness_start)))
-	
-	###############################################################
-	
-	# STILL TO DO: Validation in correctness checking
-	
-	###############################################################
+	log(f"Finished correctness checking {processed_correctness_count} files in {int(time.time() - processed_correctness_start)} seconds")
 	
 	log("Finished overall collector processing")	
 	exit()
+
+####################################################################
+
+# Saved in case the move to get rid of recent_soas fails
+"""
+import glob
+	# root_to_check is one of the roots from the 48 hours preceding the record
+		# Get the starting date from the file name, then pick all zone files whose names have that date or the date from the two days before
+		start_date = datetime.date(int(this_filename_record[0:4]), int(this_filename_record[4:6]), int(this_filename_record[6:8]))
+		start_date_minus_one = start_date - datetime.timedelta(days=1)
+		start_date_minus_two = start_date - datetime.timedelta(days=2)
+		soa_matching_date_files = []
+		for this_start in [start_date, start_date_minus_one, start_date_minus_two]:
+			soa_matching_date_files.extend(glob.glob(str(Path(f"{saved_matching_dir}/{this_start.strftime('%Y%m%d')}" + "*.matching.pickle"))))
+		# See if any of the matching files are not listed in the recent_soas field in the record; if so, try the highest one
+		soa_matching_date_files = sorted(soa_matching_date_files, reverse=True)
+		if len(soa_matching_date_files) == 0:
+			alert(f"Found no SOA matching files for {this_filename_record} with dates starting {start_date.strftime('%Y%m%d')}")
+			return
+		try:
+			cur = conn.cursor()
+			cur.execute("select recent_soas from record_info where filename_record = %s", (this_filename_record, ))
+		except Exception as e:
+			alert(f"Unable to select recent_soas in correctness on {this_filename_record}: {e}")
+			return
+		this_found = cur.fetchall()
+		cur.close()
+		if len(this_found) > 1:
+			alert(f"When checking recent_soas in corrrectness on {this_filename_record}, found more than one record: {this_found}")
+			return
+		found_recent_soas = this_found[0]
+		root_file_to_check = ""
+		for this_file in soa_matching_date_files:
+			this_soa = os.path.basename(this_file)[0:8]
+			if this_soa in found_recent_soas:
+				continue
+			else:
+				root_file_to_check = this_file
+				soa_file_used_for_testing = os.path.basename(this_file)[0:10]
+		if root_file_to_check == "":
+			try:
+				cur = conn.cursor()
+				cur.execute("update record_info set (is_correct, failure_reason) = (%s, %s) where filename_record = %s", \
+					("n", "Tried with all SOAs for 48 hours", this_filename_record))
+				cur.close()
+			except Exception as e:
+				alert(f"Could not update record_info after end of SOAs in correctness checking after processing record {this_filename_record}: {e}")
+			return
+"""

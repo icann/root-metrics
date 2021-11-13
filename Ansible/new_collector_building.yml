@@ -195,7 +195,7 @@
       - query_elapsed real
       - timeout text
       - soa_found text
-      - recent_soas text[]
+      - likely_soa text
       - is_correct text
       - failure_reason text
       - source_pickle bytea
