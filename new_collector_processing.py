@@ -722,7 +722,7 @@ if __name__ == "__main__":
 	if not os.path.exists(output_dir):
 		os.mkdir(output_dir)
 	# Subdirectories of log directory for root zones
-	saved_root_zone_dir = "f{output_dir}/RootZones"
+	saved_root_zone_dir = f"{output_dir}/RootZones"
 	if not os.path.exists(saved_root_zone_dir):
 		os.mkdir(saved_root_zone_dir)
 	saved_matching_dir = "f{output_dir}/RootMatching"
