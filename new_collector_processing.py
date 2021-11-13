@@ -218,7 +218,7 @@ def process_one_incoming_file(full_file_name):
 			# This chooses only the first SOA record; there really should only be one SOA record in the response
 			this_soa_record = this_resp["answer"][0]["rdata"][0]
 			soa_record_parts = this_soa_record.split(" ")
-			this_soa = soa_record_parts[6]
+			this_soa = soa_record_parts[2]
 			insert_values = insert_values._replace(soa_found=this_soa)
 			# Write out this SOA in the presumed_soas by target, to be used by the C values
 			presumed_soas[insert_values.target] = this_soa
@@ -274,13 +274,13 @@ def check_for_signed_rr(list_of_records_from_section, name_of_rrtype):
 	
 ###############################################################
 
-def process_one_correctness_tuple(tuple_of_type_and_filename_record):
+def process_one_correctness_tuple(tuple_of_type_and_filename_record_and_likely_soa):
 	# request_type is "test" or "normal"
 	#    For "normal", process one filename_record
 	#    For "test", process one id/pickle_blob pair
 	# Normally, this function returns nothing because it is writing the results into the record_info database
 	#    However, if the type is "test", the function does not write into the database but instead returns the results as text
-	(request_type, this_filename_record) = tuple_of_type_and_filename_record
+	(request_type, this_filename_record) = tuple_of_type_and_filename_record_and_likely_soa
 	if not request_type in ("normal", "test"):
 		alert(f"While running process_one_correctness_tuple on {this_filename_record}, got unknown first argument {request_type}")
 		return
@@ -800,7 +800,7 @@ if __name__ == "__main__":
 	try:
 		conn = psycopg2.connect(dbname="metrics", user="metrics")
 		cur = conn.cursor()
-		cur.execute("select filename_record from record_info where record_type = 'C' and is_correct = '?'")
+		cur.execute("select filename_record, likely_soa from record_info where record_type = 'C' and is_correct = '?'")
 	except Exception as e:
 		conn.close()
 		die(f"Unable to start processing correctness with 'select' request: {e}")
@@ -809,7 +809,7 @@ if __name__ == "__main__":
 	# Make a list of tuples with the filename_record
 	full_correctness_list = []
 	for this_initial_correct in initial_correct_to_check:
-		full_correctness_list.append(("normal", this_initial_correct[0]))
+		full_correctness_list.append(("normal", this_initial_correct[0], this_initial_correct[1]))
 	# If limit is set, use only the first few
 	if opts.limit:
 		full_correctness_list = full_correctness_list[0:limit_size]
