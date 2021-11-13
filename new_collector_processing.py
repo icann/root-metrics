@@ -381,6 +381,8 @@ def process_one_correctness_tuple(tuple_of_type_and_filename_record_and_likely_s
 							else:
 								this_comparator.add(this_rdata.upper())
 					if not rrsets_for_checking[this_rrset_key] == root_to_check[this_rrset_key]:
+						"""
+						##################################################################################### DON'T USE SPECIAL IPv6 CHECKING ANY MORE #################################
 						# Before giving up, see if it is a mismatch in the text for IPv6 addresses
 						#   Only check sets that contain exactly one record (IPv6 records in the root zone are this way, hopefully)
 						if len(rrsets_for_checking[this_rrset_key]) == 1 and len(root_to_check[this_rrset_key]) == 1:
@@ -395,6 +397,8 @@ def process_one_correctness_tuple(tuple_of_type_and_filename_record_and_likely_s
 								failure_reasons.append(f"Single RRset value {resp_val} in {this_section_name} in response is different than {root_val} in root zone [vnk]")
 								continue
 						# Here if IPv6 testing failed, but still have RRsets being unequal
+						"""
+						##################################################################################### DON'T USE SPECIAL IPv6 CHECKING ANY MORE #################################
 						#   Shorten the failure_reason
 						rr_fail = rrsets_for_checking[this_rrset_key]
 						root_fail = root_to_check[this_rrset_key]
@@ -548,7 +552,7 @@ def process_one_correctness_tuple(tuple_of_type_and_filename_record_and_likely_s
 			else:
 				this_resp = check_for_signed_rr(resp["authority"], "NS")
 				if this_resp:
-					failure_reasons.append("{} [ktm]".format(this_resp))
+					failure_reasons.append(f"{this_resp} [ktm]")
 		elif (this_qname == ".") and (this_qtype == "NS"):  # Processing for . / NS [amj]
 			# The header AA bit is set. [csz]
 			if not "AA" in resp["flags"]:
