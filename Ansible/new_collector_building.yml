@@ -165,7 +165,6 @@
       name: files_gotten
       columns:
       - filename_short text
-      - retrieved_at timestamp
       - processed_at timestamp
       - version int
       - delay int
