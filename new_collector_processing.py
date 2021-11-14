@@ -330,7 +330,7 @@ def process_one_correctness_tuple(in_tuple):
 		except:
 			alert("While running under --test, could not find and unpickle 'root_name_and_types.pickle'. Exiting.")
 			return
-	elif resp["is_correct"] == "?":
+	elif this_is_correct == "?":
 		one_root_file = f"{saved_matching_dir}/{this_soa_to_check}.matching.pickle"
 		if not os.path.exists(one_root_file):
 			alert(f"When checking correctness on {in_filename_record}, could not find root file {one_root_file}")
@@ -342,7 +342,7 @@ def process_one_correctness_tuple(in_tuple):
 			except:
 				alert(f"Could not unpickle root file {one_root_file} while processing {in_filename_record} for correctness")
 				return
-	elif resp["is_correct"] == "r":
+	elif this_is_correct == "r":
 		#################################### FIX THIS ##############################################################
 		one_root_file = f"{saved_matching_dir}/{this_soa_to_check}.matching.pickle"
 		if not os.path.exists(one_root_file):
@@ -357,7 +357,7 @@ def process_one_correctness_tuple(in_tuple):
 				return
 		#################################### FIX THIS ##############################################################
 	else:
-		alert(f"Got unexpected value for is_correct, {resp['is_correct']}, in {in_filename_record}")
+		alert(f"Got unexpected value for is_correct, {this_is_correct}, in {in_filename_record}")
 		return
 
 	for this_root_to_check in roots_to_check:
@@ -671,16 +671,16 @@ def process_one_correctness_tuple(in_tuple):
 				pared_failure_reasons.append(this_element)
 		failure_reason_text = "\n".join(pared_failure_reasons)
 		if failure_reason_text == "":
-			make_is_correct = "y"
+			new_is_correct = "y"
 		else:
-			make_is_correct = "r"	
+			new_is_correct = "r"	
 		if opts.test:
 			return failure_reason_text
 		else:
 			try:
 				cur = conn.cursor()
 				cur.execute("update record_info set (is_correct, failure_reason) = (%s, %s) where filename_record = %s", \
-					(make_is_correct, failure_reason_text, in_filename_record))
+					(new_is_correct, failure_reason_text, in_filename_record))
 				cur.close()
 			except Exception as e:
 				alert(f"Could not update record_info in correctness checking after processing record {in_filename_record}: {e}")
