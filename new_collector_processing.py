@@ -4,7 +4,7 @@
 # Run as the metrics user
 # Three-letter items in square brackets (such as [xyz]) refer to parts of rssac-047.md
 
-import argparse, datetime, gzip, logging, os, pickle, psycopg2, socket, subprocess, tempfile, time
+import argparse, datetime, gzip, logging, os, pickle, psycopg2, subprocess, tempfile, time
 from pathlib import Path
 from concurrent import futures
 from collections import namedtuple
@@ -406,24 +406,6 @@ def process_one_correctness_tuple(in_tuple):
 							else:
 								this_comparator.add(this_rdata.upper())
 					if not rrsets_for_checking[this_rrset_key] == root_to_check[this_rrset_key]:
-						"""
-						##################################################################################### DON'T USE SPECIAL IPv6 CHECKING ANY MORE #################################
-						# Before giving up, see if it is a mismatch in the text for IPv6 addresses
-						#   Only check sets that contain exactly one record (IPv6 records in the root zone are this way, hopefully)
-						if len(rrsets_for_checking[this_rrset_key]) == 1 and len(root_to_check[this_rrset_key]) == 1:
-							resp_val = rrsets_for_checking[this_rrset_key].pop()
-							root_val = root_to_check[this_rrset_key].pop()
-							try:
-								resp_ipv6 = socket.inet_pton(socket.AF_INET6, resp_val)
-								root_ipv6 = socket.inet_pton(socket.AF_INET6, root_val)
-								if resp_ipv6 == root_ipv6:
-									continue
-							except:
-								failure_reasons.append(f"Single RRset value {resp_val} in {this_section_name} in response is different than {root_val} in root zone [vnk]")
-								continue
-						# Here if IPv6 testing failed, but still have RRsets being unequal
-						"""
-						##################################################################################### DON'T USE SPECIAL IPv6 CHECKING ANY MORE #################################
 						#   Shorten the failure_reason
 						rr_fail = rrsets_for_checking[this_rrset_key]
 						root_fail = root_to_check[this_rrset_key]
