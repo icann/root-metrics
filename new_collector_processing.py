@@ -96,10 +96,7 @@ def process_one_incoming_file(full_file_name):
 		# First define a function to insert records into one of the two databases
 		def insert_from_template(this_update_cmd_string, this_update_values):
 			with conn.cursor() as curi:
-				try:
-					curi.execute(this_update_cmd_string, this_update_values)
-				except Exception as e:
-					alert("Could not insert with '{}' / '{}': '{}'".format(this_update_cmd_string, this_update_values, e))
+				curi.execute(this_update_cmd_string, this_update_values)
 				return
 
 		# Check for wrong type of file
@@ -799,7 +796,7 @@ if __name__ == "__main__":
 	with psycopg2.connect(dbname="metrics", user="metrics") as conn:
 		with conn.cursor() as cur:
 			cur.execute("select filename_record from record_info where record_type = 'C' and is_correct = '?'")
-		initial_correct_to_check = cur.fetchall()
+			initial_correct_to_check = cur.fetchall()
 	# Make a list of tuples with the filename_record
 	full_correctness_list = []
 	for this_initial_correct in initial_correct_to_check:
