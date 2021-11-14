@@ -670,21 +670,29 @@ def process_one_correctness_tuple(in_tuple):
 			if not this_element == "":
 				pared_failure_reasons.append(this_element)
 		failure_reason_text = "\n".join(pared_failure_reasons)
+		# Determine the new value if is_correct
 		if failure_reason_text == "":
 			new_is_correct = "y"
-		else:
+		elif this_is_correct == "?":
 			new_is_correct = "r"	
+		elif this_is_correct == "r":
+			new_is_correct = "n"	
+		# If this was a test, just return the failure_reason_text
 		if opts.test:
 			return failure_reason_text
-		else:
-			try:
-				cur = conn.cursor()
-				cur.execute("update record_info set (is_correct, failure_reason) = (%s, %s) where filename_record = %s", \
-					(new_is_correct, failure_reason_text, in_filename_record))
-				cur.close()
-			except Exception as e:
-				alert(f"Could not update record_info in correctness checking after processing record {in_filename_record}: {e}")
+		# Here if it is not a test. Enter the new value in the database, and stop if it is a "y"
+		try:
+			cur = conn.cursor()
+			cur.execute("update record_info set (is_correct, failure_reason) = (%s, %s) where filename_record = %s", \
+				(new_is_correct, failure_reason_text, in_filename_record))
+			cur.close()
+		except Exception as e:
+			alert(f"Could not update record_info in correctness checking after processing record {in_filename_record}: {e}")
+		# As soon as you get a correct entry return; otherwise, go back through the loop
+		if new_is_correct == "y":
 			return
+	# Here at the end of the loop over the roots to check
+	return
 
 ###############################################################
 
