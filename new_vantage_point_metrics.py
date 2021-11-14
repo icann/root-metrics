@@ -298,14 +298,14 @@ if __name__ == "__main__":
 	with concurrent.futures.ThreadPoolExecutor() as executor:
 		# Calling sequence for do_one_query() is: target, internet, ip_addr, transport, query, test_type
 		returned_futures = {}
-		# First launch the ./SOA queries (S)
+		# First launch the correctness tests (C)
+		for (this_target, this_internet, this_ip_addr, this_transport, this_q_and_t) in correctness_tuples:
+			returned_futures[executor.submit(do_one_query, this_target, this_internet, this_ip_addr, this_transport, this_q_and_t, "C")] = None
+		# Then launch the ./SOA queries (S)
 		for (this_target, this_dict) in test_targets.items():
 			for this_transport in ["udp", "tcp" ]:
 				for this_internet in ["v4", "v6" ]:
 					returned_futures[executor.submit(do_one_query, this_target, this_internet, this_dict[this_internet][0], this_transport, "./SOA", "S")] = None
-		# Then launch the correctness tests (C)
-		for (this_target, this_internet, this_ip_addr, this_transport, this_q_and_t) in correctness_tuples:
-			returned_futures[executor.submit(do_one_query, this_target, this_internet, this_ip_addr, this_transport, this_q_and_t, "C")] = None
 		# Collect the results
 		for this_future in concurrent.futures.as_completed(returned_futures):
 			try:
@@ -337,13 +337,13 @@ if __name__ == "__main__":
 	commands_clock_stop = int(time.time())
 
 	# Save output as a dict
-	#   "v": int, version of this program (2 for now)
+	#   "v": int, version of this program (3 for now)
 	#   "d": int, the delay used: wait_first
 	#   "e": float, elapsed time for commands: commands_clock_stop - commands_clock_start
 	#   "r": list, the records
 	#   "s", text, the output from scamper
 	output_dict = {
-		"v": 2,
+		"v": 3,
 		"d": wait_first,
 		"e": commands_clock_stop - commands_clock_start,
 		"r": all_results,

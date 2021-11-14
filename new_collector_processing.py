@@ -152,8 +152,8 @@ def process_one_incoming_file(full_file_name):
 		die(f"Object in {full_file_name} did not contain keys d, e, r, s, and v")
 	
 	# Update the metadata
-	update_string = "update files_gotten set processed_at=%s, version=%s, delay=%s, elapsed=%s where filename_short=%s"
-	update_values = (datetime.datetime.now(datetime.timezone.utc), in_obj["v"], in_obj["d"], in_obj["e"], short_file_name) 
+	update_string = "update files_gotten set processed_at=%s, version=%s, delay=%s, elapsed=%s, route_string=%s where filename_short=%s"
+	update_values = (datetime.datetime.now(datetime.timezone.utc), in_obj["v"], in_obj["d"], in_obj["e"], in_obj["s"], short_file_name) 
 	insert_from_template(update_string, update_values)
 
 	# Get the derived date and VP name from the file name
@@ -164,11 +164,6 @@ def process_one_incoming_file(full_file_name):
 	except Exception as e:
 		conn.close()
 		die(f"Could not split the file name {short_file_name} into a datetime: {e}")
-
-	# Log the route information from in_obj["s"]
-	update_string = "insert into route_info (filename_short, date_derived, route_string) values (%s, %s, %s)"
-	update_values = (short_file_name, file_date, in_obj["s"]) 
-	insert_from_template(update_string, update_values)
 
 	# Named tuple for the record templates
 	template_names_raw = "filename_record date_derived target internet transport ip_addr record_type query_elapsed timeout soa_found " \

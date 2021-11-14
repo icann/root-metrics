@@ -170,14 +170,6 @@
       - version int
       - delay int
       - elapsed int
-  - name: Create table for route information
-    postgresql_table:
-      login_user: metrics
-      db: metrics
-      name: route_info
-      columns:
-      - filename_short text
-      - date_derived timestamp
       - route_string text
   - name: Create table for SOA and correctness records
     postgresql_table:
