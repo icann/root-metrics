@@ -776,8 +776,11 @@ if __name__ == "__main__":
 					alert(f"Got rowcount of -1 for {short_file_name}; skipping this file")
 					continue
 				files_gotten_check = cur.fetchone()
-				if files_gotten_check[0] > 0:
+				if files_gotten_check[0] == 1:
 					all_files.remove(full_file_name)
+				else:
+					all_files.remove(full_file_name)
+					alert(f"Got file_gotten_check of {files_gotten_check[0]} for {short_file_name}")
 
 	processed_incoming_count = 0
 	processed_incoming_start = time.time()
@@ -795,7 +798,7 @@ if __name__ == "__main__":
 	# Iterate over the records where is_correct is "?"
 	with psycopg2.connect(dbname="metrics", user="metrics") as conn:
 		with conn.cursor() as cur:
-			cur.execute("select filename_record from record_info where record_type = 'C' and is_correct = '?'")
+			cur.execute("select filename_record from record_info where record_type = 'C' and is_correct in ('?', 'r')")
 			initial_correct_to_check = cur.fetchall()
 	# Make a list of tuples with the filename_record
 	full_correctness_list = []
