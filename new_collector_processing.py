@@ -776,7 +776,9 @@ if __name__ == "__main__":
 					alert(f"Got rowcount of -1 for {short_file_name}; skipping this file")
 					continue
 				files_gotten_check = cur.fetchone()
-				if files_gotten_check[0] == 1:
+				if files_gotten_check[0] == 0:
+					continue
+				elif files_gotten_check[0] == 1:
 					all_files.remove(full_file_name)
 				else:
 					all_files.remove(full_file_name)
