@@ -4,7 +4,7 @@
 # Run as the metrics user
 # Three-letter items in square brackets (such as [xyz]) refer to parts of rssac-047.md
 
-import argparse, datetime, gzip, logging, os, pickle, psycopg2, subprocess, tempfile, time
+import argparse, datetime, glob, gzip, logging, os, pickle, psycopg2, subprocess, time
 from pathlib import Path
 from concurrent import futures
 from collections import namedtuple
@@ -302,19 +302,22 @@ def process_one_correctness_tuple(in_tuple):
 					alert(f"Could not unpickle root file {one_root_file} while processing {in_filename_record} for correctness")
 					return
 		elif this_is_correct == "r":
-			#################################### FIX THIS ##############################################################
-			one_root_file = f"{saved_matching_dir}/{this_soa_to_check}.matching.pickle"
-			if not os.path.exists(one_root_file):
-				alert(f"When checking correctness on {in_filename_record}, could not find root file {one_root_file}")
-				return
-			# Try to read the file	
-			with open(one_root_file, mode="rb") as root_contents_f:
-				try:
-					roots_to_check.append(pickle.load(root_contents_f))
-				except:
-					alert(f"Could not unpickle root file {one_root_file} while processing {in_filename_record} for correctness")
-					return
-			#################################### FIX THIS ##############################################################
+			# Get the starting date from the file name, then pick all zone files whose names have that date or the date from the two days before
+			start_date = datetime.date(int(in_filename_record[0:4]), int(in_filename_record[4:6]), int(in_filename_record[6:8]))
+			start_date_minus_one = start_date - datetime.timedelta(days=1)
+			start_date_minus_two = start_date - datetime.timedelta(days=2)
+			soa_matching_date_files = []
+			for this_start in [start_date, start_date_minus_one, start_date_minus_two]:
+				soa_matching_date_files.extend(glob.glob(str(Path(f"{saved_matching_dir}/{this_start.strftime('%Y%m%d')}" + "*.matching.pickle"))))
+			# Try to read the files
+			for this_root_file in soa_matching_date_files:
+				with open(this_root_file, mode="rb") as root_contents_f:
+					try:
+						roots_to_check.append(pickle.load(root_contents_f))
+					except:
+						alert(f"Could not unpickle root file {this_root_file} while processing {in_filename_record} for correctness")
+						return
+			#################################### STILL NEED TO ADD THE SOA *AFTER* this_soa_to_check ##############################################################
 		else:
 			alert(f"Got unexpected value for is_correct, {this_is_correct}, in {in_filename_record}")
 			return
@@ -386,6 +389,7 @@ def process_one_correctness_tuple(in_tuple):
 
 			"""
 			######################################################################## TEMPORARILY NOT VALIDATING #####################################################################
+			import tempfile
 			# Check that each of the RRsets that are signed have their signatures validated. [yds]
 			#   Send all the records in each section to the function that checks for validity
 			if opts.test:
@@ -818,52 +822,3 @@ if __name__ == "__main__":
 	
 	log("Finished overall collector processing")	
 	exit()
-
-####################################################################
-
-# Saved in case the move to get rid of recent_soas fails
-"""
-import glob
-	# root_to_check is one of the roots from the 48 hours preceding the record
-		# Get the starting date from the file name, then pick all zone files whose names have that date or the date from the two days before
-		start_date = datetime.date(int(in_filename_record[0:4]), int(in_filename_record[4:6]), int(in_filename_record[6:8]))
-		start_date_minus_one = start_date - datetime.timedelta(days=1)
-		start_date_minus_two = start_date - datetime.timedelta(days=2)
-		soa_matching_date_files = []
-		for this_start in [start_date, start_date_minus_one, start_date_minus_two]:
-			soa_matching_date_files.extend(glob.glob(str(Path(f"{saved_matching_dir}/{this_start.strftime('%Y%m%d')}" + "*.matching.pickle"))))
-		# See if any of the matching files are not listed in the recent_soas field in the record; if so, try the highest one
-		soa_matching_date_files = sorted(soa_matching_date_files, reverse=True)
-		if len(soa_matching_date_files) == 0:
-			alert(f"Found no SOA matching files for {in_filename_record} with dates starting {start_date.strftime('%Y%m%d')}")
-			return
-		try:
-			cur = conn.cursor()
-			cur.execute("select recent_soas from record_info where filename_record = %s", (in_filename_record, ))
-		except Exception as e:
-			alert(f"Unable to select recent_soas in correctness on {in_filename_record}: {e}")
-			return
-		this_found = cur.fetchall()
-		cur.close()
-		if len(this_found) > 1:
-			alert(f"When checking recent_soas in corrrectness on {in_filename_record}, found more than one record: {this_found}")
-			return
-		found_recent_soas = this_found[0]
-		root_file_to_check = ""
-		for this_file in soa_matching_date_files:
-			this_soa = os.path.basename(this_file)[0:8]
-			if this_soa in found_recent_soas:
-				continue
-			else:
-				root_file_to_check = this_file
-				soa_file_used_for_testing = os.path.basename(this_file)[0:10]
-		if root_file_to_check == "":
-			try:
-				cur = conn.cursor()
-				cur.execute("update record_info set (is_correct, failure_reason) = (%s, %s) where filename_record = %s", \
-					("n", "Tried with all SOAs for 48 hours", in_filename_record))
-				cur.close()
-			except Exception as e:
-				alert(f"Could not update record_info after end of SOAs in correctness checking after processing record {in_filename_record}: {e}")
-			return
-"""
