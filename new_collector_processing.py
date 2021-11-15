@@ -94,9 +94,9 @@ def process_one_incoming_file(full_file_name):
 		conn.set_session(autocommit=True)
 
 		# First define a function to insert records into one of the two databases
-		def insert_from_template(this_update_cmd_string, this_update_values):
+		def insert_from_template(this_cmd_string, this_values):
 			with conn.cursor() as curi:
-				curi.execute(this_update_cmd_string, this_update_values)
+				curi.execute(this_cmd_string, this_values)
 				return
 
 		# Check for wrong type of file
@@ -121,9 +121,9 @@ def process_one_incoming_file(full_file_name):
 			die(f"Object in {full_file_name} did not contain keys d, e, r, s, and v")
 	
 		# Update the metadata
-		update_string = "update files_gotten set processed_at=%s, version=%s, delay=%s, elapsed=%s, route_string=%s where filename_short=%s"
-		update_values = (datetime.datetime.now(datetime.timezone.utc), in_obj["v"], in_obj["d"], in_obj["e"], in_obj["s"], short_file_name) 
-		insert_from_template(update_string, update_values)
+		insert_files_string = "insert into files_gotten (processed_at, version, delay, elapsed, route_string, filename_short) values (%s, %s, %s, %s, %s, %s)"
+		insert_files_values = (datetime.datetime.now(datetime.timezone.utc), in_obj["v"], in_obj["d"], in_obj["e"], in_obj["s"], short_file_name) 
+		insert_from_template(insert_files_string, insert_files_values)
 
 		# Get the derived date and VP name from the file name
 		(file_date_text, _) = short_file_name.split("-")
