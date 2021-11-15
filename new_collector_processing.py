@@ -635,7 +635,11 @@ def process_one_correctness_tuple(in_tuple):
 			elif this_is_correct == "?":
 				new_is_correct = "r"	
 			elif this_is_correct == "r":
-				new_is_correct = "n"	
+				new_is_correct = "n"
+				soas_checked = []
+				for this_file in soa_matching_date_files:
+					soas_checked.append(this_file.replace(f"{saved_matching_dir}/", "").replace(".matching.pickle", ""))
+				failure_reason_text += f"\nCorrectness was first tested against {this_soa_to_check} and then later against {' '.join(soas_checked)}"
 			# If this was a test, just return the failure_reason_text
 			if opts.test:
 				return failure_reason_text
