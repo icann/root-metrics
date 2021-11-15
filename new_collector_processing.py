@@ -5,6 +5,7 @@
 # Three-letter items in square brackets (such as [xyz]) refer to parts of rssac-047.md
 
 import argparse, datetime, glob, gzip, logging, os, pickle, psycopg2, subprocess, time
+import dns.ipv6
 from pathlib import Path
 from concurrent import futures
 from collections import namedtuple
@@ -367,9 +368,11 @@ def process_one_correctness_tuple(in_tuple):
 						if not this_rrset_key in this_root_to_check:
 							failure_reasons.append(f"{this_rrset_key} was in the {this_section_name} section in the response, but not the root [vnk]")
 						else:
+							z_short = rrsets_for_checking[this_rrset_key]
+							r_short = this_root_to_check[this_rrset_key]
 							if not len(rrsets_for_checking[this_rrset_key]) == len(this_root_to_check[this_rrset_key]):
-								failure_reasons.append("RRset {} in {} in response has a different length than {} in root zone [vnk]".\
-									format(rrsets_for_checking[this_rrset_key], this_section_name, this_root_to_check[this_rrset_key]))
+								failure_reasons.append(f"{this_rrset_key} in {this_section_name} in the response has {len(z_short)} members instead of {len(r_short)} in root zone;" +
+									" {z_short} instead of {r_short} [vnk]")
 								continue
 							# Need to match case, so uppercase all the records in both sets
 							#   It is OK to do this for any type that is not displayed as Base64, and RRSIG is already excluded by [ygx]
@@ -378,14 +381,13 @@ def process_one_correctness_tuple(in_tuple):
 								for this_rdata in this_comparator.copy():
 									this_comparator.remove(this_rdata)
 									if this_rrset_key.endswith("/DNSKEY"):
-										this_comparator.add(this_rdata)
+										this_comparator.add(this_rdata.replace(" ", ""))
+									elif this_rrset_key.endswith("/AAAA"):
+										this_comparator.add(dns.ipv6.inet_ntoa(dns.ipv6.inet_aton(this_rdata)))
 									else:
 										this_comparator.add(this_rdata.upper())
 							if not rrsets_for_checking[this_rrset_key] == this_root_to_check[this_rrset_key]:
-								#   Shorten the failure_reason
-								rr_fail = rrsets_for_checking[this_rrset_key]
-								root_fail = this_root_to_check[this_rrset_key]
-								failure_reasons.append(f"Set of RRset value {rr_fail} in {this_section_name} in response is different than {root_fail} in root zone [vnk]")
+								failure_reasons.append(f"Set of RRset value {z_short} in {this_section_name} in response is different than {r_short} in root zone [vnk]")
 
 			"""
 			######################################################################## TEMPORARILY NOT VALIDATING #####################################################################

@@ -5,7 +5,6 @@
 
 import argparse, logging, os, pickle, re, requests
 from pathlib import Path
-import dns.ipv6
 
 def cleanup(text_from_zone_file):
 	''' Clean up the text by collapsing whitespaces and removing comments '''
@@ -29,8 +28,6 @@ def get_names_and_types(in_text):
 		this_key = "{}/{}".format(this_name, this_type)
 		if not this_key in root_name_and_types:
 			root_name_and_types[this_key] = set()
-		if this_type == "AAAA":
-			this_rdata = dns.ipv6.inet_ntoa(dns.ipv6.inet_aton(this_rdata))
 		root_name_and_types[this_key].add(this_rdata)
 	return root_name_and_types
 
