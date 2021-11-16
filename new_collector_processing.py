@@ -408,9 +408,11 @@ def process_one_correctness_tuple(in_tuple):
 							if (this_rec_dict["name"] == rec_qname) and (this_rec_dict["rdtype"] == rec_qtype):
 								for this_signed_rdata in this_rec_dict["rdata"]:
 									signed_rrset.add(dns.rdata.from_text(class_in, dns.rdatatype.from_text(rec_qtype), this_signed_rdata))
-							if (this_rec_dict["name"] == rec_qname) and (this_rec_dict["rdtype"] == "RRSIG"):
-								for this_rrsig_data in this_rec_dict["rdata"]:
-									rrsig_rrset.add(dns.rdata.from_text(class_in, dns.rdatatype.from_text("RRSIG"), this_rrsig_data))
+							elif (this_rec_dict["name"] == rec_qname) and (this_rec_dict["rdtype"] == "RRSIG"):
+								for this_rrsig_rdata in this_rec_dict["rdata"]:
+									(first_field, _) = this_rrsig_rdata.split(" ", maxsplit=1)
+									if first_field == rec_qtype:
+										rrsig_rrset.add(dns.rdata.from_text(class_in, dns.rdatatype.from_text("RRSIG"), this_rrsig_rdata))
 						try:
 							dns.dnssec.validate(signed_rrset, rrsig_rrset, root_keys_for_matching)
 						except Exception as e:
