@@ -398,7 +398,7 @@ def process_one_correctness_tuple(in_tuple):
 						rec_rdata = this_rec_dict["rdata"]
 						if rec_qtype == "RRSIG":
 							(first_field, _) = rec_rdata[0].split(" ", maxsplit=1)
-							signed_tuples.add(tuple(rec_qname, first_field))
+							signed_tuples.add((rec_qname, first_field))
 					# Make an RRset of the records that were signed, an RRset of those RRSIGS, and then validate
 					for (this_signed_name, this_signed_type) in signed_tuples:
 						for this_rec_dict in resp[this_section_name]:
