@@ -381,11 +381,10 @@ def process_one_correctness_tuple(in_tuple):
 			# Check that each of the RRsets that are signed have their signatures validated. [yds]
 			#    Make these calls shorter
 			class_in = dns.rdataclass.from_text("IN")
-			type_dnskey = dns.rdatatype.from_text("DNSKEY")
 			# Get the ./DNSKEY records for this root
-			root_rdataset = dns.rdataset.Rdataset(class_in, type_dnskey)
+			root_rdataset = dns.rdataset.Rdataset(class_in, dns.rdatatype.from_text("DNSKEY"))
 			for this_root_dnskey in this_root_to_check["./DNSKEY"]:
-				root_rdataset.add(dns.rdata.from_text(class_in, type_dnskey, this_root_dnskey))
+				root_rdataset.add(dns.rdata.from_text(class_in, dns.rdatatype.from_text("DNSKEY"), this_root_dnskey))
 			root_keys_for_matching = { dns.name.from_text("."): root_rdataset }
 			# Check each section for signed records
 			for this_section_name in [ "answer", "authority", "additional" ]:
@@ -402,8 +401,8 @@ def process_one_correctness_tuple(in_tuple):
 					# Make an RRset of the records that were signed, an RRset of those RRSIGS, and then validate
 					for signed_rrset_id in signed_rrsets:
 						(rec_qname, rec_qtype) = signed_rrset_id.split("&")
-						signed_rrset = dns.rrset.RRset(rec_qname, class_in, dns.rdatatype.from_text(rec_qtype))
-						rrsig_rrset = dns.rrset.RRset(rec_qname, class_in, dns.rdatatype.from_text("RRSIG"))
+						signed_rrset = dns.rrset.RRset(dns.name.from_text(rec_qname), class_in, dns.rdatatype.from_text(rec_qtype))
+						rrsig_rrset = dns.rrset.RRset(dns.name.from_text(rec_qname), class_in, dns.rdatatype.from_text("RRSIG"))
 						for this_rec_dict in resp[this_section_name]:
 							if (this_rec_dict["name"] == rec_qname) and (this_rec_dict["rdtype"] == rec_qtype):
 								for this_signed_rdata in this_rec_dict["rdata"]:
