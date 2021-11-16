@@ -5,7 +5,7 @@
 # Three-letter items in square brackets (such as [xyz]) refer to parts of rssac-047.md
 
 import argparse, datetime, glob, gzip, logging, os, pickle, psycopg2, subprocess, time
-import dns.ipv6
+import dns.dnssec, dns.ipv6, dns.rdata, dns.rrset
 from pathlib import Path
 from concurrent import futures
 from collections import namedtuple
@@ -278,6 +278,12 @@ def process_one_correctness_tuple(in_tuple):
 			alert(f"Could not unpickle the source_pickle in {in_filename_record}: {e}")
 			return
 
+		#  Get the question
+		#   Only look at the first record in the question section; it is completely unclear what to do if the the question section has more records
+		question_record_dict = resp["question"][0]
+		this_qname = question_record_dict["name"]
+		this_qtype = question_record_dict["rdtype"]
+
 		# roots_to_check holds all the contents of roots to check in this round
 		#   For type "C" and is_correct "?", it is just the root associated with	likely_soa
 		#   For type "C" and is_correct "r", it is just the roots for two days before likely_soa, and the SOA after
@@ -323,29 +329,12 @@ def process_one_correctness_tuple(in_tuple):
 			alert(f"Got unexpected value for is_correct, {this_is_correct}, in {in_filename_record}")
 			return
 
+		# Go through the correctness checking against each root, stopping if you get one root for which everything is correct
 		for this_root_to_check in roots_to_check:
-			# Get the question
-			#   Only look at the first record in the question section
-			question_record_dict = resp["question"][0]
-			this_qname = question_record_dict["name"]
-			this_qtype = question_record_dict["rdtype"]
-			# See if the question is ./SOA; if so, check that the answer is the same as the this_soa_to_check
-			#   If not, stop right here and ask for a retry
-			if this_qname == "." and this_qtype == "SOA":
-				this_soa_record = resp["answer"][0]["rdata"][0]
-				soa_record_parts = this_soa_record.split(" ")
-				soa_in_answer = soa_record_parts[2]
-				if not soa_in_answer == this_soa_to_check:
-					with conn.cursor() as cur:
-						cur.execute("update record_info set (is_correct, failure_reason) = (%s, %s) where filename_record = %s", \
-							("r", "./SOA did not match likely_soa", in_filename_record))
-					return
-
 			# failure_reasons holds an expanding set of reasons
 			#   It is checked at the end of testing, and all "" entries eliminted
 			#   If it is empty, then all correctness tests passed
 			failure_reasons = []
-
 			# Check that each of the RRsets in the Answer, Authority, and Additional sections match RRsets found in the zone [vnk]
 			#   This check does not include any RRSIG RRsets that are not named in the matching tests below. [ygx]
 			# This check does not include any EDNS0 NSID RRset [pvz]
@@ -389,48 +378,43 @@ def process_one_correctness_tuple(in_tuple):
 							if not rrsets_for_checking[this_rrset_key] == this_root_to_check[this_rrset_key]:
 								failure_reasons.append(f"Set of RRset value {z_short} in {this_section_name} in response is different than {r_short} in root zone [vnk]")
 
-			"""
-			######################################################################## TEMPORARILY NOT VALIDATING #####################################################################
-			import tempfile
 			# Check that each of the RRsets that are signed have their signatures validated. [yds]
-			#   Send all the records in each section to the function that checks for validity
-			if opts.test:
-				recent_soa_root_filename = "root_zone.txt"
-			else:
-				recent_soa_root_filename = f"{saved_root_zone_dir}/{this_soa_to_check}.root.txt"
-			if not os.path.exists(recent_soa_root_filename):
-				alert(f"Could not find {recent_soa_root_filename} for correctness validation, so skipping")
-			else:
-				for this_section_name in [ "answer", "authority", "additional" ]:
-					if not resp.get(this_section_name):
-						continue
-					this_section_rrs = []
-					for this_rec_in_section in resp[this_section_name]:
-						this_section_rrs.extend(this_rec_in_section["rdata"])
-					# Only act if this section has an RRSIG
-					rrsigs_over_rrtypes = set()
-					for this_in_rr_text in this_section_rrs:
-						# The following splits into 5 parts to expose the first field of RRSIGs
-						rr_parts = this_in_rr_text.split(" ", maxsplit=5)
-						if len(rr_parts) > 3:
-							if rr_parts[3] == "RRSIG":
-								rrsigs_over_rrtypes.add(rr_parts[4])
-					if len(rrsigs_over_rrtypes) > 0:
-						with tempfile.NamedTemporaryFile(mode="wt") as validate_f:
-							validate_fname = validate_f.name
-							# Go through each record, and only save the RRSIGs and the records they cover
-							for this_in_rr_text in this_section_rrs:
-								rr_parts = this_in_rr_text.split(" ", maxsplit=4)
-								if (rr_parts[3] == "RRSIG") or (rr_parts[3] in rrsigs_over_rrtypes):
-									validate_f.write(this_in_rr_text+"\n")
-							validate_f.seek(0)
-							validate_p = subprocess.run(f"{target_dir}/getdns_validate -s {recent_soa_root_filename} {validate_fname}", shell=True, text=True, check=True, capture_output=True)
-							validate_output = validate_p.stdout.splitlines()[0]
-							(validate_return, _) = validate_output.split(" ", maxsplit=1)
-							if not validate_return == "400":
-								failure_reasons.append("Validating {this_section_name} in {in_filename_record} got error of {validate_return} [yds]")
-			######################################################################## TEMPORARILY NOT VALIDATING #####################################################################
-			"""
+			#    Make these calls shorter
+			class_in = dns.rdataclass.from_text("IN")
+			type_dnskey = dns.rdatatype.from_text("DNSKEY")
+			# Get the ./DNSKEY records for this root
+			root_rdataset = dns.rdataset.Rdataset(class_in, type_dnskey)
+			for this_root_dnskey in this_root_to_check["./DNSKEY"]:
+				root_rdataset.add(dns.rdata.from_text(class_in, type_dnskey, this_root_dnskey))
+			root_keys_for_matching = { dns.name.from_text("."): root_rdataset }
+			# Check each section for signed records
+			for this_section_name in [ "answer", "authority", "additional" ]:
+				if resp.get(this_section_name):
+					signed_tuples = set()
+					# Find the RRSIG records to know what is signed
+					for this_rec_dict in resp[this_section_name]:
+						rec_qname = this_rec_dict["name"]
+						rec_qtype = this_rec_dict["rdtype"]
+						rec_rdata = this_rec_dict["rdata"]
+						if rec_qtype == "RRSIG":
+							(first_field, _) = rec_rdata.split(" ", maxsplit=1)
+							signed_tuples.add(tuple(rec_qname, first_field))
+					# Make an RRset of the records that were signed, an RRset of those RRSIGS, and then validate
+					for (this_signed_name, this_signed_type) in signed_tuples:
+						for this_rec_dict in resp[this_section_name]:
+							if (this_rec_dict["name"] == this_signed_name) and (this_rec_dict["rdtype"] == this_signed_type):
+								signed_rrset = dns.rrset.RRset(this_rec_dict["name"], class_in, dns.rdatatype.from_text(this_rec_dict["rdtype"]))
+								for this_signed_rdata in this_rec_dict["rdata"]:
+									signed_rrset.add(dns.rdata.from_text(class_in, dns.rdatatype.from_text(this_rec_dict["rdtype"]), this_signed_rdata))
+							if (this_rec_dict["name"] == this_signed_name) and (this_rec_dict["rdtype"] == "RRSIG"):
+								rrsig_rrset = dns.rrset.RRset(this_rec_dict["name"], class_in, dns.rdatatype.from_text("RRSIG"))
+								for this_signed_rdata in this_rec_dict["rdata"]:
+									rrsig_rrset.add(dns.rdata.from_text(class_in, dns.rdatatype.from_text("RRSIG"), this_signed_rdata))
+							try:
+								dns.dnssec.validate(signed_rrset, rrsig_rrset, root_keys_for_matching)
+							except Exception as e:
+								failed_validation_name = f"{this_section_name}/{this_rec_dict['name']}/{this_rec_dict['rdtype']}"
+								failure_reasons.append(f"Validating {failed_validation_name} in {in_filename_record} got error of {e} [yds]")
 	
 			# Check that all the parts of the resp structure are correct, based on the type of answer
 			if resp["rcode"] == "NOERROR":
@@ -453,11 +437,11 @@ def process_one_correctness_tuple(in_tuple):
 					if not auth_ns_for_qname == root_ns_for_qname:
 						failure_reasons.append(f"NS RRset in Authority was {auth_ns_for_qname}, but NS from root was {root_ns_for_qname} [pdd]")
 					# If the DS RRset for the query name exists in the zone: [hue]
-					if this_root_to_check.get("{}/DS".format(this_qname)):
+					if this_root_to_check.get(f"{this_qname}/DS"):
 						# The Authority section contains the signed DS RRset for the query name. [kbd]
 						this_resp = check_for_signed_rr(resp["authority"], "DS")
 						if this_resp:
-							failure_reasons.append("{} [kbd]".format(this_resp))
+							failure_reasons.append(f"{this_resp} [kbd]")
 					else:  # If the DS RRset for the query name does not exist in the zone: [fot]
 						# The Authority section contains no DS RRset. [bgr]
 						for this_rec_dict in resp["authority"]:
