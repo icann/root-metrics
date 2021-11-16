@@ -87,16 +87,6 @@
       src: ../vp_known_hosts
       dest: /home/metrics/.ssh/known_hosts
       mode: go-rwx
-  - name: make Source/
-    file:
-      path: /home/metrics/Source
-      mode: u+wrx,go+rx
-      state: directory
-  - name: make Target/
-    file:
-      path: /home/metrics/Target
-      mode: u+wrx,go+rx
-      state: directory
   - name: make Incoming/
     file:
       path: /home/metrics/Incoming
@@ -109,24 +99,6 @@
     copy:
       src: ../new_vp_list.txt
       dest: /home/metrics/vp_list.txt
-  - name: Put the source for getdns_validate
-    copy:
-      src: ../getdns_validate.c
-      dest: /home/metrics/Source/getdns_validate.c
-  - name: Make getdns_validate 1
-    shell:
-      chdir: /home/metrics
-      cmd: "gcc -g -O2 -Wall -I. -I/usr/include -std=c99 -c /home/metrics/Source/getdns_validate.c -o /home/metrics/Target/getdns_validate.o"
-      creates: /home/metrics/Target/getdns_validate.o
-  - name: Make getdns_validate 2
-    shell:
-      chdir: /home/metrics
-      cmd: "libtool --tag=CC --mode=link gcc -g -O2 -Wall -I. -I/usr/include -std=c99 -L/usr/lib -lgetdns -lgetdns_ext_event -lunbound -lidn -lldns -o /home/metrics/Target/getdns_validate /home/metrics/Target/getdns_validate.o"
-      creates: /home/metrics/Target/getdns_validate
-  - name: Put root-ds.txt
-    copy:
-      src: ../root-ds.txt
-      dest: /home/metrics/Target/root-ds.txt
   - name: Pull or freshen the Github repo
     git:
       repo: 'https://github.com/icann/root-metrics.git'
