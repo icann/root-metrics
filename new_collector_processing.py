@@ -118,8 +118,8 @@ def process_one_incoming_file(full_file_name):
 		except Exception as e:
 			die(f"Could not unpickle {full_file_name}: {e}")
 		# Sanity check the record
-		if not ("v" in in_obj) and ("d" in in_obj) and ("e" in in_obj) and ("r" in in_obj) and ("s" in in_obj):
-			die(f"Object in {full_file_name} did not contain keys d, e, r, s, and v")
+		if not ("v" in in_obj) and ("d" in in_obj) and ("e" in in_obj) and ("l" in in_obj) and ("r" in in_obj) and ("s" in in_obj):
+			die(f"Object in {full_file_name} did not contain keys d, e, l, r, s, and v")
 	
 		# Update the metadata
 		insert_files_string = "insert into files_gotten (processed_at, version, delay, elapsed, route_string, filename_short) values (%s, %s, %s, %s, %s, %s)"
@@ -148,7 +148,6 @@ def process_one_incoming_file(full_file_name):
 		#   This is a bit funky, because in this loop, only values for S records are written out.
 		#   C records are saved for a different loop after this in order to give a likely SOA for the record
 		c_records_for_later = {}
-		presumed_soas = {}
 		response_count = 0
 		for this_resp in in_obj["r"]:
 			response_count += 1  # response_count is 1-based, not 0-based
@@ -161,7 +160,8 @@ def process_one_incoming_file(full_file_name):
 			insert_template = f"insert into record_info ({template_names_with_commas}) values ({percent_s_string})"
 			insert_values = insert_values_template(filename_record=short_name_and_count, date_derived=file_date, \
 				target=this_resp["target"], internet=this_resp["internet"], transport=this_resp["transport"], ip_addr=this_resp["ip_addr"], record_type=this_resp["test_type"], \
-				query_elapsed=0.0, timeout="", soa_found="", likely_soa="", is_correct="", failure_reason="", source_pickle=b"")
+				query_elapsed=0.0, timeout=this_resp["timeout"], soa_found="", likely_soa=in_obj["l"], is_correct="", failure_reason="", source_pickle=b"")
+			# If the 
 			# If the response code is wrong, treat it as a timeout; use the response code as the timeout message
 			#   For "S" records   [ppo]
 			#   For "C" records   [ote]
@@ -184,8 +184,6 @@ def process_one_incoming_file(full_file_name):
 				soa_record_parts = this_soa_record.split(" ")
 				this_soa = soa_record_parts[2]
 				insert_values = insert_values._replace(soa_found=this_soa)
-				# Write out this SOA in the presumed_soas by target, to be used by the C values
-				presumed_soas[insert_values.target] = this_soa
 				# Set is_correct to "x" because correctness is not being checked for record_type = s
 				insert_values = insert_values._replace(is_correct="s")
 				# Write out this record
@@ -194,16 +192,9 @@ def process_one_incoming_file(full_file_name):
 				insert_values = insert_values._replace(source_pickle=pickle.dumps(this_resp))
 				c_records_for_later[short_name_and_count] = insert_values
 		
-		# After all the S records are written, get the C records from c_records_for_later, add the presumed SOA, and write them to the database
+		# After all the S records are written, get the C records from c_records_for_later, and write them to the database
 		for this_record in c_records_for_later:
 			insert_values = c_records_for_later[this_record]
-			# Set the presumed SOA
-			try:
-				this_likely_soa = presumed_soas[insert_values.target]
-			except:
-				alert(f"Did not find earlier target of '{insert_values.target}' for record {response_count} of {full_file_name}")
-				continue
-			insert_values = insert_values._replace(likely_soa=this_likely_soa)
 			# Set is_correct to "?" so it can be checked later
 			insert_values = insert_values._replace(is_correct="?")
 			# Write out this record
@@ -258,9 +249,6 @@ def process_one_correctness_tuple(in_tuple):
 			alert(f"When checking correctness on {in_filename_record}, found {len(this_found)} records instead of just 1")
 			return
 		(this_timeout, this_soa_to_check, this_is_correct, this_resp_pickle) = this_found[0]
-		if not this_soa_to_check:
-			alert(f"Record {in_filename_record} did not have a likely_soa value")
-			return
 
 		# Before trying to load the pickled data, first see if it is a timeout; if so, set is_correct but move on [lbl]
 		if not this_timeout == "":
@@ -419,7 +407,7 @@ def process_one_correctness_tuple(in_tuple):
 							dns.dnssec.validate(signed_rrset, rrsig_rrset, root_keys_for_matching)
 						except Exception as e:
 							failed_val = f"{this_section_name}/{rec_qname}/{rec_qtype}"
-							failure_reasons.append(f"Validating** {failed_val} in {in_filename_record} got error of {e} [yds]")
+							failure_reasons.append(f"Validating {failed_val} in {in_filename_record} got error of {e} [yds]")
 	
 			# Check that all the parts of the resp structure are correct, based on the type of answer
 			if resp["rcode"] == "NOERROR":

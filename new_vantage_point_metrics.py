@@ -16,6 +16,7 @@ def do_one_query(target, internet, ip_addr, transport, query, test_type):
 	id_string = f"{target}|{internet}|{transport}|{query}|{test_type}"
 	r_dict = { "id_string": id_string, "error": "", "target": target, "internet": internet, "ip_addr": ip_addr,
 		"transport": transport, "query": query, "test_type": test_type }
+	r_dict["timeout"] = ""
 	# Sanity checks
 	if not internet in ("v4", "v6"):
 		raise QueryError(f"Bad internet: {internet} in {id_string}")
@@ -107,71 +108,16 @@ def do_one_query(target, internet, ip_addr, transport, query, test_type):
 		raise QueryError(f"Dict failure; {e} in {id_string}")
 	return r_dict
 
-def cleanup(text_from_zone_file):
-	''' Clean up the text by collapsing whitespaces and removing comments '''
-	# Turn tabs into spaces
-	text_from_zone_file = re.sub("\t", " ", text_from_zone_file)
-	# Turn runs of spaces into a single space
-	text_from_zone_file = re.sub(" +", " ", text_from_zone_file)
-	# Get the output after removing comments
-	out_root_text = ""
-	# Remove the comments
-	for this_line in text_from_zone_file.splitlines():
-		if not this_line.startswith(";"):
-			out_root_text += this_line + "\n"
-	return out_root_text
-
-def get_names_and_types(in_text):
-	''' Takes a string that is the root zone, returns a dict of name/type: rdata '''
-	root_name_and_types = {}
-	for this_line in in_text.splitlines():
-		(this_name, _, _, this_type, this_rdata) = this_line.split(" ", maxsplit=4)
-		this_key = "{}/{}".format(this_name, this_type)
-		if not this_key in root_name_and_types:
-			root_name_and_types[this_key] = set()
-		root_name_and_types[this_key].add(this_rdata)
-	return root_name_and_types
-
-def find_soa(in_dict):
-	''' Returns an SOA or dies if it cannot find it '''
+def get_soa_from_root_dict(root_name_and_types):
 	try:
-		this_soa_record = list(in_dict[("./SOA")])[0]
+		this_soa_record = list(root_name_and_types[("./SOA")])[0]
 	except:
-		die("The root zone just received didn't have an SOA record.")
+		die("The root zone being looked at didn't have an SOA record.")
 	try:
-		this_soa = this_soa_record.split(" ")[2]
+		new_soa = this_soa_record.split(" ")[2]
 	except Exception as e:
-		die("Splitting the SOA from the root zone just received failed with '{}'".format(e))
-	return this_soa
-
-# Make a list candidate RRsets for the correctness testing
-def update_rr_list(file_to_write):
-	# Returns nothing
-	internic_url = "https://www.internic.net/domain/root.zone"
-	try:
-		root_zone_request = requests.get(internic_url)
-	except Exception as e:
-		alert(f"Could not do the requests.get on {internic_url}: {e}")
-		return
-	new_root_text = cleanup(root_zone_request.text)
-	root_name_and_types = get_names_and_types(new_root_text)
-	this_soa = find_soa(root_name_and_types)
-	log(f"Got a new root zone with SOA {this_soa}")
-	# Create a new root_auth_file, which has the same qname / qtypes as the processed file but only for authoritative zones
-	root_auth_text = ""
-	for this_key in root_name_and_types:
-		(this_name, this_type) = this_key.split("/")
-		# The logic on the following lines comes from [njh] [hmc] [xca] [max] [kmd] [unt]
-		if ( ((this_name == ".") and (this_type == "SOA")) \
-			or ((this_name == ".") and (this_type == "DNSKEY")) \
-			or ((this_name == ".") and (this_type == "NS")) \
-			or ((this_name != ".") and (this_name.count(".") == 1) and (this_type == "NS") and (this_name != "arpa.")) \
-			or ((this_name != ".") and (this_name.count(".") == 1) and (this_type == "DS")) ):
-			root_auth_text += f"{this_key}\n"
-	with open(file_to_write, mode="wt") as root_auth_out_f:
-		root_auth_out_f.write(root_auth_text)
-		log(f"Wrote out new {os.path.basename(file_to_write)}")
-	return
+		die(f"Splitting the SOA from the root zone failed with {e}")
+	return new_soa
 
 # Main program starts here
 
@@ -218,9 +164,6 @@ if __name__ == "__main__":
 		log(f"Died with '{error_message}'")
 		exit()
 
-	# Log the start
-	log(f"Starting run {start_time_string}-{vp_ident}")
-
 	# Get the command-line arguments
 	this_parser = argparse.ArgumentParser()
 	this_parser.add_argument("--verbose",  dest="verbose", action="store_true", 
@@ -256,9 +199,52 @@ if __name__ == "__main__":
 		f.close()
 		# But set this to be modified at the beginning of time so it is immediately updated
 		os.utime(root_auth_file, (0,0))
-	# See if the file is more than 12 hours old [mow]
-	if time.time() - os.stat(root_auth_file).st_mtime > (60 * 60 * 12):
-		update_rr_list(root_auth_file)
+	# See if the file is more than 3 hours old [mow]
+	if time.time() - os.stat(root_auth_file).st_mtime > (60 * 60 * 3):
+		internic_url = "https://www.internic.net/domain/root.zone"
+		try:
+			root_zone_request = requests.get(internic_url)
+		except Exception as e:
+			die(f"Could not do the requests.get on {internic_url}: {e}")
+		text_from_zone_file = root_zone_request.text
+
+		# Clean up the text by collapsing whitespaces and removing comments
+		#   Turn tabs into spaces
+		text_from_zone_file = re.sub("\t", " ", text_from_zone_file)
+		#   Turn runs of spaces into a single space
+		text_from_zone_file = re.sub(" +", " ", text_from_zone_file)
+		#   Get the output after removing comments
+		new_root_text = ""
+		# Remove the comments
+		for this_line in text_from_zone_file.splitlines():
+			if not this_line.startswith(";"):
+				new_root_text += this_line + "\n"
+
+		# Get the qname/qtype pairs
+		root_name_and_types = {}
+		for this_line in new_root_text.splitlines():
+			(this_name, _, _, this_type, this_rdata) = this_line.split(" ", maxsplit=4)
+			this_key = f"{this_name}/{this_type}"
+			if not this_key in root_name_and_types:
+				root_name_and_types[this_key] = set()
+			root_name_and_types[this_key].add(this_rdata)
+		# Create a new root_auth_file, which has the same qname / qtypes as the processed file but only for authoritative zones
+		root_auth_text = ""
+		for this_key in root_name_and_types:
+			(this_name, this_type) = this_key.split("/")
+			# The logic on the following lines comes from [njh] [hmc] [xca] [max] [kmd] [unt]
+			if ( ((this_name == ".") and (this_type == "SOA")) \
+				or ((this_name == ".") and (this_type == "DNSKEY")) \
+				or ((this_name == ".") and (this_type == "NS")) \
+				or ((this_name != ".") and (this_name.count(".") == 1) and (this_type == "NS") and (this_name != "arpa.")) \
+				or ((this_name != ".") and (this_name.count(".") == 1) and (this_type == "DS")) ):
+				root_auth_text += f"{this_key}\n"
+		with open(root_auth_file, mode="wt") as root_auth_out_f:
+			root_auth_out_f.write(root_auth_text)
+			new_soa = get_soa_from_root_dict(root_name_and_types)
+			log(f"Got a new root zone with SOA {new_soa}")
+
+	# Here whether or not we just got a new root file
 	try:
 		qname_qtype_pairs = open(root_auth_file, mode="rt").read().splitlines()
 	except:
@@ -327,25 +313,32 @@ if __name__ == "__main__":
 	try:
 		command_p = subprocess.run(this_scamper_cmd, shell=True, capture_output=True, text=True, check=True)
 	except Exception as e:
-		log(f"Running scamper had the exception '{e}'; continuing.")
+		alert(f"Running scamper had the exception '{e}'; continuing.")
 	scamper_output = command_p.stdout
 	scamper_elapsed = int(time.time() - scamper_start_time)
 	if len(scamper_output) == 0:
-		log(f"Running scamper got a zero-length response in {scamper_elapsed} seconds, stderr was '{command_p.stderr}'")
+		alert(f"Running scamper got a zero-length response in {scamper_elapsed} seconds, stderr was '{command_p.stderr}'")
 	scamper_output += f"Elapsed was {scamper_elapsed} seconds"
 
 	commands_clock_stop = int(time.time())
 
+	# Look for timeputs [yve]
+	for this_result in all_results:
+		if this_result["timeout"]:
+			log(f"{start_time_string}-{vp_ident}\t{this_result['timeout']}\t{this_result['id_string']}")
+	
 	# Save output as a dict
 	#   "v": int, version of this program (3 for now)
 	#   "d": int, the delay used: wait_first
 	#   "e": float, elapsed time for commands: commands_clock_stop - commands_clock_start
+	#   "l", text, the likely SOA for the correctness queries
 	#   "r": list, the records
 	#   "s", text, the output from scamper
 	output_dict = {
-		"v": 3,
+		"v": 4,
 		"d": wait_first,
 		"e": commands_clock_stop - commands_clock_start,
+		"l": get_soa_from_root_dict(qname_qtype_pairs),
 		"r": all_results,
 		"s": scamper_output
 	}
@@ -359,11 +352,6 @@ if __name__ == "__main__":
 	except:
 		alert(f"Could not create {out_run_file_name}")
 
-	# Look for timeputs
-	for this_result in all_results:
-		if this_result.get("timeout"):
-			log(f"{start_time_string}-{vp_ident}\t{this_result['timeout']}\t{this_result['id_string']}")
-	
 	# Log the finish
-	log(f"Finishing run, wrote out {os.path.basename(out_run_file_name)}, elapsed command time was {int(commands_clock_stop - commands_clock_start)} seconds")
+	log(f"Finished {start_time_string}-{vp_ident}, {int(commands_clock_stop - commands_clock_start)} seconds elapsed")
 	exit()
