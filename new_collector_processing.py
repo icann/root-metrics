@@ -390,7 +390,7 @@ def process_one_correctness_tuple(in_tuple):
 			# Check each section for signed records
 			for this_section_name in [ "answer", "authority", "additional" ]:
 				if resp.get(this_section_name):
-					signed_tuples = set()
+					signed_rrsets = {}
 					# Find the RRSIG records to know what is signed
 					for this_rec_dict in resp[this_section_name]:
 						rec_qname = this_rec_dict["name"]
@@ -398,23 +398,24 @@ def process_one_correctness_tuple(in_tuple):
 						rec_rdata = this_rec_dict["rdata"]
 						if rec_qtype == "RRSIG":
 							(first_field, _) = rec_rdata[0].split(" ", maxsplit=1)
-							signed_tuples.add((rec_qname, first_field))
+							signed_rrsets[f"{rec_qname}&{first_field}"] = []
 					# Make an RRset of the records that were signed, an RRset of those RRSIGS, and then validate
-					for (this_signed_name, this_signed_type) in signed_tuples:
+					for signed_rrset_id in signed_rrsets:
+						(rec_qname, rec_qtype) = signed_rrset_id.split("&")
+						signed_rrset = dns.rrset.RRset(rec_qname, class_in, dns.rdatatype.from_text(rec_qtype))
+						rrsig_rrset = dns.rrset.RRset(rec_qname, class_in, dns.rdatatype.from_text("RRSIG"))
 						for this_rec_dict in resp[this_section_name]:
-							if (this_rec_dict["name"] == this_signed_name) and (this_rec_dict["rdtype"] == this_signed_type):
-								signed_rrset = dns.rrset.RRset(this_rec_dict["name"], class_in, dns.rdatatype.from_text(this_rec_dict["rdtype"]))
+							if (this_rec_dict["name"] == rec_qname) and (this_rec_dict["rdtype"] == rec_qtype):
 								for this_signed_rdata in this_rec_dict["rdata"]:
-									signed_rrset.add(dns.rdata.from_text(class_in, dns.rdatatype.from_text(this_rec_dict["rdtype"]), this_signed_rdata))
-							if (this_rec_dict["name"] == this_signed_name) and (this_rec_dict["rdtype"] == "RRSIG"):
-								rrsig_rrset = dns.rrset.RRset(this_rec_dict["name"], class_in, dns.rdatatype.from_text("RRSIG"))
-								for this_signed_rdata in this_rec_dict["rdata"]:
-									rrsig_rrset.add(dns.rdata.from_text(class_in, dns.rdatatype.from_text("RRSIG"), this_signed_rdata))
-							try:
-								dns.dnssec.validate(signed_rrset, rrsig_rrset, root_keys_for_matching)
-							except Exception as e:
-								failed_validation_name = f"{this_section_name}/{this_rec_dict['name']}/{this_rec_dict['rdtype']}"
-								failure_reasons.append(f"Validating {failed_validation_name} in {in_filename_record} got error of {e} [yds]")
+									signed_rrset.add(dns.rdata.from_text(class_in, dns.rdatatype.from_text(rec_qtype), this_signed_rdata))
+							if (this_rec_dict["name"] == rec_qname) and (this_rec_dict["rdtype"] == "RRSIG"):
+								for this_rrsig_data in this_rec_dict["rdata"]:
+									rrsig_rrset.add(dns.rdata.from_text(class_in, dns.rdatatype.from_text("RRSIG"), this_rrsig_data))
+						try:
+							dns.dnssec.validate(signed_rrset, rrsig_rrset, root_keys_for_matching)
+						except Exception as e:
+							failed_validation_name = f"{this_section_name}/{this_rec_dict['name']}/{this_rec_dict['rdtype']}"
+							failure_reasons.append(f"Validating* {failed_validation_name} in {in_filename_record} got error of {e} [yds]")
 	
 			# Check that all the parts of the resp structure are correct, based on the type of answer
 			if resp["rcode"] == "NOERROR":
