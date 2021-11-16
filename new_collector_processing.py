@@ -387,10 +387,7 @@ def process_one_correctness_tuple(in_tuple):
 			# Get the ./DNSKEY records for this root
 			root_rdataset = dns.rdataset.Rdataset(class_in, dns.rdatatype.from_text("DNSKEY"))
 			for this_root_dnskey in this_root_to_check["./DNSKEY"]:
-				try:
-					root_rdataset.add(dns.rdata.from_text(class_in, dns.rdatatype.from_text("DNSKEY"), this_root_dnskey))
-				except Exception as e:
-					die(f"While adding to root_rdataset with {class_in}/{dns.rdatatype.from_text('DNSKEY')}/{this_root_dnskey}, got error {e}")
+				root_rdataset.add(dns.rdata.from_text(class_in, dns.rdatatype.from_text("DNSKEY"), this_root_dnskey))
 			root_keys_for_matching = { dns.name.from_text("."): root_rdataset }
 			# Check each section for signed records
 			for this_section_name in [ "answer", "authority", "additional" ]:
