@@ -370,7 +370,10 @@ def process_one_correctness_tuple(in_tuple):
 								for this_rdata in this_comparator.copy():
 									this_comparator.remove(this_rdata)
 									if this_rrset_key.endswith("/DNSKEY"):
-										this_comparator.add(this_rdata.replace(" ", ""))
+										(d_flags, d_prot, d_alg, d_key) = this_rdata.split(" ", maxsplit=3)
+										d_key = d_key.replace(" ", "")
+										this_rdata = f"{d_flags} {d_prot} {d_alg} {d_key}"
+										this_comparator.add(this_rdata)
 									elif this_rrset_key.endswith("/AAAA"):
 										this_comparator.add(dns.ipv6.inet_ntoa(dns.ipv6.inet_aton(this_rdata)))
 									else:
