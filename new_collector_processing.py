@@ -472,7 +472,7 @@ def process_one_correctness_tuple(in_tuple):
 								found_A_AAAA_NS_match = True
 								break
 					if not found_A_AAAA_NS_match:
-						failure_reasons.append("No QNAMEs from A and AAAA in Additional {} matched NS from Authority {} [cjm]".format(found_qname_of_A_AAAA_recs, found_NS_recs))
+						failure_reasons.append(f"No QNAMEs from A and AAAA in Additional {found_qname_of_A_AAAA_recs} matched NS from Authority {found_NS_recs} [cjm]")
 				elif (this_qname != ".") and (this_qtype == "DS"):  # Processing for TLD / DS [dru]
 					# The header AA bit is set. [yot]
 					if not "AA" in resp["flags"]:
@@ -538,7 +538,7 @@ def process_one_correctness_tuple(in_tuple):
 					if resp.get("additional"):
 						failure_reasons.append("Additional section was not empty [jws]")
 				else:
-					failure_reasons.append(f"Not matched: when checking NOERROR statuses, found unexpected name/type of {this_qname}/{this_qtype}")
+					debug(f"NOERROR on {this_qname}/{this_qtype} in {in_filename_record}")
 			elif resp["rcode"] == "NXDOMAIN":  # Processing for negative responses [vcu]
 				# The header AA bit is set. [gpl]
 				if not "AA" in resp["flags"]:
@@ -642,6 +642,7 @@ if __name__ == "__main__":
 	# Set up the logging and alert mechanisms
 	log_file_name = f"{log_dir}/log.txt"
 	alert_file_name = f"{log_dir}/alert.txt"
+	debug_file_name = f"{log_dir}/debug.txt"
 	vp_log = logging.getLogger("logging")
 	vp_log.setLevel(logging.INFO)
 	log_handler = logging.FileHandler(log_file_name)
@@ -652,11 +653,19 @@ if __name__ == "__main__":
 	alert_handler = logging.FileHandler(alert_file_name)
 	alert_handler.setFormatter(logging.Formatter("%(asctime)s %(message)s"))
 	vp_alert.addHandler(alert_handler)
+	vp_debug = logging.getLogger("debugs")
+	vp_debug.setLevel(logging.CRITICAL)
+	debug_handler = logging.FileHandler(debug_file_name)
+	debug_handler.setFormatter(logging.Formatter("%(asctime)s %(message)s"))
+	vp_debug.addHandler(debug_handler)
 	def log(log_message):
 		vp_log.info(log_message)
 	def alert(alert_message):
 		vp_alert.critical(alert_message)
 		log(alert_message)
+	def debug(debug_message):
+		vp_debug.critical(debug_message)
+		log(debug_message)
 	def die(error_message):
 		vp_alert.critical(error_message)
 		log("Died with '{}'".format(error_message))
