@@ -33,6 +33,11 @@
       name: metrics
       home: /home/metrics
       shell: /bin/bash
+  - name: Turn of TCP Fast Open (TFO) [zbf] [jbt]
+    sysctl:
+      name: net.ipv4.tcp_fastopen
+      value: '0'
+      state: present
 - name: Set up metrics user
   hosts: all_vps
   remote_user: "{{ superuser }}"
