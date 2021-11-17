@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 ''' Gets the root zone '''
-# Run as the metrics user under cron, every 15 minutes
+# Run as the metrics user under cron, every 15 minutes [mow]
 
 import argparse, logging, os, pickle, re, requests
 from pathlib import Path
@@ -74,6 +74,8 @@ if __name__ == "__main__":
 	this_parser = argparse.ArgumentParser()
 	this_parser.add_argument("--redo", action="store_true", dest="redo",
 		help="Redo all the processing in the output directory")
+	this_parser.add_argument("--vp", action="store_true", dest="vp",
+		help="Get the root zone for a vantage point, saving only the most recent in ")
 	opts = this_parser.parse_args()
 
 	# Where to save things long-term
@@ -81,18 +83,17 @@ if __name__ == "__main__":
 	if not os.path.exists(output_dir):
 		os.mkdir(output_dir)
 
-	log("Started root zone collecting")
-
-	# Subdirectories of ~/Output for root zones
-	saved_root_zone_dir = f"{output_dir}/RootZones"
-	if not os.path.exists(saved_root_zone_dir):
-		os.mkdir(saved_root_zone_dir)
-	saved_matching_dir = f"{output_dir}/RootMatching"
-	if not os.path.exists(saved_matching_dir):
-		os.mkdir(saved_matching_dir)
+	if not opts.vp:
+		# Subdirectories of ~/Output for root zones
+		saved_root_zone_dir = f"{output_dir}/RootZones"
+		if not os.path.exists(saved_root_zone_dir):
+			os.mkdir(saved_root_zone_dir)
+		saved_matching_dir = f"{output_dir}/RootMatching"
+		if not os.path.exists(saved_matching_dir):
+			os.mkdir(saved_matching_dir)
 	
 	if opts.redo:
-		log("Redoing all the output processing")
+		print("Redoing all the output processing")
 		for this_path in Path(saved_root_zone_dir).glob("*.root.txt"):
 			with this_path.open(mode="rt") as f:
 				new_root_text = cleanup(f.read())
@@ -102,27 +103,31 @@ if __name__ == "__main__":
 				matching_file_name = f"{saved_matching_dir}/{this_soa}.matching.pickle"
 				with open(matching_file_name, mode="wb") as out_f:
 					pickle.dump(root_name_and_types, out_f)
-	else:
-		# Get the current root zone
-		internic_url = "https://www.internic.net/domain/root.zone"
-		try:
-			root_zone_request = requests.get(internic_url)
-		except Exception as e:
-			die(f"Could not do the requests.get on {internic_url}: {e}")
-		new_root_text = cleanup(root_zone_request.text)
-		root_name_and_types = get_names_and_types(new_root_text)
-		this_soa = find_soa(root_name_and_types)
+		exit("Done rdoing all the output processing")
 
-		# Check if this SOA has already been seen
-		full_root_file_name = f"{saved_root_zone_dir}/{this_soa}.root.txt"  # [ooy]
-		if not os.path.exists(full_root_file_name):
+	# Get the current root zone
+	internic_url = "https://www.internic.net/domain/root.zone"
+	try:
+		root_zone_request = requests.get(internic_url)
+	except Exception as e:
+		die(f"Could not do the requests.get on {internic_url}: {e}")
+	new_root_text = cleanup(root_zone_request.text)
+	root_name_and_types = get_names_and_types(new_root_text)
+	this_soa = find_soa(root_name_and_types)
+	# Check if this SOA has already been seen; keep it if not [ooy]
+	if not opts.vp:
+		full_root_file_name = f"{saved_root_zone_dir}/{this_soa}.root.txt"
+		# No need to write out the files if they already exist
+		if os.path.exists(full_root_file_name):
+			exit()
+		else:
 			with open(full_root_file_name, mode="wt") as out_f:
 				out_f.write(root_zone_request.text)
 			log("Got a root zone with new SOA {}".format(this_soa))
-			# Also create a file of the tuples for matching
-			matching_file_name = f"{saved_matching_dir}/{this_soa}.matching.pickle"
-			with open(matching_file_name, mode="wb") as out_f:
-				pickle.dump(root_name_and_types, out_f)
-
-	log("Finished root zone collecting")
-	
+	# Write out the pickle of root_name_and_types
+	if opts.vp:
+		matching_file_name = f"{str(Path('~').expanduser())}/Logs/root-auth-rrs.pickle"
+	else:
+		matching_file_name = f"{saved_matching_dir}/{this_soa}.matching.pickle"
+	with open(matching_file_name, mode="wb") as out_f:
+		pickle.dump(root_name_and_types, out_f)

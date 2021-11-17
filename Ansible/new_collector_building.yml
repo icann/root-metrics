@@ -114,7 +114,7 @@
     cron:
       disabled: yes
       name: Do all the processing
-      minute: "4"
+      minute: "1, 16, 31, 46"
       job: "/home/metrics/repo/new_collector_processing.py >>/home/metrics/Logs/cron-alert.txt 2>&1"
   - name: get dnspython
     shell:

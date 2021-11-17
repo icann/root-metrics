@@ -100,6 +100,12 @@
       repo: 'https://github.com/icann/root-metrics.git'
       dest: /home/metrics/repo
       version: main   # no-transfer-user
+  - name: Give the crontab entry for get_root_zone.py
+    cron:
+      disabled: no
+      name: Get the new root zone
+      minute: "1,16,31,46"
+      job: "/home/metrics/repo/new_get_root_zone.py --vp >>/home/metrics/Logs/cron-alert.txt 2>&1"
   - name: Give the crontab entry for new_vantage_point_metrics.py
     cron:   # [mba] [wca]
       name: Get measurements

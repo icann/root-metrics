@@ -3,8 +3,9 @@
 
 # Three-letter items in square brackets (such as [xyz]) refer to parts of rssac-047.md
 
-import argparse, concurrent.futures, gzip, logging, os, pickle, random, re, requests, socket, subprocess, time
+import argparse, concurrent.futures, gzip, logging, os, pickle, random, socket, subprocess, time
 import dns.edns, dns.flags, dns.message, dns.query, dns.rdatatype
+from pathlib import Path
 
 # New class for errors from dnspython queries
 class QueryError(Exception):
@@ -108,17 +109,6 @@ def do_one_query(target, internet, ip_addr, transport, query, test_type):
 		raise QueryError(f"Dict failure; {e} in {id_string}")
 	return r_dict
 
-def get_soa_from_root_dict(root_name_and_types):
-	try:
-		this_soa_record = list(root_name_and_types[("./SOA")])[0]
-	except:
-		die("The root zone being looked at didn't have an SOA record.")
-	try:
-		new_soa = this_soa_record.split(" ")[2]
-	except Exception as e:
-		die(f"Splitting the SOA from the root zone failed with {e}")
-	return new_soa
-
 # Main program starts here
 
 if __name__ == "__main__":
@@ -188,67 +178,28 @@ if __name__ == "__main__":
 		"l": { "v4": ["199.7.83.42"], "v6": ["2001:500:9f::42"] },
 		"m": { "v4": ["202.12.27.33"], "v6": ["2001:dc3::35"] } }
 
+	# Open the root_auth_file and get qname_qtype_pairs
+	root_auth_file = f"{str(Path('~').expanduser())}/Logs/root-auth-rrs.pickle"
+	if not os.path.exists(root_auth_file):
+		die(f"Could not find {root_auth_file}")
+	with open(root_auth_file, mode="rb") as root_f:
+		try:
+			root_name_and_types = pickle.load(root_f)
+		except Exception as e:
+			die(f"Could not unpickle {root_auth_file}: {e}")
+	try:
+		this_soa_record = list(root_name_and_types[("./SOA")])[0]
+	except:
+		die(f"The root zone in {root_auth_file} didn't have an SOA record.")
+	try:
+		current_soa = this_soa_record.split(" ")[2]
+	except Exception as e:
+		die(f"Splitting the SOA from {root_auth_file} failed with {e}")
+	qname_qtype_pairs = list(root_name_and_types.keys())
+
 	# Pick one QNAME for correctness to be used later
 	#    90% chance of a positive authoritative QNAME/QTYPE, 10% chance of a negative test value
 	correctness_candidates = []
-	# Check if root-auth-rrs.txt is recent; if not, get a new one
-	root_auth_file = f"{log_dir}/root-auth-rrs.txt"
-	# For the first run, create the file
-	if not os.path.exists(root_auth_file):
-		f = open(root_auth_file, mode="wt")
-		f.close()
-		# But set this to be modified at the beginning of time so it is immediately updated
-		os.utime(root_auth_file, (0,0))
-	# See if the file is more than 3 hours old [mow]
-	if time.time() - os.stat(root_auth_file).st_mtime > (60 * 60 * 3):
-		internic_url = "https://www.internic.net/domain/root.zone"
-		try:
-			root_zone_request = requests.get(internic_url)
-		except Exception as e:
-			die(f"Could not do the requests.get on {internic_url}: {e}")
-		text_from_zone_file = root_zone_request.text
-
-		# Clean up the text by collapsing whitespaces and removing comments
-		#   Turn tabs into spaces
-		text_from_zone_file = re.sub("\t", " ", text_from_zone_file)
-		#   Turn runs of spaces into a single space
-		text_from_zone_file = re.sub(" +", " ", text_from_zone_file)
-		#   Get the output after removing comments
-		new_root_text = ""
-		# Remove the comments
-		for this_line in text_from_zone_file.splitlines():
-			if not this_line.startswith(";"):
-				new_root_text += this_line + "\n"
-
-		# Get the qname/qtype pairs
-		root_name_and_types = {}
-		for this_line in new_root_text.splitlines():
-			(this_name, _, _, this_type, this_rdata) = this_line.split(" ", maxsplit=4)
-			this_key = f"{this_name}/{this_type}"
-			if not this_key in root_name_and_types:
-				root_name_and_types[this_key] = set()
-			root_name_and_types[this_key].add(this_rdata)
-		# Create a new root_auth_file, which has the same qname / qtypes as the processed file but only for authoritative zones
-		root_auth_text = ""
-		for this_key in root_name_and_types:
-			(this_name, this_type) = this_key.split("/")
-			# The logic on the following lines comes from [njh] [hmc] [xca] [max] [kmd] [unt]
-			if ( ((this_name == ".") and (this_type == "SOA")) \
-				or ((this_name == ".") and (this_type == "DNSKEY")) \
-				or ((this_name == ".") and (this_type == "NS")) \
-				or ((this_name != ".") and (this_name.count(".") == 1) and (this_type == "NS") and (this_name != "arpa.")) \
-				or ((this_name != ".") and (this_name.count(".") == 1) and (this_type == "DS")) ):
-				root_auth_text += f"{this_key}\n"
-		with open(root_auth_file, mode="wt") as root_auth_out_f:
-			root_auth_out_f.write(root_auth_text)
-			new_soa = get_soa_from_root_dict(root_name_and_types)
-			log(f"Got a new root zone with SOA {new_soa}")
-
-	# Here whether or not we just got a new root file
-	try:
-		qname_qtype_pairs = open(root_auth_file, mode="rt").read().splitlines()
-	except:
-		die(f"Could not open {root_auth_file}")
 	# Choose nine good pairs at random
 	for i in range(9):
 		this_pair = random.choice(qname_qtype_pairs)
@@ -338,7 +289,7 @@ if __name__ == "__main__":
 		"v": 4,
 		"d": wait_first,
 		"e": commands_clock_stop - commands_clock_start,
-		"l": get_soa_from_root_dict(qname_qtype_pairs),
+		"l": current_soa,
 		"r": all_results,
 		"s": scamper_output
 	}
