@@ -665,7 +665,6 @@ if __name__ == "__main__":
 		log(alert_message)
 	def debug(debug_message):
 		vp_debug.critical(debug_message)
-		log(debug_message)
 	def die(error_message):
 		vp_alert.critical(error_message)
 		log("Died with '{}'".format(error_message))
