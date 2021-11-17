@@ -1,4 +1,4 @@
 select 'filename_record, date_derived , target , internet , transport , ip_addr , record_type , query_elapsed , timeout , soa_found , likely_soa , is_correct , failure_reason' as mostr \gset
 select 'filename_short, processed_at, version, delay, elapsed' as mostf \gset
-select 'delete from files_gotten; delete from record_info; delete from route_info;' as nuke_all \gset
+select 'delete from files_gotten; delete from record_info; ' as nuke_all \gset
 select 'select is_correct, count(is_correct) from record_info group by is_correct;' as correct_table \gset
