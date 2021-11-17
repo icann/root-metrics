@@ -201,12 +201,16 @@ if __name__ == "__main__":
 	#    90% chance of a positive authoritative QNAME/QTYPE, 10% chance of a negative test value
 	correctness_candidates = []
 	# Choose nine good pairs at random
-	for i in range(9):
+	while len(correctness_candidates) < 9:
 		this_pair = random.choice(qname_qtype_pairs)
 		(this_qname, this_qtype) = this_pair.split("/")
-		# RSSAC047 calls for the use of 0x20 mixed case in the QNAME. [zon] This is not done here because it feels unneccessary,
-		#   given that it is already highly unpredictable what queries will be sent.
-		#   This is a divergence from RSSAC047.
+		if not ( ((this_qname == ".") and (this_qtype == "SOA")) \
+			or ((this_qname == ".") and (this_qtype == "DNSKEY")) \
+			or ((this_qname == ".") and (this_qtype == "NS")) \
+			or ((this_qname != ".") and (this_qname.count(".") == 1) and (this_qtype == "NS") and (this_qname != "arpa.")) \
+			or ((this_qname != ".") and (this_qname.count(".") == 1) and (this_qtype == "DS")) ):
+			continue
+		# RSSAC047 says that we may use 0x20 mixed case in the QNAME. [zon] This is not done here.
 		correctness_candidates.append(f"{this_qname}/{this_qtype}")
 	# For the negative test, choose a RAND-NXD
 	all_letters = "abcdefghijklmnopqrstuvwxyz"  # [dse]

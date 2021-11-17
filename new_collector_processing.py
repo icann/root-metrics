@@ -406,8 +406,7 @@ def process_one_correctness_tuple(in_tuple):
 						try:
 							dns.dnssec.validate(signed_rrset, rrsig_rrset, root_keys_for_matching)
 						except Exception as e:
-							failed_val = f"{this_section_name}/{rec_qname}/{rec_qtype}"
-							failure_reasons.append(f"Validating {failed_val} in {in_filename_record} got error of {e} [yds]")
+							failure_reasons.append(f"Validating {rec_qname}/{rec_qtype} in {this_section_name} in {in_filename_record} got error of {e} [yds]")
 	
 			# Check that all the parts of the resp structure are correct, based on the type of answer
 			if resp["rcode"] == "NOERROR":
