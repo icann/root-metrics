@@ -317,7 +317,7 @@ def process_one_correctness_tuple(in_tuple):
 				return
 			try:
 				next_soa_to_check = all_matching_files[this_root_by_soa + 1]
-				soa_matching_date_files.extend(next_soa_to_check)
+				soa_matching_date_files.add(next_soa_to_check)
 			except:
 				pass  # This indicates that this_root_by_soa was the last file in the directory
 			# Try to read the files
