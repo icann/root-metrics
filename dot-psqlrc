@@ -2,3 +2,4 @@ select 'filename_record, date_derived , target , internet , transport , ip_addr 
 select 'filename_short, processed_at, version, delay, elapsed' as mostf \gset
 select 'delete from files_gotten; delete from record_info; ' as nuke_all \gset
 select 'select is_correct, count(is_correct) from record_info group by is_correct;' as correct_table \gset
+\pset tuples_only
