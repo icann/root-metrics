@@ -322,12 +322,16 @@ def process_one_correctness_tuple(in_tuple):
 				pass  # This indicates that this_root_by_soa was the last file in the directory
 			# Try to read the files
 			for this_root_file in soa_matching_date_files:
-				with open(this_root_file, mode="rb") as root_contents_f:
-					try:
-						roots_to_check.append(pickle.load(root_contents_f))
-					except:
-						alert(f"Could not unpickle root file {this_root_file} while retrying processing of {in_filename_record} for correctness")
-						return
+				try:
+					with open(this_root_file, mode="rb") as root_contents_f:
+						try:
+							roots_to_check.append(pickle.load(root_contents_f))
+						except:
+							alert(f"Could not unpickle root file {this_root_file} while retrying processing of {in_filename_record} for correctness")
+							return
+				except Exception as e:
+					alert(f"When processing {this_root_file} among {soa_matching_date_files} in {in_filename_record}, got {e}")
+					return
 		else:
 			alert(f"Got unexpected value for is_correct, {this_is_correct}, in {in_filename_record}")
 			return
