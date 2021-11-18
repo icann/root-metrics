@@ -161,7 +161,10 @@ def process_one_incoming_file(full_file_name):
 			insert_values = insert_values_template(filename_record=short_name_and_count, date_derived=file_date, \
 				target=this_resp["target"], internet=this_resp["internet"], transport=this_resp["transport"], ip_addr=this_resp["ip_addr"], record_type=this_resp["test_type"], \
 				query_elapsed=0.0, timeout=this_resp["timeout"], soa_found="", likely_soa=in_obj["l"], is_correct="", failure_reason="", source_pickle=b"")
-			# If the 
+			# If there is already something in timeout, just insert this record
+			if this_resp["timeout"]:
+				insert_from_template(insert_template, insert_values)
+				continue
 			# If the response code is wrong, treat it as a timeout; use the response code as the timeout message
 			#   For "S" records   [ppo]
 			#   For "C" records   [ote]
