@@ -274,7 +274,7 @@ def process_one_correctness_tuple(in_tuple):
 
 		# roots_to_check holds all the contents of roots to check in this round
 		#   For type "C" and is_correct "?", it is just the root associated with	likely_soa
-		#   For type "C" and is_correct "r", it is just the roots for two days before likely_soa, and the SOA after
+		#   For type "C" and is_correct "r", it is just the roots for 48 hours before likely_soa, and the SOA after
 		#   For type "test", it is the fixed root
 		roots_to_check = []
 		# The root is known is known for opts.test; for the normal checking, it is the likely_soa
@@ -294,25 +294,37 @@ def process_one_correctness_tuple(in_tuple):
 				try:
 					roots_to_check.append(pickle.load(root_contents_f))
 				except:
-					alert(f"Could not unpickle root file {one_root_file} while processing {in_filename_record} for correctness")
+					alert(f"Could not unpickle root file {one_root_file} while processing {in_filename_record} for correctness the first time")
 					return
 		elif this_is_correct == "r":
-			# Get the starting date from the file name, then pick all zone files whose names have that date or the date from the two days before
+			# Get the starting date from the file name, then pick all zone files whose names have that date or the date from the 48 hours before [xog]
 			start_date = datetime.date(int(in_filename_record[0:4]), int(in_filename_record[4:6]), int(in_filename_record[6:8]))
 			start_date_minus_one = start_date - datetime.timedelta(days=1)
 			start_date_minus_two = start_date - datetime.timedelta(days=2)
 			soa_matching_date_files = []
 			for this_start in [start_date, start_date_minus_one, start_date_minus_two]:
 				soa_matching_date_files.extend(glob.glob(str(Path(f"{saved_matching_dir}/{this_start.strftime('%Y%m%d')}" + "*.matching.pickle"))))
+			# Also get the root zone with the SOA after this_soa_to_check
+			soa_already_checked = f"{saved_matching_dir}/{this_soa_to_check}.matching.pickle"
+			all_matching_files = sorted(glob.glob(str(Path(f"{saved_matching_dir}/*.matching.pickle"))))
+			try:
+				this_root_by_soa = all_matching_files.index(soa_already_checked)
+			except:
+				alert(f"When looking for the root after {soa_already_checked}, could not even find {soa_already_checked}")
+				return
+			try:
+				next_soa_to_check = all_matching_files[this_root_by_soa + 1]
+				soa_matching_date_files.extend(next_soa_to_check)
+			except:
+				pass  # This indicates that this_root_by_soa was the last file in the directory
 			# Try to read the files
 			for this_root_file in soa_matching_date_files:
 				with open(this_root_file, mode="rb") as root_contents_f:
 					try:
 						roots_to_check.append(pickle.load(root_contents_f))
 					except:
-						alert(f"Could not unpickle root file {this_root_file} while processing {in_filename_record} for correctness")
+						alert(f"Could not unpickle root file {this_root_file} while retrying processing of {in_filename_record} for correctness")
 						return
-			#################################### STILL NEED TO ADD THE SOA *AFTER* this_soa_to_check ##############################################################
 		else:
 			alert(f"Got unexpected value for is_correct, {this_is_correct}, in {in_filename_record}")
 			return
