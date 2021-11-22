@@ -145,9 +145,6 @@ def process_one_incoming_file(full_file_name):
 		insert_values_template = namedtuple("insert_values_template", field_names=template_names_with_commas)
 	
 		# Go through each response item
-		#   This is a bit funky, because in this loop, only values for S records are written out.
-		#   C records are saved for a different loop after this in order to give a likely SOA for the record
-		c_records_for_later = {}
 		response_count = 0
 		for this_resp in in_obj["r"]:
 			response_count += 1  # response_count is 1-based, not 0-based
@@ -171,6 +168,8 @@ def process_one_incoming_file(full_file_name):
 			this_response_code = this_resp.get("rcode")
 			if not ((insert_values.record_type == "S" and this_response_code in ["NOERROR"]) or (insert_values.record_type == "C" and this_response_code in ["NOERROR", "NXDOMAIN"])):
 				insert_values = insert_values._replace(timeout=this_response_code)
+				# Set is_correct to "s" because correctness is not being checked for record_type = s
+				insert_values = insert_values._replace(is_correct="s")
 				insert_from_template(insert_template, insert_values)
 				continue
 			# What is left is responses that didn't time out
@@ -182,30 +181,23 @@ def process_one_incoming_file(full_file_name):
 				if this_resp.get("answer") == None or len(this_resp["answer"]) == 0:
 					alert(f"Found a message of type 'S' without an answer in record {response_count} of {full_file_name}")
 					continue
+				# Set is_correct to "s" because correctness is not being checked for record_type = s
+				insert_values = insert_values._replace(is_correct="s")
 				# This chooses only the first SOA record; there really should only be one SOA record in the response
 				this_soa_record = this_resp["answer"][0]["rdata"][0]
 				soa_record_parts = this_soa_record.split(" ")
 				this_soa = soa_record_parts[2]
 				insert_values = insert_values._replace(soa_found=this_soa)
-				# Set is_correct to "s" because correctness is not being checked for record_type = s
-				insert_values = insert_values._replace(is_correct="s")
-				# Write out this record
-				insert_from_template(insert_template, insert_values)
 			elif insert_values.record_type == "C":
 				insert_values = insert_values._replace(source_pickle=pickle.dumps(this_resp))
-				# Make is_correct "t" for correctness tests that times out
+				# Make is_correct "t" for correctness tests that times out, otherwise mark it as "?" so that it gets checked
 				if this_resp["timeout"]:
 					insert_values = insert_values._replace(is_correct="t")
-				c_records_for_later[short_name_and_count] = insert_values
-		
-		# After all the S records are written, get the C records from c_records_for_later, and write them to the database
-		for this_record in c_records_for_later:
-			insert_values = c_records_for_later[this_record]
-			# Set is_correct to "?" so it can be checked later
-			insert_values = insert_values._replace(is_correct="?")
+				else:
+					insert_values = insert_values._replace(is_correct="?")
 			# Write out this record
 			insert_from_template(insert_template, insert_values)
-
+		
 		# End of response items loop
 		cur.close()
 	return
@@ -814,9 +806,10 @@ if __name__ == "__main__":
 	#   This does not log or alert
 
 	# Iterate over the records where is_correct is "?"
+	#   Don't check if is_correct is "t" because that was a timeout
 	with psycopg2.connect(dbname="metrics", user="metrics") as conn:
 		with conn.cursor() as cur:
-			cur.execute("select filename_record from record_info where record_type = 'C' and is_correct in ('?', 'r', '')")
+			cur.execute("select filename_record from record_info where record_type = 'C' and is_correct in ('?', 'r')")
 			initial_correct_to_check = cur.fetchall()
 	# Make a list of tuples with the filename_record
 	full_correctness_list = []
