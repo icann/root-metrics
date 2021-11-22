@@ -187,12 +187,15 @@ def process_one_incoming_file(full_file_name):
 				soa_record_parts = this_soa_record.split(" ")
 				this_soa = soa_record_parts[2]
 				insert_values = insert_values._replace(soa_found=this_soa)
-				# Set is_correct to "x" because correctness is not being checked for record_type = s
+				# Set is_correct to "s" because correctness is not being checked for record_type = s
 				insert_values = insert_values._replace(is_correct="s")
 				# Write out this record
 				insert_from_template(insert_template, insert_values)
 			elif insert_values.record_type == "C":
 				insert_values = insert_values._replace(source_pickle=pickle.dumps(this_resp))
+				# Make is_correct "t" for correctness tests that times out
+				if this_resp["timeout"]:
+					insert_values = insert_values._replace(is_correct="t")
 				c_records_for_later[short_name_and_count] = insert_values
 		
 		# After all the S records are written, get the C records from c_records_for_later, and write them to the database
