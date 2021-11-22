@@ -767,7 +767,7 @@ if __name__ == "__main__":
 			for (this_vp, this_ret) in zip(all_vps, executor.map(get_files_from_one_vp, all_vps)):
 				if not this_ret == "":
 					alert(this_ret)
-		log(f"Finished pulling from VPs; got files from {len(all_vps)} VPs")
+		log("Finished pulling from VPs")
 	
 	elif opts.source == "skip":
 		# Don't do any source gathering
@@ -816,7 +816,7 @@ if __name__ == "__main__":
 	# Iterate over the records where is_correct is "?"
 	with psycopg2.connect(dbname="metrics", user="metrics") as conn:
 		with conn.cursor() as cur:
-			cur.execute("select filename_record from record_info where record_type = 'C' and is_correct in ('?', 'r')")
+			cur.execute("select filename_record from record_info where record_type = 'C' and is_correct in ('?', 'r', '')")
 			initial_correct_to_check = cur.fetchall()
 	# Make a list of tuples with the filename_record
 	full_correctness_list = []
