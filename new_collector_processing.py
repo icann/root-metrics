@@ -729,7 +729,7 @@ if __name__ == "__main__":
 
 	###############################################################
 
-	log("Started overall collector processing")
+	log("Started collector processing")
 	
 	###############################################################
 	
@@ -768,7 +768,6 @@ if __name__ == "__main__":
 	###############################################################
 
 	# Go through the files in incoming_dir
-	log(f"Started going through {incoming_dir}")
 	all_files = [ str(x) for x in Path(f"{incoming_dir}").glob("**/*.pickle.gz") ]
 	# If limit is set, use only the first few
 	if opts.limit:
@@ -842,4 +841,5 @@ if __name__ == "__main__":
 			processed_correctness_count += 1
 
 	log(f"Finished correctness checking {processed_correctness_count} records in {int(time.time() - processed_correctness_start)} seconds")
+	log("Started collector processing")
 	exit()
