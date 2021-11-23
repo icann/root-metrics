@@ -160,6 +160,7 @@ def process_one_incoming_file(full_file_name):
 				query_elapsed=0.0, timeout=this_resp["timeout"], soa_found="", likely_soa=in_obj["l"], is_correct="", failure_reason="", source_pickle=b"")
 			# If there is already something in timeout, just insert this record
 			if this_resp["timeout"]:
+				insert_values = insert_values._replace(is_correct="y")
 				insert_from_template(insert_template, insert_values)
 				continue
 			# If the response code is wrong, treat it as a timeout; use the response code as the timeout message
@@ -168,8 +169,7 @@ def process_one_incoming_file(full_file_name):
 			this_response_code = this_resp.get("rcode")
 			if not ((insert_values.record_type == "S" and this_response_code in ["NOERROR"]) or (insert_values.record_type == "C" and this_response_code in ["NOERROR", "NXDOMAIN"])):
 				insert_values = insert_values._replace(timeout=this_response_code)
-				# Set is_correct to "s" because correctness is not being checked for record_type = s
-				insert_values = insert_values._replace(is_correct="s")
+				insert_values = insert_values._replace(is_correct="y")
 				insert_from_template(insert_template, insert_values)
 				continue
 			# What is left is responses that didn't time out
