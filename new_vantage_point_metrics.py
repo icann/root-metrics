@@ -122,16 +122,18 @@ if __name__ == "__main__":
 	if vp_ident == None or vp_ident == "":
 		exit(f"The vp_ident gotten from {vp_ident_file_name} was bad: '{vp_ident}'. Exiting.")
 
+	# Get the time string for this run
+	start_time_string = time.strftime("%Y%m%d%H%M")
+
+	out_file_id = f"{start_time_string}-{vp_ident}"
+	
 	# Get the base for the log and alerts directories
 	log_dir = f"{os.path.expanduser('~')}/Logs"
 	if not os.path.exists(log_dir):
 		os.mkdir(log_dir)
 
-	# Get the time string for this run
-	start_time_string = time.strftime("%Y%m%d%H%M")
-
 	# Set up the logging and alert mechanisms
-	#   Requires log_dir and vp_ident to have been defined above 
+	#   Requires log_dir to have been defined above 
 	log_file_name = f"{log_dir}/log.txt"
 	alert_file_name = f"{log_dir}/alert.txt"
 	vp_log = logging.getLogger("logging")
@@ -280,7 +282,7 @@ if __name__ == "__main__":
 	# Look for timeputs [yve]
 	for this_result in all_results:
 		if this_result["timeout"]:
-			log(f"{start_time_string}-{vp_ident}\t{this_result['timeout']}\t{this_result['id_string']}")
+			log(f"{out_file_id}\t{this_result['timeout']}\t{this_result['id_string']}")
 	
 	# Save output as a dict
 	#   "v": int, version of this program (3 for now)
@@ -288,25 +290,32 @@ if __name__ == "__main__":
 	#   "e": float, elapsed time for commands: commands_clock_stop - commands_clock_start
 	#   "l", text, the likely SOA for the correctness queries
 	#   "r": list, the records
-	#   "s", text, the output from scamper
 	output_dict = {
 		"v": 4,
 		"d": wait_first,
 		"e": commands_clock_stop - commands_clock_start,
 		"l": current_soa,
 		"r": all_results,
-		"s": scamper_output
 	}
-	# Save the output in a file with start_time_string and vp_ident
+
+	# Save the data to a file
 	output_dir = "/home/metrics/Output"
 	try:
-		out_run_file_name = f"{output_dir}/{start_time_string}-{vp_ident}.pickle.gz"
+		out_run_file_name = f"{output_dir}/{out_file_id}.pickle.gz"
 		with gzip.open(out_run_file_name, mode="wb") as gzf:
 			gzf.write(pickle.dumps(output_dict))
-			gzf.close()
 	except:
 		alert(f"Could not create {out_run_file_name}")
 
+	# Save the scamper output to a file
+	routing_dir = "/home/metrics/Routing"
+	try:
+		scamper_file_name = f"{routing_dir}/{out_file_id}-routing.txt"
+		with open(scamper_file_name, mode="wb") as scamper_f:
+			scamper_f.write(scamper_output)
+	except:
+		alert(f"Could not create {scamper_file_name}")
+
 	# Log the finish
-	log(f"Finished {start_time_string}-{vp_ident}, {int(commands_clock_stop - commands_clock_start)} seconds elapsed")
+	log(f"Finished {out_file_id}, {int(commands_clock_stop - commands_clock_start)} seconds elapsed")
 	exit()

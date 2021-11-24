@@ -56,6 +56,11 @@
     template:
       src: ../short-host-name.txt
       dest: /home/metrics/short-host-name.txt
+  - name: make Routing/
+    file:
+      path: /home/metrics/Routing
+      mode: u+wrx,go+rx
+      state: directory
   - name: make Output/
     file:
       path: /home/metrics/Output
