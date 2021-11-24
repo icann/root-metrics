@@ -147,7 +147,6 @@
       - version int
       - delay int
       - elapsed int
-      - route_string text
   - name: Create table for SOA and correctness records
     postgresql_table:
       login_user: metrics

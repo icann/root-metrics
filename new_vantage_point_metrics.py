@@ -311,7 +311,7 @@ if __name__ == "__main__":
 	routing_dir = "/home/metrics/Routing"
 	try:
 		scamper_file_name = f"{routing_dir}/{out_file_id}-routing.txt"
-		with open(scamper_file_name, mode="wb") as scamper_f:
+		with open(scamper_file_name, mode="wt") as scamper_f:
 			scamper_f.write(scamper_output)
 	except:
 		alert(f"Could not create {scamper_file_name}")

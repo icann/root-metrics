@@ -21,7 +21,7 @@ def get_files_from_one_vp(this_vp):
 		except:
 			die(f"Could not create {pull_to_dir}")
 	# rsync from the VP
-	for this_dir in ("Output", "Logs"):
+	for this_dir in ("Output", "Routing", "Logs"):
 		try:
 			p = subprocess.run(f"rsync -av --timeout=5 metrics@{vp_number}.mtric.net:{this_dir} {pull_to_dir}/", shell=True, capture_output=True, text=True, check=True)
 		except Exception as e:

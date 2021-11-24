@@ -88,12 +88,12 @@ def process_one_incoming_file(full_file_name):
 		except Exception as e:
 			die(f"Could not unpickle {full_file_name}: {e}")
 		# Sanity check the record
-		if not ("v" in in_obj) and ("d" in in_obj) and ("e" in in_obj) and ("l" in in_obj) and ("r" in in_obj) and ("s" in in_obj):
-			die(f"Object in {full_file_name} did not contain keys d, e, l, r, s, and v")
+		if not ("v" in in_obj) and ("d" in in_obj) and ("e" in in_obj) and ("l" in in_obj) and ("r" in in_obj):
+			die(f"Object in {full_file_name} did not contain keys d, e, l, r, and v")
 	
 		# Update the metadata
-		insert_files_string = "insert into files_gotten (processed_at, version, delay, elapsed, route_string, filename_short) values (%s, %s, %s, %s, %s, %s)"
-		insert_files_values = (datetime.datetime.now(datetime.timezone.utc), in_obj["v"], in_obj["d"], in_obj["e"], in_obj["s"], short_file_name) 
+		insert_files_string = "insert into files_gotten (processed_at, version, delay, elapsed, filename_short) values (%s, %s, %s, %s, %s, %s)"
+		insert_files_values = (datetime.datetime.now(datetime.timezone.utc), in_obj["v"], in_obj["d"], in_obj["e"], short_file_name) 
 		insert_from_template(insert_files_string, insert_files_values)
 
 		# Get the derived date and VP name from the file name
