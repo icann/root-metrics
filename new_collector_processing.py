@@ -796,7 +796,7 @@ if __name__ == "__main__":
 	with futures.ProcessPoolExecutor() as executor:
 		for (this_file, _) in zip(all_files, executor.map(process_one_incoming_file, all_files)):
 			processed_incoming_count += 1
-	log(f"Finished processing {processed_incoming_count} files in Incoming in {int(time.time() - processed_incoming_start)} seconds")
+	log(f"Finished processing {processed_incoming_count} incoming files in {int(time.time() - processed_incoming_start)} seconds")
 
 	###############################################################
 
@@ -835,11 +835,9 @@ if __name__ == "__main__":
 	# If limit is set, use only the first few
 	if opts.limit:
 		full_correctness_list = full_correctness_list[0:limit_size]
-	processed_correctness_count = 0
 	with futures.ProcessPoolExecutor() as executor:
 		for (this_correctness, _) in zip(full_correctness_list, executor.map(process_one_correctness_tuple, full_correctness_list, chunksize=1000)):
 			processed_correctness_count += 1
 
-	log(f"Finished correctness checking {processed_correctness_count} records in {int(time.time() - processed_correctness_start)} seconds")
-	log("Started collector processing")
+	log(f"Finished correctness checking {processed_correctness_count} records in {int(time.time() - processed_correctness_start)} seconds; finished processing")
 	exit()
