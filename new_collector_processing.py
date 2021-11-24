@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 
-''' Do all tasks on the collector to get data from the VPs, process it, and put the results in the database tables '''
+''' Do all tasks on the collector to process the data from the VPs and put the results in the database tables '''
 # Run as the metrics user
 # Three-letter items in square brackets (such as [xyz]) refer to parts of rssac-047.md
 
-import argparse, datetime, glob, gzip, logging, os, pickle, psycopg2, subprocess, time
+import argparse, datetime, glob, gzip, logging, os, pickle, psycopg2, time
 import dns.dnssec, dns.ipv6, dns.rdata, dns.rrset
 from pathlib import Path
 from concurrent import futures
@@ -53,36 +53,6 @@ def run_tests_only():
 			out_f.write("{}\n".format(this_line))
 	out_f.close()
 	die("Wrote out testing log as {}".format(tests_results_file))
-
-###############################################################
-
-def get_files_from_one_vp(this_vp):
-	##################### Remove this before deploying #####################
-	##### die("Was about to get_files_from_one_vp for {}".format(this_vp))
-	########################################################################
-
-	# Used to rsync files from VPs under multiprocessing into incoming_dir; retuns error messages
-	(vp_number, _) = this_vp.split(".", maxsplit=1)
-	pull_to_dir = f"{incoming_dir}/{vp_number}"
-	if not os.path.exists(pull_to_dir):
-		try:
-			os.mkdir(pull_to_dir)
-		except:
-			die(f"Could not create {pull_to_dir}")
-	# rsync from the VP
-	for this_dir in ("Output", "Logs"):
-		try:
-			p = subprocess.run(f"rsync -av --timeout=5 metrics@{vp_number}.mtric.net:{this_dir} {pull_to_dir}/", shell=True, capture_output=True, text=True, check=True)
-		except Exception as e:
-			return f"For {vp_number}, failed to rsync {this_dir}: {e}"
-		# Keep the log
-		try:
-			log_f = open(f"{pull_to_dir}/rsync-log.txt", mode="at")
-			log_f.write(p.stdout)
-			log_f.close()
-		except:
-			die(f"Could not write to log {pull_to_dir}/{vp_number}/rsync-log.txt") 
-	return ""
 
 ###############################################################
 def process_one_incoming_file(full_file_name):
@@ -680,7 +650,7 @@ if __name__ == "__main__":
 		vp_debug.critical(debug_message)
 	def die(error_message):
 		vp_alert.critical(error_message)
-		log("Died with '{}'".format(error_message))
+		log(f"Died with '{error_message}'")
 		exit()
 	
 	limit_size = 10000
@@ -688,18 +658,12 @@ if __name__ == "__main__":
 	this_parser = argparse.ArgumentParser()
 	this_parser.add_argument("--test", action="store_true", dest="test",
 		help="Run tests on requests; must be run in the Tests directory")
-	this_parser.add_argument("--source", action="store", dest="source", default="vps",
-		help="Specify 'vps' or 'skip' to say where to pull recent files")
 	this_parser.add_argument("--limit", action="store_true", dest="limit",
 		help="Limit procesing to {} items".format(limit_size))
 	
 	opts = this_parser.parse_args()
 	if opts.limit:
 		log("Limiting record processing to {} records".format(limit_size))
-
-	# Make sure opts.source is "vps" or "skip"
-	if not opts.source in ("vps", "skip"):
-		die('The value for --source must be "vps" or "skip"')
 
 	# Where the binaries are
 	target_dir = "/home/metrics/Target"	
@@ -731,40 +695,6 @@ if __name__ == "__main__":
 
 	log("Started collector processing")
 	
-	###############################################################
-	
-	# First active step is to copy new files to the collector
-
-	if opts.source == "vps":
-		# Get the list of VPs
-		log("Started pulling from VPs")
-		vp_list_filename = f"{str(Path('~').expanduser())}/vp_list.txt"
-		try:
-			all_vps = open(vp_list_filename, mode="rt").read().splitlines()
-		except Exception as e:
-			die(f"Could not open {vp_list_filename} and split the lines: {e}")
-		# Make sure we have trusted each one
-		known_hosts_set = set()
-		known_host_lines = open(f"{str(Path('~').expanduser())}/.ssh/known_hosts", mode="rt").readlines()
-		for this_line in known_host_lines:
-			known_hosts_set.add(this_line.split(" ")[0])
-		for this_vp in all_vps:
-			if not this_vp in known_hosts_set:
-				try:
-					subprocess.run(f"ssh-keyscan -4 -t rsa {this_vp} >> ~/.ssh/known_hosts", shell=True, capture_output=True, check=True)
-					log(f"Added {this_vp} to known_hosts")
-				except Exception as e:
-					die(f"Could not run ssh-keyscan on {this_vp}: {e}")
-		with futures.ProcessPoolExecutor() as executor:
-			for (this_vp, this_ret) in zip(all_vps, executor.map(get_files_from_one_vp, all_vps)):
-				if not this_ret == "":
-					alert(this_ret)
-		log("Finished pulling from VPs")
-	
-	elif opts.source == "skip":
-		# Don't do any source gathering
-		log("Skipped getting sources because opts.source was 'skip'")
-
 	###############################################################
 
 	# Go through the files in incoming_dir
