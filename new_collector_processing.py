@@ -95,7 +95,7 @@ def process_one_incoming_file(full_file_name):
 			die(f"Object in {full_file_name} did not contain keys d, e, l, r, and v")
 	
 		# Update the metadata
-		insert_files_string = "insert into files_gotten (processed_at, version, delay, elapsed, filename_short) values (%s, %s, %s, %s, %s, %s)"
+		insert_files_string = "insert into files_gotten (processed_at, version, delay, elapsed, filename_short) values (%s, %s, %s, %s, %s)"
 		insert_files_values = (datetime.datetime.now(datetime.timezone.utc), in_obj["v"], in_obj["d"], in_obj["e"], short_file_name) 
 		insert_from_template(insert_files_string, insert_files_values)
 

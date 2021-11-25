@@ -4,7 +4,7 @@
 # Run as the metrics user
 # Three-letter items in square brackets (such as [xyz]) refer to parts of rssac-047.md
 
-import logging, os, subprocess
+import logging, os, subprocess, time
 from pathlib import Path
 from concurrent import futures
 
@@ -92,7 +92,6 @@ if __name__ == "__main__":
 		os.mkdir(saved_matching_dir)
 
 	# Get the list of VPs
-	log("Started pulling from VPs")
 	vp_list_filename = f"{str(Path('~').expanduser())}/vp_list.txt"
 	try:
 		all_vps = open(vp_list_filename, mode="rt").read().splitlines()
@@ -110,11 +109,12 @@ if __name__ == "__main__":
 				log(f"Added {this_vp} to known_hosts")
 			except Exception as e:
 				die(f"Could not run ssh-keyscan on {this_vp}: {e}")
+	start_time = time.time()
 	with futures.ProcessPoolExecutor() as executor:
 		for (this_vp, this_ret) in zip(all_vps, executor.map(get_files_from_one_vp, all_vps)):
 			if not this_ret == "":
 				alert(this_ret)
-	log("Finished pulling from VPs")
+	log(f"Finished pulling from VPs in {int(time.time()-start_time)} seconds")
 
 	exit()
 	
