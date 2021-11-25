@@ -67,7 +67,10 @@ def process_one_incoming_file(full_file_name):
 		# First define a function to insert records into one of the two databases
 		def insert_from_template(this_cmd_string, this_values):
 			with conn.cursor() as curi:
-				curi.execute(this_cmd_string, this_values)
+				try:
+					curi.execute(this_cmd_string, this_values)
+				except Exception as e:
+					die(f"Failed to execute '{this_cmd_string}' on '{this_values}': '{e}'")
 				return
 
 		# Check for wrong type of file
