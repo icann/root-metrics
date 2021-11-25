@@ -117,7 +117,7 @@
   - name: crontab entry for new_copy_files_from_vps.py
     cron:
       disabled: no
-      name: Do all the processing
+      name: Get the files from the VPs
       minute: "1,16,31,46"
       job: "/home/metrics/repo/new_copy_files_from_vps.py >>/home/metrics/Logs/cron-alert.txt 2>&1"
   - name: crontab entry for new_collector_processing.py
