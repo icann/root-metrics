@@ -72,11 +72,6 @@
       src: ../home_ssh_config
       dest: /home/metrics/.ssh/config
       mode: go-rwx
-  - name: Copy the startup script for testing
-    copy:
-      src: ../Local/c03startup.sh
-      dest: /home/metrics/c03startup.sh
-      mode: u+x
   - name: Copy the .psqlrc to make display easier
     copy:
       src: ../dot-psqlrc
