@@ -748,26 +748,17 @@ if __name__ == "__main__":
 					all_files.remove(full_file_name)
 					alert(f"Got file_gotten_check of {files_gotten_check[0]} for {short_file_name}")
 	# Use metrics_dict
-	all_files_new = [ str(x) for x in Path(f"{incoming_dir}").glob("**/*.pickle.gz") ]
-	for full_file_name in all_files_new.copy():
+	all_files_from_metrics_dict = [ str(x) for x in Path(f"{incoming_dir}").glob("**/*.pickle.gz") ]
+	for full_file_name in all_files_from_metrics_dict.copy():
 		short_file_name = os.path.basename(full_file_name).replace(".pickle.gz", "")
 		with m_lock:
 			if short_file_name in metrics_dict["files"]:
-				all_files_new.remove(full_file_name)
-	######
-	testpg = set(all_files)
-	testpi = set(all_files_new)
-	diff_set = testpg ^ testpi
-	for this_name in diff_set:
-		if this_name in testpg:
-			debug(f"The file sets were different: {this_name} was in the Postgres but not the pickle")
-		else:
-			debug(f"The file sets were different: {this_name} was in the pickle but not the Postgres")		
+				all_files_from_metrics_dict.remove(full_file_name)
 
 	processed_incoming_count = 0
 	processed_incoming_start = time.time()
 	with futures.ThreadPoolExecutor() as executor:
-		for (this_file, _) in zip(all_files, executor.map(process_one_incoming_file, all_files)):
+		for (this_file, _) in zip(all_files_from_metrics_dict, executor.map(process_one_incoming_file, all_files_from_metrics_dict)):
 			processed_incoming_count += 1
 	log(f"Finished processing {processed_incoming_count} incoming files in {int(time.time() - processed_incoming_start)} seconds")
 
@@ -786,14 +777,14 @@ if __name__ == "__main__":
 			cur.execute("select filename_record from record_info where record_type = 'C' and is_correct = '?'")
 			initial_correct_to_check = cur.fetchall()
 	# Make a list of tuples with the filename_record
-	full_correctness_list = []
+	full_undone_list = []
 	for this_initial_correct in initial_correct_to_check:
-		full_correctness_list.append(("normal", this_initial_correct[0]))
+		full_undone_list.append(("normal", this_initial_correct[0]))
 	# If limit is set, use only the first few
 	if opts.limit:
-		full_correctness_list = full_correctness_list[0:limit_size]
+		full_undone_list = full_undone_list[0:limit_size]
 	with futures.ThreadPoolExecutor() as executor:
-		for (this_correctness, _) in zip(full_correctness_list, executor.map(process_one_correctness_tuple, full_correctness_list, chunksize=1000)):
+		for (this_correctness, _) in zip(full_undone_list, executor.map(process_one_correctness_tuple, full_undone_list, chunksize=1000)):
 			processed_correctness_count += 1
 	
 	# There might be some records with is_correct that is now "r". Rerun process_one_correctness_tuple over these
@@ -802,14 +793,14 @@ if __name__ == "__main__":
 			cur.execute("select filename_record from record_info where record_type = 'C' and is_correct = 'r'")
 			redo_correct_to_check = cur.fetchall()
 	# Make a list of tuples with the filename_record
-	full_correctness_list = []
+	full_redo_list = []
 	for this_initial_correct in redo_correct_to_check:
-		full_correctness_list.append(("normal", this_initial_correct[0]))
+		full_redo_list.append(("normal", this_initial_correct[0]))
 	# If limit is set, use only the first few
 	if opts.limit:
-		full_correctness_list = full_correctness_list[0:limit_size]
+		full_redo_list = full_redo_list[0:limit_size]
 	with futures.ThreadPoolExecutor() as executor:
-		for (this_correctness, _) in zip(full_correctness_list, executor.map(process_one_correctness_tuple, full_correctness_list, chunksize=1000)):
+		for (this_correctness, _) in zip(full_redo_list, executor.map(process_one_correctness_tuple, full_redo_list, chunksize=1000)):
 			processed_correctness_count += 1
 
 	log(f"Finished correctness checking {processed_correctness_count} records in {int(time.time() - processed_correctness_start)} seconds; finished processing")
