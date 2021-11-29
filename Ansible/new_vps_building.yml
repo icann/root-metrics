@@ -109,8 +109,8 @@
     git:
       repo: 'https://github.com/icann/root-metrics.git'
       dest: /home/metrics/repo
-      version: main   # no-transfer-user
-  - name: Give the crontab entry for get_root_zone.py
+      version: main
+  - name: Give the crontab entry for new_get_root_zone.py
     cron:
       disabled: no
       name: Get the new root zone

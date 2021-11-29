@@ -4,7 +4,7 @@
 # Run as the metrics user
 # Three-letter items in square brackets (such as [xyz]) refer to parts of rssac-047.md
 
-import argparse, datetime, glob, gzip, logging, os, pickle, psycopg2, time
+import argparse, datetime, glob, gzip, logging, os, pickle, psycopg2, threading, time
 import dns.dnssec, dns.ipv6, dns.rdata, dns.rrset
 from pathlib import Path
 from concurrent import futures
@@ -98,6 +98,11 @@ def process_one_incoming_file(full_file_name):
 		insert_files_string = "insert into files_gotten (processed_at, version, delay, elapsed, filename_short) values (%s, %s, %s, %s, %s)"
 		insert_files_values = (datetime.datetime.now(datetime.timezone.utc), in_obj["v"], in_obj["d"], in_obj["e"], short_file_name) 
 		insert_from_template(insert_files_string, insert_files_values)
+		
+		# Update the metrics_dict
+		with m_lock:
+			metrics_dict["files"][short_file_name] = { "processed_at": datetime.datetime.now(datetime.timezone.utc), "version": in_obj["v"], "delay": in_obj["d"], "elapsed": in_obj["e"] }
+			update_metrics_file()
 
 		# Get the derived date and VP name from the file name
 		(file_date_text, _) = short_file_name.split("-")
@@ -685,6 +690,8 @@ if __name__ == "__main__":
 	saved_matching_dir = f"{output_dir}/RootMatching"
 	if not os.path.exists(saved_matching_dir):
 		os.mkdir(saved_matching_dir)
+	# The metrics_dict pickle
+	metrics_dict_file = f"{output_dir}/metrics_dict.pickle"
 
 	###############################################################
 
@@ -699,6 +706,22 @@ if __name__ == "__main__":
 	log("Started collector processing")
 	
 	###############################################################
+	
+	# Get the pickled database, or create it if it is not already there
+	if os.path.exists(metrics_dict_file):
+		with open(metrics_dict_file, mode="rb") as metrics_f:
+			try:
+				metrics_dict = pickle.load(metrics_f)
+			except:
+				die("Unpickling metrics_dict failed")
+	else:
+		metrics_dict = { "records": {}, "files": {} }
+	# Make a lock for the metrics_dict
+	m_lock = threading.Lock()
+	# Function to write out pickled database when it is updated
+	def update_metrics_file():
+		with open(metrics_dict_file, mode="wb") as metrics_f: 
+			pickle.dump(metrics_dict, metrics_f)
 
 	# Go through the files in incoming_dir
 	all_files = [ str(x) for x in Path(f"{incoming_dir}").glob("**/*.pickle.gz") ]
@@ -723,6 +746,22 @@ if __name__ == "__main__":
 				else:
 					all_files.remove(full_file_name)
 					alert(f"Got file_gotten_check of {files_gotten_check[0]} for {short_file_name}")
+	# Use metrics_dict
+	all_files_new = [ str(x) for x in Path(f"{incoming_dir}").glob("**/*.pickle.gz") ]
+	for full_file_name in all_files_new.copy():
+		short_file_name = os.path.basename(full_file_name).replace(".pickle.gz", "")
+		with m_lock:
+			if short_file_name in metrics_dict["files"]:
+				all_files_new.remove(full_file_name)
+	######
+	testpg = set(all_files)
+	testpi = set(all_files_new)
+	diff_set = testpg ^ testpi
+	for this_name in diff_set:
+		if this_name in testpg:
+			debug(f"The file sets were different: {this_name} was in the Postgres but not the pickle")
+		else:
+			debug(f"The file sets were different: {this_name} was in the pickle but not the Postgres")		
 
 	processed_incoming_count = 0
 	processed_incoming_start = time.time()
