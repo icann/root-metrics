@@ -95,13 +95,14 @@ def process_one_incoming_file(full_file_name):
 			die(f"Object in {full_file_name} did not contain keys d, e, l, r, and v")
 	
 		# Update the metadata
+		updated_time = datetime.datetime.now(datetime.timezone.utc)
 		insert_files_string = "insert into files_gotten (processed_at, version, delay, elapsed, filename_short) values (%s, %s, %s, %s, %s)"
-		insert_files_values = (datetime.datetime.now(datetime.timezone.utc), in_obj["v"], in_obj["d"], in_obj["e"], short_file_name) 
+		insert_files_values = (updated_time, in_obj["v"], in_obj["d"], in_obj["e"], short_file_name) 
 		insert_from_template(insert_files_string, insert_files_values)
 		
 		# Update the metrics_dict
 		with m_lock:
-			metrics_dict["files"][short_file_name] = { "processed_at": datetime.datetime.now(datetime.timezone.utc), "version": in_obj["v"], "delay": in_obj["d"], "elapsed": in_obj["e"] }
+			metrics_dict["files"][short_file_name] = { "processed_at": updated_time, "version": in_obj["v"], "delay": in_obj["d"], "elapsed": in_obj["e"] }
 			update_metrics_file()
 
 		# Get the derived date and VP name from the file name
@@ -124,60 +125,75 @@ def process_one_incoming_file(full_file_name):
 	
 		# Go through each response item
 		response_count = 0
-		for this_resp in in_obj["r"]:
-			response_count += 1  # response_count is 1-based, not 0-based
-			# Each record is "S" for an SOA record or "C" for a correctness test
-			#   Sanity test that the type is S or C
-			if not this_resp["test_type"] in ("S", "C"):
-				alert(f"Found a response type {this_resp['test_type']}, which is not S or C, in record {response_count} of {full_file_name}")
-				continue
-			short_name_and_count = f"{short_file_name}-{response_count}"
-			insert_template = f"insert into record_info ({template_names_with_commas}) values ({percent_s_string})"
-			insert_values = insert_values_template(filename_record=short_name_and_count, date_derived=file_date, \
-				target=this_resp["target"], internet=this_resp["internet"], transport=this_resp["transport"], ip_addr=this_resp["ip_addr"], record_type=this_resp["test_type"], \
-				query_elapsed=0.0, timeout=this_resp["timeout"], soa_found="", likely_soa=in_obj["l"], is_correct="", failure_reason="", source_pickle=b"")
-			# If there is already something in timeout, just insert this record
-			if this_resp["timeout"]:
-				insert_values = insert_values._replace(is_correct="y")
-				insert_from_template(insert_template, insert_values)
-				continue
-			# If the response code is wrong, treat it as a timeout; use the response code as the timeout message
-			#   For "S" records   [ppo]
-			#   For "C" records   [ote]
-			this_response_code = this_resp.get("rcode")
-			if not ((insert_values.record_type == "S" and this_response_code in ["NOERROR"]) or (insert_values.record_type == "C" and this_response_code in ["NOERROR", "NXDOMAIN"])):
-				insert_values = insert_values._replace(timeout=this_response_code)
-				insert_values = insert_values._replace(is_correct="y")
-				insert_from_template(insert_template, insert_values)
-				continue
-			# What is left is responses that didn't time out
-			if not this_resp.get("query_elapsed"):
-				alert(f"Found a message without query_elapsed in record {response_count} of {full_file_name}")
-				continue
-			insert_values = insert_values._replace(query_elapsed=this_resp["query_elapsed"])  # [aym]
-			if insert_values.record_type == "S":
-				if this_resp.get("answer") == None or len(this_resp["answer"]) == 0:
-					alert(f"Found a message of type 'S' without an answer in record {response_count} of {full_file_name}")
+		with m_lock:
+			for this_resp in in_obj["r"]:
+				response_count += 1  # response_count is 1-based, not 0-based
+				# Each record is "S" for an SOA record or "C" for a correctness test
+				#   Sanity test that the type is S or C
+				if not this_resp["test_type"] in ("S", "C"):
+					alert(f"Found a response type {this_resp['test_type']}, which is not S or C, in record {response_count} of {full_file_name}")
 					continue
-				# Set is_correct to "s" because correctness is not being checked for record_type = s
-				insert_values = insert_values._replace(is_correct="s")
-				# This chooses only the first SOA record; there really should only be one SOA record in the response
-				this_soa_record = this_resp["answer"][0]["rdata"][0]
-				soa_record_parts = this_soa_record.split(" ")
-				this_soa = soa_record_parts[2]
-				insert_values = insert_values._replace(soa_found=this_soa)
-			elif insert_values.record_type == "C":
-				insert_values = insert_values._replace(source_pickle=pickle.dumps(this_resp))
-				# Make is_correct "t" for correctness tests that times out, otherwise mark it as "?" so that it gets checked
+				short_name_and_count = f"{short_file_name}-{response_count}"
+				insert_template = f"insert into record_info ({template_names_with_commas}) values ({percent_s_string})"
+				insert_values = insert_values_template(filename_record=short_name_and_count, date_derived=file_date, \
+					target=this_resp["target"], internet=this_resp["internet"], transport=this_resp["transport"], ip_addr=this_resp["ip_addr"], record_type=this_resp["test_type"], \
+					query_elapsed=0.0, timeout=this_resp["timeout"], soa_found="", likely_soa=in_obj["l"], is_correct="", failure_reason="", source_pickle=b"")
+				# Same for metrics_dict
+				metrics_dict["records"][short_name_and_count] = { "date_derived": file_date, "target": this_resp["target"], "internet": this_resp["internet"], \
+					"transport": this_resp["transport"], "ip_addr": this_resp["ip_addr"], "record_type": this_resp["test_type"], "query_elapsed": 0.0, \
+					"timeout": this_resp["timeout"], "soa_found": "", "likely_soa": in_obj["l"], "is_correct": "", "failure_reason": "", "source_pickle": bytearray() }
+				# If there is already something in timeout, just insert this record
 				if this_resp["timeout"]:
-					insert_values = insert_values._replace(is_correct="t")
-				else:
-					insert_values = insert_values._replace(is_correct="?")
-			# Write out this record
-			insert_from_template(insert_template, insert_values)
+					insert_values = insert_values._replace(is_correct="y")
+					insert_from_template(insert_template, insert_values)
+					metrics_dict["files"][short_file_name]["is_correct"] = "y"
+					update_metrics_file()
+					continue
+				# If the response code is wrong, treat it as a timeout; use the response code as the timeout message
+				#   For "S" records   [ppo]
+				#   For "C" records   [ote]
+				this_response_code = this_resp.get("rcode")
+				if not ((insert_values.record_type == "S" and this_response_code in ["NOERROR"]) or (insert_values.record_type == "C" and this_response_code in ["NOERROR", "NXDOMAIN"])):
+					insert_values = insert_values._replace(timeout=this_response_code)
+					insert_values = insert_values._replace(is_correct="y")
+					insert_from_template(insert_template, insert_values)
+					metrics_dict["files"][short_file_name]["timeout"] = this_response_code
+					metrics_dict["files"][short_file_name]["is_correct"] = "y"
+					update_metrics_file()
+					continue
+				# What is left is responses that didn't time out
+				if not this_resp.get("query_elapsed"):
+					alert(f"Found a message without query_elapsed in record {response_count} of {full_file_name}")
+					continue
+				insert_values = insert_values._replace(query_elapsed=this_resp["query_elapsed"])  # [aym]
+				metrics_dict["files"][short_file_name]["query_elapsed"] = this_resp["query_elapsed"]  # [aym]
+				if insert_values.record_type == "S":
+					if this_resp.get("answer") == None or len(this_resp["answer"]) == 0:
+						alert(f"Found a message of type 'S' without an answer in record {response_count} of {full_file_name}")
+						continue
+					# Set is_correct to "s" because correctness is not being checked for record_type = s
+					insert_values = insert_values._replace(is_correct="s")
+					metrics_dict["files"][short_file_name]["is_correct"] = "s"
+					# This chooses only the first SOA record; there really should only be one SOA record in the response
+					this_soa_record = this_resp["answer"][0]["rdata"][0]
+					soa_record_parts = this_soa_record.split(" ")
+					this_soa = soa_record_parts[2]
+					insert_values = insert_values._replace(soa_found=this_soa)
+					metrics_dict["files"][short_file_name]["soa_found"] = this_soa
+				elif insert_values.record_type == "C":
+					insert_values = insert_values._replace(source_pickle=pickle.dumps(this_resp))
+					metrics_dict["files"][short_file_name]["source_pickle"] = pickle.dumps(this_resp)
+					# Make is_correct "t" for correctness tests that times out, otherwise mark it as "?" so that it gets checked
+					if this_resp["timeout"]:
+						insert_values = insert_values._replace(is_correct="t")
+						metrics_dict["files"][short_file_name]["is_correct"] = "t"
+					else:
+						insert_values = insert_values._replace(is_correct="?")
+						metrics_dict["files"][short_file_name]["is_correct"] = "?"
+				# Write out this record
+				insert_from_template(insert_template, insert_values)
+				update_metrics_file()
 		
-		# End of response items loop
-		cur.close()
 	return
 
 ###############################################################
@@ -747,26 +763,17 @@ if __name__ == "__main__":
 					all_files.remove(full_file_name)
 					alert(f"Got file_gotten_check of {files_gotten_check[0]} for {short_file_name}")
 	# Use metrics_dict
-	all_files_new = [ str(x) for x in Path(f"{incoming_dir}").glob("**/*.pickle.gz") ]
-	for full_file_name in all_files_new.copy():
+	all_files_from_metrics_dict = [ str(x) for x in Path(f"{incoming_dir}").glob("**/*.pickle.gz") ]
+	for full_file_name in all_files_from_metrics_dict.copy():
 		short_file_name = os.path.basename(full_file_name).replace(".pickle.gz", "")
 		with m_lock:
 			if short_file_name in metrics_dict["files"]:
-				all_files_new.remove(full_file_name)
-	######
-	testpg = set(all_files)
-	testpi = set(all_files_new)
-	diff_set = testpg ^ testpi
-	for this_name in diff_set:
-		if this_name in testpg:
-			debug(f"The file sets were different: {this_name} was in the Postgres but not the pickle")
-		else:
-			debug(f"The file sets were different: {this_name} was in the pickle but not the Postgres")		
+				all_files_from_metrics_dict.remove(full_file_name)
 
 	processed_incoming_count = 0
 	processed_incoming_start = time.time()
-	with futures.ProcessPoolExecutor() as executor:
-		for (this_file, _) in zip(all_files, executor.map(process_one_incoming_file, all_files)):
+	with futures.ThreadPoolExecutor() as executor:
+		for (this_file, _) in zip(all_files_from_metrics_dict, executor.map(process_one_incoming_file, all_files_from_metrics_dict)):
 			processed_incoming_count += 1
 	log(f"Finished processing {processed_incoming_count} incoming files in {int(time.time() - processed_incoming_start)} seconds")
 
@@ -785,14 +792,14 @@ if __name__ == "__main__":
 			cur.execute("select filename_record from record_info where record_type = 'C' and is_correct = '?'")
 			initial_correct_to_check = cur.fetchall()
 	# Make a list of tuples with the filename_record
-	full_correctness_list = []
+	full_undone_list = []
 	for this_initial_correct in initial_correct_to_check:
-		full_correctness_list.append(("normal", this_initial_correct[0]))
+		full_undone_list.append(("normal", this_initial_correct[0]))
 	# If limit is set, use only the first few
 	if opts.limit:
-		full_correctness_list = full_correctness_list[0:limit_size]
-	with futures.ProcessPoolExecutor() as executor:
-		for (this_correctness, _) in zip(full_correctness_list, executor.map(process_one_correctness_tuple, full_correctness_list, chunksize=1000)):
+		full_undone_list = full_undone_list[0:limit_size]
+	with futures.ThreadPoolExecutor() as executor:
+		for (this_correctness, _) in zip(full_undone_list, executor.map(process_one_correctness_tuple, full_undone_list, chunksize=1000)):
 			processed_correctness_count += 1
 	
 	# There might be some records with is_correct that is now "r". Rerun process_one_correctness_tuple over these
@@ -801,14 +808,14 @@ if __name__ == "__main__":
 			cur.execute("select filename_record from record_info where record_type = 'C' and is_correct = 'r'")
 			redo_correct_to_check = cur.fetchall()
 	# Make a list of tuples with the filename_record
-	full_correctness_list = []
+	full_redo_list = []
 	for this_initial_correct in redo_correct_to_check:
-		full_correctness_list.append(("normal", this_initial_correct[0]))
+		full_redo_list.append(("normal", this_initial_correct[0]))
 	# If limit is set, use only the first few
 	if opts.limit:
-		full_correctness_list = full_correctness_list[0:limit_size]
-	with futures.ProcessPoolExecutor() as executor:
-		for (this_correctness, _) in zip(full_correctness_list, executor.map(process_one_correctness_tuple, full_correctness_list, chunksize=1000)):
+		full_redo_list = full_redo_list[0:limit_size]
+	with futures.ThreadPoolExecutor() as executor:
+		for (this_correctness, _) in zip(full_redo_list, executor.map(process_one_correctness_tuple, full_redo_list, chunksize=1000)):
 			processed_correctness_count += 1
 
 	log(f"Finished correctness checking {processed_correctness_count} records in {int(time.time() - processed_correctness_start)} seconds; finished processing")
