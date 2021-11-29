@@ -95,13 +95,14 @@ def process_one_incoming_file(full_file_name):
 			die(f"Object in {full_file_name} did not contain keys d, e, l, r, and v")
 	
 		# Update the metadata
+		updated_time = datetime.datetime.now(datetime.timezone.utc)
 		insert_files_string = "insert into files_gotten (processed_at, version, delay, elapsed, filename_short) values (%s, %s, %s, %s, %s)"
-		insert_files_values = (datetime.datetime.now(datetime.timezone.utc), in_obj["v"], in_obj["d"], in_obj["e"], short_file_name) 
+		insert_files_values = (updated_time, in_obj["v"], in_obj["d"], in_obj["e"], short_file_name) 
 		insert_from_template(insert_files_string, insert_files_values)
 		
 		# Update the metrics_dict
 		with m_lock:
-			metrics_dict["files"][short_file_name] = { "processed_at": datetime.datetime.now(datetime.timezone.utc), "version": in_obj["v"], "delay": in_obj["d"], "elapsed": in_obj["e"] }
+			metrics_dict["files"][short_file_name] = { "processed_at": updated_time, "version": in_obj["v"], "delay": in_obj["d"], "elapsed": in_obj["e"] }
 			update_metrics_file()
 
 		# Get the derived date and VP name from the file name
@@ -765,7 +766,7 @@ if __name__ == "__main__":
 
 	processed_incoming_count = 0
 	processed_incoming_start = time.time()
-	with futures.ProcessPoolExecutor() as executor:
+	with futures.ThreadPoolExecutor() as executor:
 		for (this_file, _) in zip(all_files, executor.map(process_one_incoming_file, all_files)):
 			processed_incoming_count += 1
 	log(f"Finished processing {processed_incoming_count} incoming files in {int(time.time() - processed_incoming_start)} seconds")
@@ -791,7 +792,7 @@ if __name__ == "__main__":
 	# If limit is set, use only the first few
 	if opts.limit:
 		full_correctness_list = full_correctness_list[0:limit_size]
-	with futures.ProcessPoolExecutor() as executor:
+	with futures.ThreadPoolExecutor() as executor:
 		for (this_correctness, _) in zip(full_correctness_list, executor.map(process_one_correctness_tuple, full_correctness_list, chunksize=1000)):
 			processed_correctness_count += 1
 	
@@ -807,7 +808,7 @@ if __name__ == "__main__":
 	# If limit is set, use only the first few
 	if opts.limit:
 		full_correctness_list = full_correctness_list[0:limit_size]
-	with futures.ProcessPoolExecutor() as executor:
+	with futures.ThreadPoolExecutor() as executor:
 		for (this_correctness, _) in zip(full_correctness_list, executor.map(process_one_correctness_tuple, full_correctness_list, chunksize=1000)):
 			processed_correctness_count += 1
 
