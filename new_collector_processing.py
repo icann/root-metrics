@@ -740,23 +740,7 @@ if __name__ == "__main__":
 	processed_correctness_start = time.time()
 	processed_correctness_count = 0
 
-	# Iterate over the records where is_correct is "?"
-	with psycopg2.connect(dbname="metrics", user="metrics") as conn:
-		with conn.cursor() as cur:
-			cur.execute("select filename_record from record_info where record_type = 'C' and is_correct = '?'")
-			initial_correct_to_check = cur.fetchall()
-	# Make a list of tuples with the filename_record
-	full_correctness_list = []
-	for this_initial_correct in initial_correct_to_check:
-		full_correctness_list.append(("normal", this_initial_correct[0]))
-	# If limit is set, use only the first few
-	if opts.limit:
-		full_correctness_list = full_correctness_list[0:limit_size]
-	with futures.ProcessPoolExecutor() as executor:
-		for (this_correctness, _) in zip(full_correctness_list, executor.map(process_one_correctness_tuple, full_correctness_list, chunksize=1000)):
-			processed_correctness_count += 1
-	
-	# There might be some records with is_correct that is now "r". Rerun process_one_correctness_tuple over these
+	# There might be some records with is_correct that is "r" from the last run. Rerun process_one_correctness_tuple over these
 	with psycopg2.connect(dbname="metrics", user="metrics") as conn:
 		with conn.cursor() as cur:
 			cur.execute("select filename_record from record_info where record_type = 'C' and is_correct = 'r'")
@@ -772,5 +756,21 @@ if __name__ == "__main__":
 		for (this_correctness, _) in zip(full_correctness_list, executor.map(process_one_correctness_tuple, full_correctness_list, chunksize=1000)):
 			processed_correctness_count += 1
 
+	# Iterate over the new records where is_correct is "?"
+	with psycopg2.connect(dbname="metrics", user="metrics") as conn:
+		with conn.cursor() as cur:
+			cur.execute("select filename_record from record_info where record_type = 'C' and is_correct = '?'")
+			initial_correct_to_check = cur.fetchall()
+	# Make a list of tuples with the filename_record
+	full_correctness_list = []
+	for this_initial_correct in initial_correct_to_check:
+		full_correctness_list.append(("normal", this_initial_correct[0]))
+	# If limit is set, use only the first few
+	if opts.limit:
+		full_correctness_list = full_correctness_list[0:limit_size]
+	with futures.ProcessPoolExecutor() as executor:
+		for (this_correctness, _) in zip(full_correctness_list, executor.map(process_one_correctness_tuple, full_correctness_list, chunksize=1000)):
+			processed_correctness_count += 1
+	
 	log(f"Finished correctness checking {processed_correctness_count} records in {int(time.time() - processed_correctness_start)} seconds; finished processing")
 	exit()
