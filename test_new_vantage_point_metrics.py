@@ -296,7 +296,7 @@ if __name__ == "__main__":
 	#   "l", text, the likely SOA for the correctness queries
 	#   "r": list, the records
 	output_dict = {
-		"v": 4,
+		"v": 5,
 		"d": wait_first,
 		"e": int(commands_clock_stop - commands_clock_start),
 		"l": highest_soa,

@@ -189,14 +189,6 @@ if __name__ == "__main__":
 			root_name_and_types = pickle.load(root_f)
 		except Exception as e:
 			die(f"Could not unpickle {root_auth_file}: {e}")
-	try:
-		this_soa_record = list(root_name_and_types[("./SOA")])[0]
-	except:
-		die(f"The root zone in {root_auth_file} didn't have an SOA record.")
-	try:
-		current_soa = this_soa_record.split(" ")[2]
-	except Exception as e:
-		die(f"Splitting the SOA from {root_auth_file} failed with {e}")
 	qname_qtype_pairs = list(root_name_and_types.keys())
 
 	# Pick one QNAME for correctness to be used later
@@ -237,7 +229,7 @@ if __name__ == "__main__":
 	
 	# Send the dnspython queries for ./SOA
 	all_results = []
-	commands_clock_start = int(time.time())
+	commands_clock_start = time.time()
 	with concurrent.futures.ThreadPoolExecutor() as executor:
 		# Calling sequence for do_one_query() is: target, internet, ip_addr, transport, query, test_type
 		returned_futures = {}
@@ -277,12 +269,25 @@ if __name__ == "__main__":
 		alert(f"Running scamper got a zero-length response in {scamper_elapsed} seconds, stderr was '{command_p.stderr}'")
 	scamper_output += f"Elapsed was {scamper_elapsed} seconds"
 
-	commands_clock_stop = int(time.time())
+	commands_clock_stop = time.time()
 
 	# Look for timeputs [yve]
 	for this_result in all_results:
 		if this_result["timeout"]:
 			log(f"{out_file_id}\t{this_result['timeout']}\t{this_result['id_string']}")
+
+	# Go through the "S" records in all_results looking for the highest SOA value
+	highest_soa = ""
+	for this_result in all_results:
+		if this_result["test_type"] == "S":
+			if this_result.get("answer"):
+				this_soa_record = this_result["answer"][0]["rdata"][0]
+				soa_record_parts = this_soa_record.split(" ")
+				this_soa = soa_record_parts[2]
+				if this_soa > highest_soa:
+					highest_soa = this_soa
+	if highest_soa == "":
+		alert("None of the 'S' answers had SOA records in the answers.")
 	
 	# Save output as a dict
 	#   "v": int, version of this program (3 for now)
@@ -291,10 +296,10 @@ if __name__ == "__main__":
 	#   "l", text, the likely SOA for the correctness queries
 	#   "r": list, the records
 	output_dict = {
-		"v": 4,
+		"v": 5,
 		"d": wait_first,
-		"e": commands_clock_stop - commands_clock_start,
-		"l": current_soa,
+		"e": int(commands_clock_stop - commands_clock_start),
+		"l": highest_soa,
 		"r": all_results,
 	}
 
