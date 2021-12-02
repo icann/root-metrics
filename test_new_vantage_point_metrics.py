@@ -324,3 +324,4 @@ if __name__ == "__main__":
 	# Log the finish
 	log(f"Finished {out_file_id}, {int(commands_clock_stop - commands_clock_start)} seconds elapsed")
 	exit()
+
