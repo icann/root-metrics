@@ -1,5 +1,5 @@
 - name: Freshen GitHub for metrics user in VPs
-  hosts: all_vps, c01
+  hosts: all_vps
   remote_user: "{{ superuser }}"
   become_user: metrics
   become: yes
@@ -8,3 +8,4 @@
     git:
       repo: "https://github.com/icann/root-metrics.git"
       dest: /home/metrics/repo
+      version: main
