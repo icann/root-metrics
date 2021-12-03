@@ -258,7 +258,8 @@ def process_one_correctness_tuple(in_tuple):
 		elif this_is_correct == "?":
 			one_root_file = f"{saved_matching_dir}/{this_soa_to_check}.matching.pickle"
 			if not os.path.exists(one_root_file):
-				alert(f"When checking correctness on {in_filename_record}, could not find root file {one_root_file}")
+				# Just return, leacing the is_correct as "?" so it will get caught on the next run
+				debug(f"When checking correctness on {in_filename_record}, could not find root file {one_root_file}")
 				return
 			# Try to read the file	
 			with open(one_root_file, mode="rb") as root_contents_f:
