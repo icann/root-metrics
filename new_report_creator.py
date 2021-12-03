@@ -306,6 +306,7 @@ if __name__ == "__main__":
 	for this_rsi in rsi_list:
 		rss_correctness_numerator += rsi_correctness[this_rsi][0]
 		rss_correctness_denominator += rsi_correctness[this_rsi][1]
+	print(f"{rss_correctness_numerator}  {rss_correctness_denominator}")
 	rss_correctness_ratio = rss_correctness_numerator / rss_correctness_denominator  # [ywo]
 	rss_correctness_incorrect = rss_correctness_denominator - rss_correctness_numerator
 
