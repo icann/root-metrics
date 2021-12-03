@@ -14,8 +14,8 @@ if __name__ == "__main__":
 		os.mkdir(log_dir)
 	# Set up the logging and alert mechanisms
 	log_file_name = f"{log_dir}/reports-log.txt"
-	alert_file_name = f"{log_dir}/alert.txt"
-	debug_file_name = f"{log_dir}/debug.txt"
+	alert_file_name = f"{log_dir}/reports-alert.txt"
+	debug_file_name = f"{log_dir}/reports-debug.txt"
 	vp_log = logging.getLogger("logging")
 	vp_log.setLevel(logging.INFO)
 	log_handler = logging.FileHandler(log_file_name)
