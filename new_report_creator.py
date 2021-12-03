@@ -75,7 +75,7 @@ if __name__ == "__main__":
 	
 	if opts.week:
 		now = datetime.datetime.utcnow()
-		week_ago = now.replace(now.timedelta(days=-7))
+		week_ago = now - datetime.timedelta(days=-7)
 		report_start_timestamp = week_ago.strftime(strf_timestamp_format)
 		report_end_timestamp = now.strftime(strf_timestamp_format)
 		new_report_name = f"{weekly_reports_dir}/weekly-ending-{now}.txt"
