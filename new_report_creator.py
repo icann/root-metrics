@@ -218,7 +218,7 @@ if __name__ == "__main__":
 
 	# RSI correctness collation [ebg]
 
-	for this_rec in correctness_dict:
+	for (this_key, this_rec) in sorted(correctness_dict.items()):
 		if this_rec["is_correct"] == "n":
 			rsi_correctness[this_rec["rsi"]][0] += 1
 		rsi_correctness[this_rec["rsi"]][1] += 1
@@ -234,7 +234,7 @@ if __name__ == "__main__":
 			rsi_publication_latency[this_rsi][this_soa] = { "v4udp": None, "v4tcp": None, "v6udp": None, "v6tcp": None, "last": None, "latency": 0 }
 	# Go through the SOA records again, filling in the fields for internet and transport pairs
 	#   Again, this relies on soa_recs to be in date order
-	for this_rec in sorted(soa_dict):
+	for (this_key, this_rec) in sorted(soa_dict.items()):
 		# Timed-out responses don't count for publication latency  # [tub]
 		if this_rec["timeout"]:
 			continue
