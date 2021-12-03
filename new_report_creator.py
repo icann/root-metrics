@@ -196,7 +196,7 @@ if __name__ == "__main__":
 	# Measurements for publication latency requires more work because the system has to determine when new SOAs are first seen
 	#   soa_first_seen keys are SOAs, values are the date first seen
 	soa_first_seen = {}
-	for this_rec in sorted(soa_dict):
+	for (this_key, this_rec) in sorted(soa_dict.items()):
 		int_trans_pair = f"{this_rec['internet']}{this_rec['transport']}"
 		# RSI availability [gfa]
 		if not this_rec["timeout"]:
