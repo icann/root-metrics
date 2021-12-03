@@ -222,6 +222,7 @@ if __name__ == "__main__":
 		if this_rec["is_correct"] == "n":
 			rsi_correctness[this_rec["rsi"]][0] += 1
 		rsi_correctness[this_rec["rsi"]][1] += 1
+	exit(rsi_correctness)
 		
 	##############################################################
 
