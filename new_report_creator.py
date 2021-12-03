@@ -149,12 +149,12 @@ if __name__ == "__main__":
 
 			# Get all the SOA records for this period
 			cur.execute("select filename_record, target, internet, transport, query_elapsed, timeout, soa_found from record_info " +
-				f"{where_date} and record_type = 'S' order by date_derived")
+				f"{where_date} and record_type = 'S' order by filename_record")
 			soa_recs = cur.fetchall()
 	
 			# Get all the correctness records for this period
 			cur.execute("select filename_record, target, is_correct from record_info " +
-				f"{where_date} and record_type = 'C' order by date_derived")
+				f"{where_date} and record_type = 'C' order by filename_record")
 			correctness_recs = cur.fetchall()
 	log(f"Found {len(soa_recs)} SOA records and {len(correctness_recs)} correctness records for {report_start_timestamp}-{report_end_timestamp}")
 		
@@ -222,7 +222,7 @@ if __name__ == "__main__":
 		if this_rec["is_correct"] == "n":
 			rsi_correctness[this_rec["rsi"]][0] += 1
 		rsi_correctness[this_rec["rsi"]][1] += 1
-	exit(rsi_correctness)
+	debug(rsi_correctness)
 		
 	##############################################################
 
