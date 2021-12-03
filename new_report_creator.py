@@ -219,7 +219,7 @@ if __name__ == "__main__":
 	# RSI correctness collation [ebg]
 
 	for this_rec in correctness_dict:
-		if this_rec["is_correct"]:
+		if this_rec["is_correct"] == "y":
 			rsi_correctness[this_rec["rsi"]][0] += 1
 		rsi_correctness[this_rec["rsi"]][1] += 1
 		
