@@ -75,7 +75,7 @@ if __name__ == "__main__":
 	
 	if opts.week:
 		now = datetime.datetime.utcnow()
-		week_ago = now - datetime.timedelta(days=-7)
+		week_ago = now + datetime.timedelta(days=-7)
 		report_start_timestamp = week_ago.strftime(strf_timestamp_format)
 		report_end_timestamp = now.strftime(strf_timestamp_format)
 		new_report_name = f"{weekly_reports_dir}/weekly-ending-{now}.txt"
@@ -149,14 +149,14 @@ if __name__ == "__main__":
 
 			# Get all the SOA records for this period
 			cur.execute("select filename_record, target, internet, transport, query_elapsed, timeout, soa_found from record_info " +
-				f"{where_date} and record_type = 'S' order by filename_record")
+				f"{where_date} and record_type = 'S' order by date_derived")
 			soa_recs = cur.fetchall()
 	
 			# Get all the correctness records for this period
 			cur.execute("select filename_record, target, is_correct from record_info " +
-				f"{where_date} and record_type = 'C' order by filename_record")
+				f"{where_date} and record_type = 'C' order by date_derived")
 			correctness_recs = cur.fetchall()
-	log(f"Found {len(soa_recs)} SOA records and {len(correctness_recs)} correctness records for {report_start_timestamp}-{report_end_timestamp}")
+	log(f"Found {len(soa_recs)} SOA records and {len(correctness_recs)} correctness records for {report_start_timestamp} to {report_end_timestamp}")
 		
 	# Create dicts from the lists so that we can add derived values
 	soa_dict = {}
