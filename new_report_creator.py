@@ -245,11 +245,12 @@ if __name__ == "__main__":
 		except:
 			exit(f"When forming int_trans_pair: {this_rec}")
 		# Store the datetimes when each SOA was seen [cnj]
-		try:
-			if not rsi_publication_latency[this_rsi][this_soa_found][int_trans_pair]:
-				rsi_publication_latency[this_rsi][this_soa_found][int_trans_pair] = this_rec["date_time"]
-		except:
-			exit(f"Faiied to fill in rsi_publication_latency: this_rsi: {this_rsi}  this_soa_found: {this_soa_found}  int_trans_pair: {int_trans_pair}")
+		if this_soa_found:
+			try:
+				if not rsi_publication_latency[this_rsi][this_soa_found][int_trans_pair]:
+					rsi_publication_latency[this_rsi][this_soa_found][int_trans_pair] = this_rec["date_time"]
+			except:
+				exit(f"Faiied to fill in rsi_publication_latency: this_rsi: {this_rsi}  this_soa_found: {this_soa_found}  int_trans_pair: {int_trans_pair}")
 	# Change the "last" entry in the rsi_publication_latency to the time that the SOA was finally seen by all internet/transport pairs
 	for this_rsi in rsi_list:
 		for this_soa in soa_first_seen:
