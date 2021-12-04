@@ -50,7 +50,7 @@ if __name__ == "__main__":
 		help="Force the monthly report to be recreated if it already exists")
 	this_parser.add_argument("--debug", action="store_true", dest="debug",
 		help="Adds debugging info to the report output")
-	this_parser.add_argument("--week", action="store_true", dest="week",
+	this_parser.add_argument("--thisweek", action="store_true", dest="thisweek",
 		help="Create a report for just the current week ending now")
 	opts = this_parser.parse_args()
 
@@ -73,12 +73,12 @@ if __name__ == "__main__":
 	strf_day_format = "%Y-%m-%d"
 	strf_timestamp_format = "%Y-%m-%d %H:%M:%S"
 	
-	if opts.week:
+	if opts.thisweek:
 		now = datetime.datetime.utcnow()
 		week_ago = now + datetime.timedelta(days=-7)
 		report_start_timestamp = week_ago.strftime(strf_timestamp_format)
 		report_end_timestamp = now.strftime(strf_timestamp_format)
-		new_report_name = f"{weekly_reports_dir}/weekly-ending-{now}.txt"
+		new_report_name = f"{weekly_reports_dir}/custom-weekly-ending-{now}.txt"
 	else:
 		# See if a monthly report needs to be written
 		if opts.test_date:
@@ -162,7 +162,7 @@ if __name__ == "__main__":
 	soa_dict = {}
 	for x in soa_recs:
 		soa_dict[x[0]] = { "rsi": x[1], "internet": x[2], "transport": x[3], "query_elapsed": x[4], "timeout": x[5], "soa_found": x[6]}
-		(date_time, vp, rec_no) = x[0].split("-")
+		(date_time, vp, _) = x[0].split("-")
 		soa_dict[x[0]]["date_time"] = date_time
 		soa_dict[x[0]]["vp"] = vp
 
@@ -235,13 +235,18 @@ if __name__ == "__main__":
 	# Go through the SOA records again, filling in the fields for internet and transport pairs
 	#   Again, this relies on soa_recs to be in date order
 	for (this_key, this_rec) in sorted(soa_dict.items()):
+		this_rsi = this_rec["rsi"]
+		this_soa_found = this_rec["soa_found"]
 		# Timed-out responses don't count for publication latency  # [tub]
 		if this_rec["timeout"]:
 			continue
-		int_trans_pair = f"{this_rec['internet']}{this_rec['transport']}"
+		try:
+			int_trans_pair = f"{this_rec['internet']}{this_rec['transport']}"
+		except:
+			exit(this_rec)
 		# Store the datetimes when each SOA was seen [cnj]
-		if not rsi_publication_latency[this_rec["rsi"]][this_rec["soa_found"]][int_trans_pair]:
-			rsi_publication_latency[this_rec["rsi"]][this_rec["soa_found"]][int_trans_pair] = this_rec["date_time"]
+		if not rsi_publication_latency[this_rsi][this_soa_found][int_trans_pair]:
+			rsi_publication_latency[this_rsi][this_soa_found][int_trans_pair] = this_rec["date_time"]
 	# Change the "last" entry in the rsi_publication_latency to the time that the SOA was finally seen by all internet/transport pairs
 	for this_rsi in rsi_list:
 		for this_soa in soa_first_seen:
@@ -307,7 +312,7 @@ if __name__ == "__main__":
 	for this_rsi in rsi_list:
 		rss_correctness_numerator += rsi_correctness[this_rsi][0]
 		rss_correctness_denominator += rsi_correctness[this_rsi][1]
-	print(f"{rss_correctness_numerator}  {rss_correctness_denominator}")
+	debug(f"rss_correctness_numerator: {rss_correctness_numerator}  rss_correctness_denominator: {rss_correctness_denominator}")
 	rss_correctness_ratio = rss_correctness_numerator / rss_correctness_denominator  # [ywo]
 	rss_correctness_incorrect = rss_correctness_denominator - rss_correctness_numerator
 
