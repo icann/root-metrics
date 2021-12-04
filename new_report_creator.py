@@ -148,7 +148,7 @@ if __name__ == "__main__":
 			where_date = f"where date_derived between '{report_start_timestamp}' and  '{report_end_timestamp}' "
 
 			# Get all the SOA records for this period
-			cur.execute("select filename_record, target, internet, transport, query_elapsed, timeout, soa_found from record_info " +
+			cur.execute("select filename_record, target, internet, transport, query_elapsed, timeout, soa_found, date_derived from record_info " +
 				f"{where_date} and record_type = 'S' order by date_derived")
 			soa_recs = cur.fetchall()
 	
@@ -161,9 +161,8 @@ if __name__ == "__main__":
 	# Create dicts from the lists so that we can add derived values
 	soa_dict = {}
 	for x in soa_recs:
-		soa_dict[x[0]] = { "rsi": x[1], "internet": x[2], "transport": x[3], "query_elapsed": x[4], "timeout": x[5], "soa_found": x[6]}
-		(date_time, vp, _) = x[0].split("-")
-		soa_dict[x[0]]["date_time"] = date_time
+		soa_dict[x[0]] = { "rsi": x[1], "internet": x[2], "transport": x[3], "query_elapsed": x[4], "timeout": x[5], "soa_found": x[6], "date_time": x[7]}
+		(_, vp, _) = x[0].split("-")
 		soa_dict[x[0]]["vp"] = vp
 
 	correctness_dict = {}
@@ -240,17 +239,11 @@ if __name__ == "__main__":
 		# Timed-out responses don't count for publication latency  # [tub]
 		if this_rec["timeout"]:
 			continue
-		try:
-			int_trans_pair = f"{this_rec['internet']}{this_rec['transport']}"
-		except:
-			exit(f"When forming int_trans_pair: {this_rec}")
+		int_trans_pair = f"{this_rec['internet']}{this_rec['transport']}"
 		# Store the datetimes when each SOA was seen [cnj]
 		if this_soa_found:
-			try:
-				if not rsi_publication_latency[this_rsi][this_soa_found][int_trans_pair]:
-					rsi_publication_latency[this_rsi][this_soa_found][int_trans_pair] = this_rec["date_time"]
-			except:
-				exit(f"Faiied to fill in rsi_publication_latency: this_rsi: {this_rsi}  this_soa_found: {this_soa_found}  int_trans_pair: {int_trans_pair}")
+			if not rsi_publication_latency[this_rsi][this_soa_found][int_trans_pair]:
+				rsi_publication_latency[this_rsi][this_soa_found][int_trans_pair] = this_rec["date_time"]
 	# Change the "last" entry in the rsi_publication_latency to the time that the SOA was finally seen by all internet/transport pairs
 	for this_rsi in rsi_list:
 		for this_soa in soa_first_seen:
