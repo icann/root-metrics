@@ -264,7 +264,7 @@ if __name__ == "__main__":
 	for this_vp in vp_names:
 		rss_availability[this_vp] = {}
 	# Go through te SOA records recorded earlier
-	for this_rec in sorted(soa_dict):
+	for (this_key, this_rec) in sorted(soa_dict.items()):
 		this_vp = this_rec["vp"]
 		this_date_time = this_rec["date_time"]
 		if not rss_availability[this_vp].get(this_date_time):
@@ -281,7 +281,7 @@ if __name__ == "__main__":
 	# For RSS response latency, for each date_time, each internet/transport pair has a list of latencies
 	rss_response_latency_in = {}
 	rss_latency_intervals = set()
-	for this_rec in sorted(soa_dict):  # [spx]
+	for (this_key, this_rec) in sorted(soa_dict.items()):  # [spx]
 		this_vp = this_rec["vp"]
 		this_date_time = this_rec["date_time"]
 		this_query_elapsed = this_rec["query_elapsed"]
