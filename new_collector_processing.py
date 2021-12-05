@@ -702,6 +702,7 @@ if __name__ == "__main__":
 	###############################################################
 
 	# Go through the files in incoming_dir
+	processed_incoming_start = time.time()
 	all_files = [ str(x) for x in Path(f"{incoming_dir}").glob("**/*.pickle.gz") ]
 	# If limit is set, use only the first few
 	if opts.limit:
@@ -726,7 +727,6 @@ if __name__ == "__main__":
 					alert(f"Got file_gotten_check of {files_gotten_check[0]} for {short_file_name}")
 
 	processed_incoming_count = 0
-	processed_incoming_start = time.time()
 	with futures.ProcessPoolExecutor() as executor:
 		for (this_file, _) in zip(all_files, executor.map(process_one_incoming_file, all_files)):
 			processed_incoming_count += 1
