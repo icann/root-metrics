@@ -101,7 +101,7 @@
       chdir: /home/metrics/Source/dnscap-2.0.1
       cmd: "./configure --prefix=/home/metrics/Target; make install"
       creates: /home/metrics/Target/bin/dnscap
-  - name: get dnspython
+  - name: Get dnspython
     shell:
       cmd: "pip3 install --user dnspython"
       creates: /home/metrics/.local/lib/python3.7/site-packages/dns
@@ -110,6 +110,10 @@
       repo: 'https://github.com/icann/root-metrics.git'
       dest: /home/metrics/repo
       version: main
+  - name: Run "new_get_root_zone.py --vp" immediately if needed
+    shell:
+      cmd: "/home/metrics/repo/new_get_root_zone.py --vp"
+      creates: /home/metrics/Logs/root-auth-rrs.pickle
   - name: Give the crontab entry for new_get_root_zone.py
     cron:
       disabled: no

@@ -48,8 +48,6 @@ if __name__ == "__main__":
 		help="Give a date as YY-MM-DD-HH-MM-SS to act as today")
 	this_parser.add_argument("--force", action="store_true", dest="force",
 		help="Force the monthly report to be recreated if it already exists")
-	this_parser.add_argument("--debug", action="store_true", dest="debug",
-		help="Adds debugging info to the report output")
 	this_parser.add_argument("--thisweek", action="store_true", dest="thisweek",
 		help="Create a report for just the current week ending now")
 	opts = this_parser.parse_args()
@@ -221,8 +219,7 @@ if __name__ == "__main__":
 		if this_rec["is_correct"] == "n":
 			rsi_correctness[this_rec["rsi"]][0] += 1
 		rsi_correctness[this_rec["rsi"]][1] += 1
-	debug(rsi_correctness)
-		
+	
 	##############################################################
 
 	# RSI publication latency collation  # [yxn]
@@ -309,7 +306,6 @@ if __name__ == "__main__":
 	for this_rsi in rsi_list:
 		rss_correctness_numerator += rsi_correctness[this_rsi][0]
 		rss_correctness_denominator += rsi_correctness[this_rsi][1]
-	debug(f"rss_correctness_numerator: {rss_correctness_numerator}  rss_correctness_denominator: {rss_correctness_denominator}")
 	rss_correctness_ratio = rss_correctness_numerator / rss_correctness_denominator  # [ywo]
 	rss_correctness_incorrect = rss_correctness_denominator - rss_correctness_numerator
 
