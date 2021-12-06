@@ -233,6 +233,7 @@ if __name__ == "__main__":
 		int_trans_pair = f"{this_rec['internet']}{this_rec['transport']}"
 		# Store the datetimes when each SOA was seen [cnj]
 		if this_soa_found:
+			# Only add an entry if there is not already one there; this causes only the earliest date_time to be recorded
 			if not rsi_publication_latency[this_rsi][this_soa_found][int_trans_pair]:
 				rsi_publication_latency[this_rsi][this_soa_found][int_trans_pair] = this_rec["date_time"]
 	# Change the "last" entry in the rsi_publication_latency to the time that the SOA was finally seen by all internet/transport pairs
@@ -240,9 +241,11 @@ if __name__ == "__main__":
 		for this_soa in soa_first_seen:
 			for this_pair in report_pairs:
 				if not rsi_publication_latency[this_rsi][this_soa]["last"]:
-						rsi_publication_latency[this_rsi][this_soa]["last"] = rsi_publication_latency[this_rsi][this_soa][this_pair]
+					# Set "last" if it doesn't already exist
+					rsi_publication_latency[this_rsi][this_soa]["last"] = rsi_publication_latency[this_rsi][this_soa][this_pair]
 				elif rsi_publication_latency[this_rsi][this_soa][this_pair] > rsi_publication_latency[this_rsi][this_soa]["last"]:
-						rsi_publication_latency[this_rsi][this_soa]["last"] = rsi_publication_latency[this_rsi][this_soa][this_pair]
+					# Reset "last" to the new value if the new value is greater
+					rsi_publication_latency[this_rsi][this_soa]["last"] = rsi_publication_latency[this_rsi][this_soa][this_pair]
 			# Fill in the "latency" entry by comparing the "last" to the SOA datetime; it is stored as seconds
 			rsi_publication_latency[this_rsi][this_soa]["latency"] = (rsi_publication_latency[this_rsi][this_soa]["last"] - soa_first_seen[this_soa]).seconds  # [jtz]
 				

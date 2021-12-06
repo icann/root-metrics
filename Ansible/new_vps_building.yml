@@ -38,6 +38,9 @@
       name: net.ipv4.tcp_fastopen
       value: '0'
       state: present
+  - name: Set timezone to UTC
+    shell:
+      cmd: "timedatectl set-timezone UTC"
 - name: Set up metrics user
   hosts: all_vps
   remote_user: "{{ superuser }}"
