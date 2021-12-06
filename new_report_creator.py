@@ -186,8 +186,8 @@ if __name__ == "__main__":
 	for this_rsi in rsi_list:
 		rsi_availability[this_rsi] = { "v4udp": [ 0, 0 ], "v4tcp": [ 0, 0 ], "v6udp": [ 0, 0 ], "v6tcp": [ 0, 0 ] }
 		rsi_response_latency[this_rsi] = { "v4udp": [ [], 0 ], "v4tcp": [ [], 0 ], "v6udp": [ [], 0 ], "v6tcp": [ [], 0 ] }
-		rsi_correctness[this_rsi] = [ 0, 0 ]
 		rsi_publication_latency[this_rsi] = {}
+		rsi_correctness[this_rsi] = [ 0, 0 ]
 
 	##############################################################	
 
@@ -216,16 +216,6 @@ if __name__ == "__main__":
 
 	##############################################################
 
-	# RSI correctness collation [ebg]
-	#   [0] is the number correct, [1] is the total count
-
-	for (this_key, this_rec) in sorted(correctness_dict.items()):
-		if not this_rec["is_correct"] == "n":
-			rsi_correctness[this_rec["rsi"]][0] += 1
-		rsi_correctness[this_rec["rsi"]][1] += 1
-	
-	##############################################################
-
 	# RSI publication latency collation  # [yxn]
 
 	# This must be run after the soa_first_seen dict is filled in
@@ -245,7 +235,6 @@ if __name__ == "__main__":
 		if this_soa_found:
 			if not rsi_publication_latency[this_rsi][this_soa_found][int_trans_pair]:
 				rsi_publication_latency[this_rsi][this_soa_found][int_trans_pair] = this_rec["date_time"]
-		debug(f"rsi_publication_latency: {pprint.pformat(rsi_publication_latency)}")
 	# Change the "last" entry in the rsi_publication_latency to the time that the SOA was finally seen by all internet/transport pairs
 	for this_rsi in rsi_list:
 		for this_soa in soa_first_seen:
@@ -257,6 +246,16 @@ if __name__ == "__main__":
 			# Fill in the "latency" entry by comparing the "last" to the SOA datetime; it is stored as seconds
 			rsi_publication_latency[this_rsi][this_soa]["latency"] = (rsi_publication_latency[this_rsi][this_soa]["last"] - soa_first_seen[this_soa]).seconds  # [jtz]
 				
+	##############################################################
+
+	# RSI correctness collation [ebg]
+	#   [0] is the number correct, [1] is the total count
+
+	for (this_key, this_rec) in sorted(correctness_dict.items()):
+		if not this_rec["is_correct"] == "n":
+			rsi_correctness[this_rec["rsi"]][0] += 1
+		rsi_correctness[this_rec["rsi"]][1] += 1
+	
 	##############################################################
 	
 	# RSS availability collation
@@ -304,6 +303,15 @@ if __name__ == "__main__":
 			
 	##############################################################
 	
+	# RSS publication latency collation
+	
+	rss_publication_latency_list = []
+	for this_rsi in rsi_list:
+		for this_soa in soa_first_seen:
+			rss_publication_latency_list.append(rsi_publication_latency[this_rsi][this_soa]["latency"])  # [dbo]
+
+	##############################################################
+	
 	# RSS correctness collation
 	
 	rss_correctness_numerator = 0
@@ -313,15 +321,6 @@ if __name__ == "__main__":
 		rss_correctness_denominator += rsi_correctness[this_rsi][1]
 	rss_correctness_ratio = rss_correctness_numerator / rss_correctness_denominator  # [ywo]
 	rss_correctness_incorrect = rss_correctness_denominator - rss_correctness_numerator
-
-	##############################################################
-	
-	# RSS publication latency collation
-	
-	rss_publication_latency_list = []
-	for this_rsi in rsi_list:
-		for this_soa in soa_first_seen:
-			rss_publication_latency_list.append(rsi_publication_latency[this_rsi][this_soa]["latency"])  # [dbo]
 
 	##############################################################
 	
