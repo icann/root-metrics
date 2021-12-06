@@ -50,6 +50,8 @@ if __name__ == "__main__":
 		help="Force the monthly report to be recreated if it already exists")
 	this_parser.add_argument("--thisweek", action="store_true", dest="thisweek",
 		help="Create a report for just the current week ending now")
+	this_parser.add_argument("--debug", action="store_true", dest="debug",
+		help="Add debugging text to some output")
 	opts = this_parser.parse_args()
 
 	# Subdirectories of ~/Output for the reports
