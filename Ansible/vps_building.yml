@@ -113,21 +113,21 @@
       repo: 'https://github.com/icann/root-metrics.git'
       dest: /home/metrics/repo
       version: main
-  - name: Run "new_get_root_zone.py --vp" immediately if needed
+  - name: Run "get_root_zone.py --vp" immediately if needed
     shell:
-      cmd: "/home/metrics/repo/new_get_root_zone.py --vp"
+      cmd: "/home/metrics/repo/get_root_zone.py --vp"
       creates: /home/metrics/Logs/root-auth-rrs.pickle
-  - name: Give the crontab entry for new_get_root_zone.py
+  - name: Give the crontab entry for get_root_zone.py
     cron:
       disabled: no
       name: Get the new root zone
       minute: "1,16,31,46"
-      job: "/home/metrics/repo/new_get_root_zone.py --vp >>/home/metrics/Logs/cron-alert.txt 2>&1"
-  - name: Give the crontab entry for new_vantage_point_metrics.py
+      job: "/home/metrics/repo/get_root_zone.py --vp >>/home/metrics/Logs/cron-alert.txt 2>&1"
+  - name: Give the crontab entry for vantage_point_metrics.py
     cron:   # [mba] [wca]
       name: Get measurements
       minute: "0-59/5"
-      job: "/home/metrics/repo/new_vantage_point_metrics.py >>/home/metrics/Logs/cron-alert.txt 2>&1"
+      job: "/home/metrics/repo/vantage_point_metrics.py >>/home/metrics/Logs/cron-alert.txt 2>&1"
 - name: Create and start rc.local after making dnscap
   hosts: all_vps  
   remote_user: "{{ superuser }}"

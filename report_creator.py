@@ -132,7 +132,7 @@ if __name__ == "__main__":
 	report_pairs = { "v4udp": "IPv4 UDP", "v4tcp": "IPv4 TCP", "v6udp": "IPv6 UDP", "v6tcp": "IPv6 TCP" }
 
 	# Make a list of vantage points for the RSS reports
-	vp_list_file = f"{str(Path('~').expanduser())}/repo/new_vp_list.txt"
+	vp_list_file = f"{str(Path('~').expanduser())}/repo/vp_list.txt"
 	if not os.path.exists(vp_list_file):
 		die(f"Could not find {vp_list_file}")
 	vp_names = []

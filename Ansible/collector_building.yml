@@ -92,7 +92,7 @@
       state: directory
   - name: Put vp_list.txt
     copy:
-      src: ../new_vp_list.txt
+      src: ../vp_list.txt
       dest: /home/metrics/vp_list.txt
   - name: Pull or freshen the Github repo
     git:
@@ -103,24 +103,24 @@
     shell:
       cmd: "pip3 install --user dnspython"
       creates: /home/metrics/.local/lib/python3.7/site-packages/dns
-  - name: crontab entry for new_get_root_zone.py
+  - name: crontab entry for get_root_zone.py
     cron:   # [mba] [wca]
       disabled: no
       name: Get the new root zone
       minute: "0,15,30,45"
-      job: "/home/metrics/repo/new_get_root_zone.py >>/home/metrics/Logs/cron-alert.txt 2>&1"
-  - name: crontab entry for new_copy_files_from_vps.py
+      job: "/home/metrics/repo/get_root_zone.py >>/home/metrics/Logs/cron-alert.txt 2>&1"
+  - name: crontab entry for copy_files_from_vps.py
     cron:
       disabled: no
       name: Get the files from the VPs
       minute: "1,16,31,46"
-      job: "/home/metrics/repo/new_copy_files_from_vps.py >>/home/metrics/Logs/cron-alert.txt 2>&1"
-  - name: crontab entry for new_collector_processing.py
+      job: "/home/metrics/repo/copy_files_from_vps.py >>/home/metrics/Logs/cron-alert.txt 2>&1"
+  - name: crontab entry for collector_processing.py
     cron:
       disabled: yes
       name: Do all the processing
       minute: "5"
-      job: "/home/metrics/repo/new_collector_processing.py >>/home/metrics/Logs/cron-alert.txt 2>&1"
+      job: "/home/metrics/repo/collector_processing.py >>/home/metrics/Logs/cron-alert.txt 2>&1"
 - name: Do Postgres stuff
   hosts: c03
   remote_user: "{{ superuser }}"
