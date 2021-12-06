@@ -245,7 +245,7 @@ if __name__ == "__main__":
 		if this_soa_found:
 			if not rsi_publication_latency[this_rsi][this_soa_found][int_trans_pair]:
 				rsi_publication_latency[this_rsi][this_soa_found][int_trans_pair] = this_rec["date_time"]
-		debug(f"rsi_publication_latency: {pprint.pprint(rsi_publication_latency)}")
+		debug(f"rsi_publication_latency: {pprint.pformat(rsi_publication_latency)}")
 	# Change the "last" entry in the rsi_publication_latency to the time that the SOA was finally seen by all internet/transport pairs
 	for this_rsi in rsi_list:
 		for this_soa in soa_first_seen:
