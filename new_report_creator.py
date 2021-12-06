@@ -4,7 +4,7 @@
 # Run as the metrics user
 # Three-letter items in square brackets (such as [xyz]) refer to parts of rssac-047.md
 
-import argparse, datetime, glob, logging, math, os, psycopg2, statistics
+import argparse, datetime, glob, logging, math, os, pprint, psycopg2, statistics
 from pathlib import Path
 
 if __name__ == "__main__":
@@ -208,7 +208,7 @@ if __name__ == "__main__":
 				rsi_response_latency[this_rec["rsi"]][int_trans_pair][0].append(this_rec["query_elapsed"])
 				rsi_response_latency[this_rec["rsi"]][int_trans_pair][1] += 1
 			except:
-				die("Found a non-timed-out response that did not have an elapsed time: '{}'".format(this_rec))
+				die(f"Found a non-timed-out response that did not have an elapsed time: {this_rec}")
 		# Store the date that a SOA was first seen; note that this relies on soa_recs to be ordered by date_derived
 		this_soa = this_rec["soa_found"]
 		if this_soa and (not this_soa in soa_first_seen):
@@ -217,9 +217,10 @@ if __name__ == "__main__":
 	##############################################################
 
 	# RSI correctness collation [ebg]
+	#   [0] is the number correct, [1] is the total count
 
 	for (this_key, this_rec) in sorted(correctness_dict.items()):
-		if this_rec["is_correct"] == "n":
+		if not this_rec["is_correct"] == "n":
 			rsi_correctness[this_rec["rsi"]][0] += 1
 		rsi_correctness[this_rec["rsi"]][1] += 1
 	
@@ -244,6 +245,7 @@ if __name__ == "__main__":
 		if this_soa_found:
 			if not rsi_publication_latency[this_rsi][this_soa_found][int_trans_pair]:
 				rsi_publication_latency[this_rsi][this_soa_found][int_trans_pair] = this_rec["date_time"]
+		debug(f"rsi_publication_latency: {pprint.pprint(rsi_publication_latency)}")
 	# Change the "last" entry in the rsi_publication_latency to the time that the SOA was finally seen by all internet/transport pairs
 	for this_rsi in rsi_list:
 		for this_soa in soa_first_seen:
