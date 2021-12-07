@@ -10,7 +10,7 @@
     ignore_errors: true
   - name: Remove metrics
     command:
-      cmd: "/usr/sbin/deluser --remove-home metrics"
+      cmd: "/usr/sbin/deluser --remove-all-files --force metrics"
       removes: "/home/metrics"
     ignore_errors: true
       
