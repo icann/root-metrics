@@ -4,7 +4,7 @@
 # Run as the metrics user
 # Three-letter items in square brackets (such as [xyz]) refer to parts of rssac-047.md
 
-import argparse, datetime, glob, logging, math, os, pprint, psycopg2, statistics
+import argparse, datetime, glob, logging, math, os, psycopg2, statistics
 from pathlib import Path
 
 if __name__ == "__main__":
@@ -46,13 +46,17 @@ if __name__ == "__main__":
 	this_parser = argparse.ArgumentParser()
 	this_parser.add_argument("--test_date", action="store", dest="test_date",
 		help="Give a date as YY-MM-DD-HH-MM-SS to act as today")
+	this_parser.add_argument("--lastmonth", action="store_true", dest="lastmonth",
+		help="Create a report for the previous month")
+	this_parser.add_argument("--thisweek", action="store_true", dest="thisweek",
+		help="Create a report for just the current week")
 	this_parser.add_argument("--force", action="store_true", dest="force",
 		help="Force the monthly report to be recreated if it already exists")
-	this_parser.add_argument("--thisweek", action="store_true", dest="thisweek",
-		help="Create a report for just the current week ending now")
 	this_parser.add_argument("--additional", action="store_true", dest="additional",
 		help="Add additional text to some output")
 	opts = this_parser.parse_args()
+	if not opts.lastmonth or opts.thisweek:
+		die("Need to specify either --lastmonth or --thisweek")
 
 	# Subdirectories of ~/Output for the reports
 	output_dir = f"{str(Path('~').expanduser())}/Output"
@@ -351,8 +355,8 @@ if __name__ == "__main__":
 		for this_pair in sorted(report_pairs):
 			rsi_availability_ratio = rsi_availability[this_rsi][this_pair][0] / rsi_availability[this_rsi][this_pair][1]  # [yah]
 			pass_fail_text = "Fail" if rsi_availability_ratio < rsi_availability_threshold else "Pass"
-			additional_text = f" -- {(rsi_availability_ratio * 100):>7.2f}%" if opts.additional else ""
-			report_text += f"    {report_pairs[this_pair]}: {pass_fail_text} {(rsi_availability[this_rsi][this_pair][1])} measurements{additional_text}\n" # [lkd]
+			additional_text = f" -- {(rsi_availability_ratio * 100):>6.2f}%" if opts.additional else ""
+			report_text += f"    {report_pairs[this_pair]}: {pass_fail_text} {(rsi_availability[this_rsi][this_pair][1]):>8,} measurements{additional_text}\n" # [lkd]
 	
 	# RSI response latency report
 	rsi_response_latency_udp_threshold = .250  # [zuc]
@@ -368,7 +372,7 @@ if __name__ == "__main__":
 			else:
 				pass_fail_text = "Fail" if response_latency_median > rsi_response_latency_tcp_threshold else "Pass"
 			additional_text = f" -- {response_latency_median:.3f} median" if opts.additional else ""
-			report_text += f"    {report_pairs[this_pair]}: {pass_fail_text}  {(rsi_response_latency[this_rsi][this_pair][1]):>10,} measurements{additional_text}\n" # [lxr]
+			report_text += f"    {report_pairs[this_pair]}: {pass_fail_text}  {(rsi_response_latency[this_rsi][this_pair][1]):>8,} measurements{additional_text}\n" # [lxr]
 	
 	# RSI correctness report
 	rsi_correctness_threshold = 100  # ...as percentage [ahw]
@@ -377,7 +381,7 @@ if __name__ == "__main__":
 		report_text += f"  {this_rsi}.root-servers.net:\n"
 		rsi_correctness_percentage = (rsi_correctness[this_rsi][0] / rsi_correctness[this_rsi][1]) * 100  # [skm]
 		pass_fail_text = "Fail" if rsi_correctness_percentage < rsi_correctness_threshold else "Pass"
-		additional_text = f" -- {rsi_correctness[this_rsi][1] - rsi_correctness[this_rsi][0]} incorrect, {rsi_correctness_percentage:>7.2f}%" if opts.additional else ""
+		additional_text = f" -- {rsi_correctness[this_rsi][1] - rsi_correctness[this_rsi][0]:>5,} incorrect, {rsi_correctness_percentage:>6.2f}%" if opts.additional else ""
 		report_text += f"    {pass_fail_text}  {rsi_correctness[this_rsi][1]:>10,}  measurements{additional_text}\n"  # [fee]
 	
 	# RSI publication latency report
@@ -393,7 +397,7 @@ if __name__ == "__main__":
 		publication_latency_median = statistics.median(latency_differences)  # [yzp]
 		pass_fail_text = "Fail" if publication_latency_median > rsi_publication_latency_threshold else "Pass"
 		additional_text = f" -- {publication_latency_median:>7.1f} median" if opts.additional else ""
-		report_text += f"    {pass_fail_text}  {len(rsi_publication_latency[this_rsi]):>10,} measurements{additional_text}\n"  # [hms]
+		report_text += f"    {pass_fail_text}  {len(rsi_publication_latency[this_rsi]):>8,} measurements{additional_text}\n"  # [hms]
 
 	# RSS reports
 	
@@ -401,7 +405,7 @@ if __name__ == "__main__":
 	
 	# RSS availability report
 	rss_availability_threshold = .99999  # [wzz]
-	report_text += "\nRSS Availability\nThreshold is {:.3f}%\n".format(rss_availability_threshold * 100)  # [fdy]
+	report_text += f"\nRSS Availability\nThreshold is {(rss_availability_threshold * 100):>5.3f}%\n"  # [fdy]
 	for this_pair in sorted(report_pairs):
 		rss_availability_numerator = 0
 		rss_availability_denominator = 0
@@ -413,15 +417,14 @@ if __name__ == "__main__":
 				this_count += rss_availability[this_vp][this_date_time][this_pair][1]
 		this_ratio = rss_availability_numerator / rss_availability_denominator  # [cvf]
 		pass_fail_text = "Fail" if this_ratio < rss_availability_threshold else "Pass"
-		additional_text = " -- {}/{}".format(rss_availability_numerator, rss_availability_denominator) if opts.additional else ""
-		report_text += "  {}: {:.3f}%, {}, {} measurements{}\n"\
-			.format(report_pairs[this_pair], this_ratio * 100, pass_fail_text, this_count, additional_text)  # [vxl] [hgm]
+		additional_text = f" -- {rss_availability_numerator:>10,} /{rss_availability_denominator:>10,}" if opts.additional else ""
+		report_text += f"  {report_pairs[this_pair]}: {(this_ratio * 100):>7.3f}%, {pass_fail_text}, {this_count:>8,} measurements{additional_text}\n"  # [vxl] [hgm]
 		
 	# RSS response latency report
 	rss_response_latency_udp_threshold = .150  # [uwf]
 	rss_response_latency_tcp_threshold = .300  # [lmx]
-	report_text += "\nRSS Response Latency\nThreshold for UDP is {} seconds, threshold for TCP is {} seconds\n"\
-		.format(rss_response_latency_udp_threshold, rss_response_latency_tcp_threshold)  # [gwm]
+	report_text += f"\nRSS Response Latency\nThreshold for UDP is {rss_response_latency_udp_threshold:5.2} seconds, " +\
+		f"threshold for TCP is {rss_response_latency_tcp_threshold:>5.3} seconds\n"  # [gwm]
 	for this_pair in sorted(report_pairs):
 		pair_latencies = []
 		pair_count = 0
@@ -433,26 +436,23 @@ if __name__ == "__main__":
 			pass_fail_text = "Fail" if pair_response_latency_median > rss_response_latency_udp_threshold else "Pass"
 		else:
 			pass_fail_text = "Fail" if pair_response_latency_median > rss_response_latency_tcp_threshold else "Pass"
-		additional_text = " -- {:.3f} mean".format(statistics.mean(pair_latencies)) if opts.additional else ""
-		report_text += "  {}: {} median, {}, {} measurements{}\n"\
-			.format(report_pairs[this_pair], pair_response_latency_median, pass_fail_text, pair_count, additional_text)
+		additional_text = f" -- {(statistics.mean(pair_latencies)):>06.3} mean" if opts.additional else ""
+		report_text += f"  {report_pairs[this_pair]}: {pair_response_latency_median:>06.3} median, {pass_fail_text}, {pair_count:>8,} measurements{additional_text}\n"
 	
 	# RSS correctness report
 	rss_correctness_threshold = 1  # [gfh]
 	report_text += "\nRSI Correctness\nThreshold is 100%\n"  # [vpj]
 	pass_fail_text = "Fail" if rss_correctness_ratio < rss_correctness_threshold else "Pass"  # [udc]
-	additional_text = " -- {} incorrect".format(rss_correctness_incorrect) if opts.additional else ""
-	report_text += "   Entire RSS {:.6f}%, {}, {} measurements{}\n"\
-		.format(rss_correctness_ratio, pass_fail_text, rss_correctness_denominator, additional_text)  # [kea]
+	additional_text = f" -- {rss_correctness_incorrect} incorrect" if opts.additional else ""
+	report_text += f"   Entire RSS {(rss_correctness_ratio * 100):.6f}%, {pass_fail_text}, {rss_correctness_denominator:>8,} measurements{additional_text}\n"  # [kea]
 
 	# RSS publication latency
 	rss_publication_latency_threshold = 35 * 60  # [zkl]
-	report_text += "\nRSS Publication Latency\nThreshold is {} seconds\n".format(rss_publication_latency_threshold)  # [tkw]
+	report_text += f"\nRSS Publication Latency\nThreshold is {rss_publication_latency_threshold} seconds\n"  # [tkw]
 	rss_publication_latency_median = statistics.median(rss_publication_latency_list)  # [zgb]
 	pass_fail_text = "Fail" if rss_publication_latency_median > rss_publication_latency_threshold else "Pass"
-	additional_text = " -- {:.3f} mean".format(statistics.mean(rss_publication_latency_list)) if opts.additional else ""
-	report_text += "   Entire RSS {} median, {}, {} measurements{}\n"\
-		.format(rss_publication_latency_median, pass_fail_text, len(rss_publication_latency_list), additional_text)  # [daz]
+	additional_text = f" -- {statistics.mean(rss_publication_latency_list):.3f} mean" if opts.additional else ""
+	report_text += f"   Entire RSS {rss_publication_latency_median} median, {pass_fail_text}, {len(rss_publication_latency_list):>8,} measurements{additional_text}\n"  # [daz]
 
 	##############################################################
 	
