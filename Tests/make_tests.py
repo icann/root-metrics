@@ -4,44 +4,42 @@ import argparse, glob, os, pickle, re, requests, subprocess
 
 def create_n_file(id, compare_name, desc, file_lines):
 	if id in all_n_ids:
-		exit("Found {} a second time. Exiting.".format(id))
+		exit(f"Found {id} a second time. Exiting.")
 	compare_lines = p_files[compare_name]
 	# Check if nothing changed
 	if file_lines == compare_lines:
-		exit("Found unchanged test creation for {}".format(id))
+		exit(f"Found unchanged test creation for {id}")
 	# Check if the test does not start as expected
 	if not file_lines[0] == "-":
-		exit("First line of {} was not '-'".format(id))
+		exit(f"First line of {id} was not '-'")
 	# Write the file
-	f = open("n-{}".format(id), mode="wt")
-	f.write("# [{}] {}\n".format(id, desc))
-	for this_line in file_lines:
-		f.write(this_line + "\n")
-	f.close()
+	with open(f"n-{id}", mode="wt") as f:
+		f.write(f"# [{id}] {desc}\n")
+		for this_line in file_lines:
+			f.write(this_line + "\n")
 	all_n_ids.append(id)
 
 if __name__ == "__main__":
 	this_parser = argparse.ArgumentParser()
 	this_parser.add_argument("--addr", dest="addr", default="a.root-servers.net",
 		help="Address (IP or domain name) of root server to get tests from")
-	this_parser.add_argument("--bin_prefix", dest="bin_prefix", default=os.path.expanduser("~/Target"),
-		help="Address (IP or domain name) of root server to get tests from")
+	this_parser.add_argument("--bin_prefix", dest="bin_prefix", default="/usr/local",
+		help="Location of binaries")
 	opts = this_parser.parse_args()
 	
 	# Do sanity tests on --bin_prefix and --addr
-	dig_loc = "{}/bin/dig".format(opts.bin_prefix)
-	compilezone_loc = "{}/sbin/named-compilezone".format(opts.bin_prefix)
+	dig_loc = f"{opts.bin_prefix}/bin/dig"
+	compilezone_loc = f"{opts.bin_prefix}/sbin/named-compilezone"
 	if not os.path.exists(dig_loc):
-		exit("Did not find {}. Exiting.".format(dig_loc))
+		exit(f"Did not find {dig_loc}. Exiting.")
 	if not os.path.exists(compilezone_loc):
-		exit("Did not find {}. Exiting.".format(compilezone_loc))
+		exit(f"Did not find {compilezone_loc}. Exiting.")
 	try:
-		addr_test = "{} @{} . soa >/dev/null".format(dig_loc, opts.addr)
+		addr_test = f"{dig_loc} @{opts.addr} . soa >/dev/null"
 		subprocess.run(addr_test, shell=True, check=True)
 	except:
-		exit("Running '{}' failed, probably due to a bad address. Exiting".format(addr_test))
+		exit(f"Running '{addr_test}' failed, probably due to a bad address. Exiting")
 	
-
 
 	# Make a file of the root names and types to be passed to the correction checking function
 	# Keep track of all the records in this temporary root zone, both to find the SOA but also to save for later matching comparisons
@@ -50,18 +48,17 @@ if __name__ == "__main__":
 	try:
 		root_zone_request = requests.get(internic_url)
 	except Exception as e:
-		exit("Could not do the requests.get on {}: '{}'".format(internic_url, e))
+		exit(f"Could not do the requests.get on {internic_url}: {e}")
 	# Save it as a temp file to use named-compilezone
 	temp_latest_zone_name = "root_zone.txt"
-	temp_latest_zone_f = open(temp_latest_zone_name, mode="wt")
-	temp_latest_zone_f.write(root_zone_request.text)
-	temp_latest_zone_f.close()
+	with open(temp_latest_zone_name, mode="wt") as temp_latest_zone_f:
+		temp_latest_zone_f.write(root_zone_request.text)
 	# Give the named-compilezone command, then post-process
 	try:
-		named_compilezone_p = subprocess.run("{} -q -i none -r ignore -o - . '{}'".format(compilezone_loc, temp_latest_zone_name),
+		named_compilezone_p = subprocess.run(f"{compilezone_loc} -q -i none -r ignore -o - . {temp_latest_zone_name}",
 			shell=True, text=True, check=True, capture_output=True)
 	except Exception as e:
-		exit("named-compilezone failed with '{}'".format(e))
+		exit(f"named-compilezone failed with {e}")
 	new_root_text_in = named_compilezone_p.stdout
 	# Turn tabs into spaces
 	new_root_text_in = re.sub("\t", " ", new_root_text_in)
@@ -77,7 +74,7 @@ if __name__ == "__main__":
 	root_name_and_types = {}
 	for this_line in new_root_text.splitlines():
 		(this_name, _, _, this_type, this_rdata) = this_line.split(" ", maxsplit=4)
-		this_key = "{}/{}".format(this_name, this_type)
+		this_key = f"{this_name}/{this_type}"
 		if not this_key in root_name_and_types:
 			root_name_and_types[this_key] = set()
 		root_name_and_types[this_key].add(this_rdata)
@@ -90,7 +87,7 @@ if __name__ == "__main__":
 	# Template for all other digs
 	#    dig +yaml {} {} @ADDR -4 +notcp +dnssec +bufsize=1220 +nsid +norecurse +time=4 +tries=1 +noignore
 
-	p_template = "@{} -4 +notcp +dnssec +bufsize=1220 +nsid +norecurse +time=4 +tries=1 +noignore".format(opts.addr)
+	p_template = f"@{opts.addr} -4 +notcp +dnssec +bufsize=1220 +nsid +norecurse +time=4 +tries=1 +noignore"
 
 	# Create the positive files
 	cmd_list = """
@@ -122,7 +119,7 @@ if __name__ == "__main__":
 		try:
 			os.unlink(this_to_delete)
 		except:
-			exit("Stopping early because can't delete {}".format(this_to_delete))
+			exit(f"Stopping early because can't delete {this_to_delete}")
 
 	# Read all the positive files into memory
 	p_file_names = '''
@@ -630,4 +627,4 @@ p-by-ns
 
 	##########
 
-	exit("Created {} files for the negative tests".format(len(all_n_ids)))
+	exit(f"Created {len(all_n_ids)} files for the negative tests")
