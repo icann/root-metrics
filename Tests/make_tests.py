@@ -78,9 +78,8 @@ if __name__ == "__main__":
 		if not this_key in root_name_and_types:
 			root_name_and_types[this_key] = set()
 		root_name_and_types[this_key].add(this_rdata)
-	f_out = open("root_name_and_types.pickle", mode="wb")
-	pickle.dump(root_name_and_types, f_out)
-	f_out.close()
+	with open("root_name_and_types.pickle", mode="wb") as f_out:
+		pickle.dump(root_name_and_types, f_out)
 
 	# Template for . SOA
 	#    dig +yaml . SOA @ADDR -4 +notcp +nodnssec +noauthority +noadditional +bufsize=1220 +nsid +norecurse +time=4 +tries=1
