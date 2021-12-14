@@ -478,11 +478,11 @@ if __name__ == "__main__":
 		for (filename_record, target, internet, transport, failure_reason, source_pickle) in correctness_failures:
 			culled_reasons = []
 			this_source = pickle.loads(source_pickle)
-			r_out(f"   {filename_record}: {target} {internet} {transport} for {this_source['question']['name']}/this_source['question']['rdtype']:\n")
+			r_out(f"   {filename_record}: {target} {internet} {transport} for {this_source['question'][0]['name']}/this_source['question'][0]['rdtype']:\n")
 			# Get the reasons
 			for this_line in failure_reason:
 				# If this is a . / SOA record, only put out the actual error, not the stuff indicating that we tested against other SOAs
-				if this_source["question"]["name"] == "." and this_source["question"]["rdtype"] == "SOA":
+				if this_source["question"][0]["name"] == "." and this_source["question"][0]["rdtype"] == "SOA":
 					if this_line.startswith("Set of RRset value {'A.ROOT-SERVERS.NET. NSTLD.VERISIGN-GRS.COM.") or this_line.startswith("Correctness was first tested"):
 						continue
 				culled_reasons.append(this_line.strip())
