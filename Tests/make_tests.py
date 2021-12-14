@@ -1,46 +1,30 @@
 #!/usr/bin/env python3
 ''' Program to make tests for metrics testing '''
-import argparse, glob, os, pickle, re, requests, subprocess
+import argparse, copy, glob, os, pickle, re, requests
+import dns.edns, dns.flags, dns.message, dns.query, dns.rdatatype
 
-def create_n_file(id, compare_name, desc, file_lines):
+def create_n_file(id, compare_name, desc, in_dict):
 	if id in all_n_ids:
 		exit(f"Found {id} a second time. Exiting.")
-	compare_lines = p_files[compare_name]
+	compare_dict = pickle.load(open(compare_name, mode="rb"))
 	# Check if nothing changed
-	if file_lines == compare_lines:
+	if in_dict == compare_dict:
 		exit(f"Found unchanged test creation for {id}")
-	# Check if the test does not start as expected
-	if not file_lines[0] == "-":
-		exit(f"First line of {id} was not '-'")
+	in_dict["test-desc"] = desc
+	in_dict["test-id"] = id
+	in_dict["test-on"] = compare_name
 	# Write the file
-	with open(f"n-{id}", mode="wt") as f:
-		f.write(f"# [{id}] {desc}\n")
-		for this_line in file_lines:
-			f.write(this_line + "\n")
+	with open(f"n-{id}", mode="wb") as f:
+		pickle.dump(in_dict, f)
 	all_n_ids.append(id)
 
 if __name__ == "__main__":
 	this_parser = argparse.ArgumentParser()
-	this_parser.add_argument("--addr", dest="addr", default="a.root-servers.net",
-		help="Address (IP or domain name) of root server to get tests from")
-	this_parser.add_argument("--bin_prefix", dest="bin_prefix", default="/usr/local",
-		help="Location of binaries")
+	# Use IP address of a.root-servers.net as default
+	this_parser.add_argument("--addr", dest="addr", default="198.41.0.4",
+		help="IP address of root server to get tests from")
 	opts = this_parser.parse_args()
 	
-	# Do sanity tests on --bin_prefix and --addr
-	dig_loc = f"{opts.bin_prefix}/bin/dig"
-	compilezone_loc = f"{opts.bin_prefix}/sbin/named-compilezone"
-	if not os.path.exists(dig_loc):
-		exit(f"Did not find {dig_loc}. Exiting.")
-	if not os.path.exists(compilezone_loc):
-		exit(f"Did not find {compilezone_loc}. Exiting.")
-	try:
-		addr_test = f"{dig_loc} @{opts.addr} . soa >/dev/null"
-		subprocess.run(addr_test, shell=True, check=True)
-	except:
-		exit(f"Running '{addr_test}' failed, probably due to a bad address. Exiting")
-	
-
 	# Make a file of the root names and types to be passed to the correction checking function
 	# Keep track of all the records in this temporary root zone, both to find the SOA but also to save for later matching comparisons
 	# Get the current root zone
@@ -49,30 +33,20 @@ if __name__ == "__main__":
 		root_zone_request = requests.get(internic_url)
 	except Exception as e:
 		exit(f"Could not do the requests.get on {internic_url}: {e}")
-	# Save it as a temp file to use named-compilezone
-	temp_latest_zone_name = "root_zone.txt"
-	with open(temp_latest_zone_name, mode="wt") as temp_latest_zone_f:
-		temp_latest_zone_f.write(root_zone_request.text)
-	# Give the named-compilezone command, then post-process
-	try:
-		named_compilezone_p = subprocess.run(f"{compilezone_loc} -q -i none -r ignore -o - . {temp_latest_zone_name}",
-			shell=True, text=True, check=True, capture_output=True)
-	except Exception as e:
-		exit(f"named-compilezone failed with {e}")
-	new_root_text_in = named_compilezone_p.stdout
+	text_from_zone_file = root_zone_request.text
 	# Turn tabs into spaces
-	new_root_text_in = re.sub("\t", " ", new_root_text_in)
+	text_from_zone_file = re.sub("\t", " ", text_from_zone_file)
 	# Turn runs of spaces into a single space
-	new_root_text_in = re.sub(" +", " ", new_root_text_in)
+	text_from_zone_file = re.sub(" +", " ", text_from_zone_file)
 	# Get the output after removing comments
-	new_root_text = ""
+	out_root_text = ""
 	# Remove the comments
-	for this_line in new_root_text_in.splitlines():
+	for this_line in text_from_zone_file.splitlines():
 		if not this_line.startswith(";"):
-			new_root_text += this_line + "\n"
+			out_root_text += this_line + "\n"
 	# Now save the name and types data
 	root_name_and_types = {}
-	for this_line in new_root_text.splitlines():
+	for this_line in out_root_text.splitlines():
 		(this_name, _, _, this_type, this_rdata) = this_line.split(" ", maxsplit=4)
 		this_key = f"{this_name}/{this_type}"
 		if not this_key in root_name_and_types:
@@ -81,38 +55,43 @@ if __name__ == "__main__":
 	with open("root_name_and_types.pickle", mode="wb") as f_out:
 		pickle.dump(root_name_and_types, f_out)
 
-	# Template for . SOA
-	#    dig +yaml . SOA @ADDR -4 +notcp +nodnssec +noauthority +noadditional +bufsize=1220 +nsid +norecurse +time=4 +tries=1
-	# Template for all other digs
-	#    dig +yaml {} {} @ADDR -4 +notcp +dnssec +bufsize=1220 +nsid +norecurse +time=4 +tries=1 +noignore
+	queries_list = [
+		[".", "SOA", "p-dot-soa"],
+		[".", "DNSKEY", "p-dot-dnskey"],
+		[".", "NS", "p-dot-ns"],
+		["www.rssac047-test.zyxwvutsrqp.", "A", "p-neg"],
+		["us.", "DS", "p-tld-ds"],
+		["us.", "NS", "p-tld-ns"],
+		["cm.", "NS", "p-tld-ns-no-ds"],
+		["by.", "NS", "p-by-ns"]		
+	]
 
-	p_template = f"@{opts.addr} -4 +notcp +dnssec +bufsize=1220 +nsid +norecurse +time=4 +tries=1 +noignore"
-
-	# Create the positive files
-	cmd_list = """
-	{} +yaml . SOA {} > p-dot-soa
-	{} +yaml . DNSKEY {} > p-dot-dnskey
-	{} +yaml . NS {} > p-dot-ns
-	{} +yaml www.rssac047-test.zyxwvutsrqp A {} > p-neg
-	{} +yaml us DS {} > p-tld-ds
-	{} +yaml us NS {} > p-tld-ns
-	{} +yaml cm NS {} > p-tld-ns-no-ds
-	{} +yaml by NS {} > p-by-ns
-	""".strip().splitlines()
-
-	for this_cmd in cmd_list:
-		subprocess.run(this_cmd.format(dig_loc, p_template), shell=True)
-
-	# Fix p-by-ns for the BIND YAML bug
-	all_by_lines = []
-	for this_line in open("p-by-ns", mode="rt"):
-		if this_line.endswith("::\n"):
-			this_line = this_line.replace("::\n", "::0\n")
-		all_by_lines.append(this_line)
-	f = open("p-by-ns", mode="wt")
-	f.write("".join(all_by_lines))
-	f.close()
-
+	for (in_q, in_t, out_filename) in queries_list:
+		q = dns.message.make_query(dns.name.from_text(in_q), dns.rdatatype.from_text(in_t))
+		# Turn off the RD bit
+		q.flags &= ~dns.flags.RD
+		# Add NSID
+		nsid_option = dns.edns.GenericOption(dns.edns.OptionType.NSID, b'')
+		q.use_edns(edns=0, payload=1220, ednsflags=dns.flags.DO, options=[nsid_option])
+		r = dns.query.udp(q, opts.addr, timeout=4.0)
+		r_dict = { "test-on": out_filename }
+		r_dict["id"] = r.id
+		r_dict["rcode"] = dns.rcode.to_text(r.rcode())
+		r_dict["flags"] = dns.flags.to_text(r.flags)
+		r_dict["edns"] = {}
+		for this_option in r.options:
+			r_dict["edns"][this_option.otype.value] = this_option.data
+		get_sections = ("question", "answer", "authority", "additional")
+		for (this_section_number, this_section_name) in enumerate(get_sections):
+			r_dict[this_section_name] = []
+			for this_rrset in r.section_from_number(this_section_number):
+				this_rrset_dict = {"name": this_rrset.name.to_text(), "ttl": this_rrset.ttl, "rdtype": dns.rdatatype.to_text(this_rrset.rdtype), "rdata": []}
+				for this_record in this_rrset:
+					this_rrset_dict["rdata"].append(this_record.to_text())
+				r_dict[this_section_name].append(this_rrset_dict)
+		with open(out_filename, mode="wb") as out_f:
+			pickle.dump(r_dict, out_f)
+		
 	# Delete all the negative files before re-creating them
 	for this_to_delete in glob.glob("n-*"):
 		try:
@@ -121,20 +100,9 @@ if __name__ == "__main__":
 			exit(f"Stopping early because can't delete {this_to_delete}")
 
 	# Read all the positive files into memory
-	p_file_names = '''
-p-dot-soa
-p-dot-dnskey
-p-dot-ns
-p-neg
-p-tld-ds
-p-tld-ns
-p-tld-ns-no-ds
-p-by-ns
-	'''.strip().splitlines()
-
-	p_files = {}
-	for this_file in p_file_names:
-		p_files[this_file] = open(this_file, mode="rt").read().splitlines()
+	p_dicts = {}
+	for (_, _, this_file) in queries_list:
+		p_dicts[this_file] = pickle.load(open(this_file, mode="rb"))
 
 	# Keep track of the IDs to make sure we don't accidentally copy one
 	all_n_ids = []
@@ -155,101 +123,121 @@ p-by-ns
 	id = "ffr"
 	compare_name = "p-dot-ns"
 	desc = "Start with p-dot-ns, add z.root-servers.net to Answer; will have DNSSEC validation failure"
-	file_lines = []
-	for this_line in p_files[compare_name]:
-		if this_line == "        - . 518400 IN NS a.root-servers.net.":
-			file_lines.append("        - . 518400 IN NS z.root-servers.net.")
-		file_lines.append(this_line)
-	create_n_file(id, compare_name, desc, file_lines) 
-
+	this_dict = copy.deepcopy(p_dicts[compare_name])
+	made_change = False
+	for this_r in this_dict["answer"]:
+		if this_r["name"] == "." and this_r["rdtype"] == "NS":
+			this_r["rdata"].append("z.root-servers.net.")
+			made_change = True
+	if not made_change:
+		exit(f"Did not make a change when processing {id}")
+	create_n_file(id, compare_name, desc, this_dict)
+	
 	# Change a record in Answer
 	id = "vpn"
 	compare_name = "p-dot-ns"
 	desc = "Start with p-dot-ns, change a.root-server.net to z.root-servers.net in Answer; will have DNSSEC validation failure"
-	file_lines = []
-	for this_line in p_files[compare_name]:
-		if this_line == "        - . 518400 IN NS a.root-servers.net.":
-			file_lines.append("        - . 518400 IN NS z.root-servers.net.")
-		else:
-			file_lines.append(this_line)
-	create_n_file(id, compare_name, desc, file_lines) 
+	this_dict = copy.deepcopy(p_dicts[compare_name])
+	made_change = False
+	for this_r in this_dict["answer"]:
+		if this_r["name"] == "." and this_r["rdtype"] == "NS":
+			this_r["rdata"].remove("a.root-servers.net.")
+			this_r["rdata"].append("z.root-servers.net.")
+			made_change = True
+	if not made_change:
+		exit(f"Did not make a change when processing {id}")
+	create_n_file(id, compare_name, desc, this_dict)
 
 	# Add a new record to Authority 
 	id = "zoc"
 	compare_name = "p-tld-ns"
 	desc = "Start with p-tld-ns, add z.cctld.us to Authority; use NS because it is unsigned"
-	file_lines = []
-	for this_line in p_files[compare_name]:
-		if this_line == "        - us. 172800 IN NS c.cctld.us.":
-			file_lines.append("        - us. 172800 IN NS z.cctld.us.")
-		file_lines.append(this_line)
-	create_n_file(id, compare_name, desc, file_lines) 
+	this_dict = copy.deepcopy(p_dicts[compare_name])
+	made_change = False
+	for this_r in this_dict["authority"]:
+		if this_r["name"] == "us." and this_r["rdtype"] == "NS":
+			this_r["rdata"].append("z.cctld.us.")
+			made_change = True
+	if not made_change:
+		exit(f"Did not make a change when processing {id}")
+	create_n_file(id, compare_name, desc, this_dict)
 
 	# Change a record in Authority
 	id = "gye"
 	compare_name = "p-tld-ns"
-	desc = "Start with p-tld-ns, change c.cctld.us to z.cctld.us in Authority; use NS because it is unsigned"
-	file_lines = []
-	for this_line in p_files[compare_name]:
-		if this_line == "        - us. 172800 IN NS c.cctld.us.":
-			file_lines.append("        - us. 172800 IN NS z.cctld.us.")
-		else:
-			file_lines.append(this_line)
-	create_n_file(id, compare_name, desc, file_lines) 
-
+	desc = "Start with p-tld-ns, change x.cctld.us to z.cctld.us in Authority; use NS because it is unsigned"
+	this_dict = copy.deepcopy(p_dicts[compare_name])
+	made_change = False
+	for this_r in this_dict["authority"]:
+		if this_r["name"] == "us." and this_r["rdtype"] == "NS":
+			this_r["rdata"].remove("x.cctld.us.")
+			this_r["rdata"].append("z.cctld.us.")
+			made_change = True
+	if not made_change:
+		exit(f"Did not make a change when processing {id}")
+	create_n_file(id, compare_name, desc, this_dict)
+	
 	# Add a new record to Additional
 	id = "rse"
 	compare_name = "p-tld-ns"
-	desc = "Start with p-tld-ns, add an A for c.cctld.us in Additional"
-	file_lines = []
-	for this_line in p_files[compare_name]:
-		if this_line == "        - c.cctld.us. 172800 IN A 156.154.127.70":
-			file_lines.append("        - c.cctld.us. 172800 IN A 156.154.127.99")
-		file_lines.append(this_line)
-	create_n_file(id, compare_name, desc, file_lines) 
+	desc = "Start with p-tld-ns, add an A for x.cctld.us in Additional"
+	this_dict = copy.deepcopy(p_dicts[compare_name])
+	made_change = False
+	for this_r in this_dict["additional"]:
+		if this_r["name"] == "x.cctld.us." and this_r["rdtype"] == "A":
+			this_r["rdata"].append("37.209.194.99")
+			made_change = True
+	if not made_change:
+		exit(f"Did not make a change when processing {id}")
+	create_n_file(id, compare_name, desc, this_dict)
 
 	# Change a record in Additional
 	id = "ykm"
 	compare_name = "p-tld-ns"
-	desc = "Start with p-tld-ns, change A for c.cctld.us in Addtional"
-	file_lines = []
-	for this_line in p_files[compare_name]:
-		if this_line == "        - c.cctld.us. 172800 IN A 156.154.127.70":
-			file_lines.append("        - c.cctld.us. 172800 IN A 156.154.127.99")
-		else:
-			file_lines.append(this_line)
-	create_n_file(id, compare_name, desc, file_lines)
-
+	desc = "Start with p-tld-ns, change A for x.cctld.us in Addtional"
+	this_dict = copy.deepcopy(p_dicts[compare_name])
+	made_change = False
+	for this_r in this_dict["additional"]:
+		if this_r["name"] == "x.cctld.us." and this_r["rdtype"] == "A":
+			this_r["rdata"].remove("37.209.194.15")
+			this_r["rdata"].append("37.209.194.99")
+			made_change = True
+	if not made_change:
+		exit(f"Did not make a change when processing {id}")
+	create_n_file(id, compare_name, desc, this_dict)
+	
 	##########
 
 	# All RRsets that are signed have their signatures validated. [yds]
 	#   Change the RRSIGs in different ways
-	#   p-tld-ds has signed DS records for .us in the answer; the RRSIG looks like:
-	#           - us. 86400 IN RRSIG DS 8 1 86400 20200513170000 20200430160000 48903 . iwAdFM7FNufqTpU/pe1nySyTeND3C2KvzXgMYR3+yLMXhu1bqbQ+Dy7G . . .
 
 	# Change the RDATA
 	id = "uuc"
-	compare_name = "p-dot-dnskey"
-	desc = "Start with p-dot-dnskey, change the RRSIG RData in the Answer; causes validation failure"
-	file_lines = []
-	for this_line in p_files[compare_name]:
-		if "AwEAAaz/tAm8yTn4Mfeh" in this_line:
-			file_lines.append(this_line.replace("AwEAAaz/tAm8yTn4Mfeh", "AwEAAaz/tAm8yTn4MfeH"))
-		else:
-			file_lines.append(this_line)
-	create_n_file(id, compare_name, desc, file_lines) 
+	compare_name = "p-tld-ds"
+	desc = "Start with p-tld-ds, change the DS RData in the Answer; causes validation failure"
+	this_dict = copy.deepcopy(p_dicts[compare_name])
+	made_change = False
+	for this_r in this_dict["answer"]:
+		if this_r["name"] == "us." and this_r["rdtype"] == "DS":
+			this_r["rdata"][0] = this_r["rdata"][0].replace("a59b9c", "abcdef")
+			made_change = True
+	if not made_change:
+		exit(f"Did not make a change when processing {id}")
+	create_n_file(id, compare_name, desc, this_dict)
 
 	# Change the signature value itself
 	id = "gut"
-	compare_name = "p-dot-dnskey"
-	desc = "Start with p-dot-dnskey, change the RRSIG signature; causes validation failure"
-	file_lines = []
-	for this_line in p_files[compare_name]:
-		if this_line.startswith("        - . 172800 IN RRSIG DNSKEY"):
-			file_lines.append(this_line.replace("Q", "q"))
-		else:
-			file_lines.append(this_line)
-	create_n_file(id, compare_name, desc, file_lines) 
+	compare_name = "p-tld-ds"
+	desc = "Start with p-tld-ds, change the RRSIG RData in the Answer; causes validation failure"
+	this_dict = copy.deepcopy(p_dicts[compare_name])
+	made_change = False
+	for this_r in this_dict["answer"]:
+		if this_r["name"] == "us." and this_r["rdtype"] == "RRSIG":
+			this_r["rdata"][0] = this_r["rdata"][0].replace("a", "b")
+			made_change = True
+	if not made_change:
+		exit(f"Did not make a change when processing {id}")
+	create_n_file(id, compare_name, desc, this_dict)
 
 	##########
 
@@ -260,57 +248,47 @@ p-by-ns
 	id = "xpa"
 	compare_name = "p-tld-ns"
 	desc = "Start with p-tld-ns, set the AA bit"
-	file_lines = []
-	for this_line in p_files[compare_name]:
-		if this_line == "      flags: qr":
-			file_lines.append("      flags: qr aa")
-		else:
-			file_lines.append(this_line)
-	create_n_file(id, compare_name, desc, file_lines) 
+	this_dict = copy.deepcopy(p_dicts[compare_name])
+	this_dict["flags"] += " AA"
+	create_n_file(id, compare_name, desc, this_dict)
 
 	# The Answer section is empty. [aeg]
 	id = "aul"
 	compare_name = "p-tld-ns"
 	desc = "Start with p-tld-ns, create a bogus Answer section with the NS records" 
-	file_lines = []
-	for this_line in p_files[compare_name]:
-		if this_line == "      AUTHORITY_SECTION:":
-			file_lines.append("      ANSWER_SECTION:")
-			file_lines.append("        - us. 172800 IN NS c.cctld.us.")
-			file_lines.append("        - us. 172800 IN NS k.cctld.us.")
-			file_lines.append("        - us. 172800 IN NS a.cctld.us.")
-			file_lines.append("        - us. 172800 IN NS b.cctld.us.")
-			file_lines.append("        - us. 172800 IN NS f.cctld.us.")
-			file_lines.append("        - us. 172800 IN NS e.cctld.us.")
-			file_lines.append("      AUTHORITY_SECTION:")
-		else:
-			file_lines.append(this_line)
-	create_n_file(id, compare_name, desc, file_lines) 
+	this_dict = copy.deepcopy(p_dicts[compare_name])
+	for this_r in this_dict["additional"]:
+		this_dict["answer"].append(this_r)
+	create_n_file(id, compare_name, desc, this_dict)
 
 	# The Authority section contains the entire NS RRset for the query name. [pdd]
 	id = "mbh"
 	compare_name = "p-tld-ns"
-	desc = "Start with p-tld-ns, remove NS k.cctld.us. from the Authority section" 
-	file_lines = []
-	for this_line in p_files[compare_name]:
-		if this_line == "        - us. 172800 IN NS k.cctld.us.":
-			continue
-		file_lines.append(this_line)
-	create_n_file(id, compare_name, desc, file_lines) 
+	desc = "Start with p-tld-ns, remove NS x.cctld.us. from the Authority section" 
+	this_dict = copy.deepcopy(p_dicts[compare_name])
+	made_change = False
+	for this_r in this_dict["authority"]:
+		if this_r["name"] == "us." and this_r["rdtype"] == "NS":
+			this_r["rdata"].remove("x.cctld.us.")
+			made_change = True
+	if not made_change:
+		exit(f"Did not make a change when processing {id}")
+	create_n_file(id, compare_name, desc, this_dict)
 
 	# If the DS RRset for the query name exists in the zone: [hue]
 	#   The Authority section contains the signed DS RRset for the query name. [kbd]
 	id = "csl"
 	compare_name = "p-tld-ns"
 	desc = "Start with p-tld-ns, remove one of the DS records from the Authority section; will cause validation failure" 
-	file_lines = []
-	removed_one = False
-	for this_line in p_files[compare_name]:
-		if ("- us. 86400 IN DS" in this_line) and not removed_one:
-			removed_one = True
-			continue
-		file_lines.append(this_line)
-	create_n_file(id, compare_name, desc, file_lines) 
+	this_dict = copy.deepcopy(p_dicts[compare_name])
+	made_change = False
+	for this_r in this_dict["authority"]:
+		if this_r["name"] == "us." and this_r["rdtype"] == "DS":
+			this_r["rdata"].pop()
+			made_change = True
+	if not made_change:
+		exit(f"Did not make a change when processing {id}")
+	create_n_file(id, compare_name, desc, this_dict)
 
 	# If the DS RRset for the query name does not exist in the zone: [fot]
 	#   The Authority section contains no DS RRset. [bgr]
@@ -318,39 +296,36 @@ p-by-ns
 	id = "jke"
 	compare_name = "p-tld-ns-no-ds"
 	desc = "Start with p-tld-ns-no-ds, add a DS records to the Authority section" 
-	file_lines = []
-	for this_line in p_files[compare_name]:
-		if this_line == "      AUTHORITY_SECTION:":
-			file_lines.append(this_line)
-			file_lines.append("        - cm. 86400 IN DS 39361 8 1 09E0AF18E54225F87A3B10E95C9DA3F1E58E5B59")
-		else:
-			file_lines.append(this_line)
-	create_n_file(id, compare_name, desc, file_lines) 
+	this_dict = copy.deepcopy(p_dicts[compare_name])
+	this_dict["authority"].append({ 'name': 'cm.',
+		'rdata': ['21364 8 1 260d0461242bcf8f05473a08b05ed01e6fa59b9c', '21364 8 2 b499cfa7b54d25fde1e6fe93076fb013daa664da1f26585324740a1e6ebdab26'],
+    'rdtype': 'DS', 'ttl': 86400 })
+	create_n_file(id, compare_name, desc, this_dict)
 
 	id = "gpn"
 	compare_name = "p-tld-ns-no-ds"
-	desc = "Start with p-tld-ns-no-ds, remove the NSEC and its signature" 
-	file_lines = []
-	for this_line in p_files[compare_name]:
-		if this_line == "        - cm. 86400 IN NSEC cn. NS RRSIG NSEC":
-			continue
-		if this_line.startswith("        - cm. 86400 IN RRSIG NSEC"):
+	desc = "Start with p-tld-ns-no-ds, remove the NSEC and its signature from the Authority section" 
+	this_dict = copy.deepcopy(p_dicts[compare_name])
+	new_authority = []
+	made_change = False
+	for this_r in this_dict["authority"]:
+		if this_r["rdtype"] in ("NSEC", "RRSIG"):
+			made_change = True
 			continue
 		else:
-			file_lines.append(this_line)
-	create_n_file(id, compare_name, desc, file_lines) 
+			new_authority.append(this_r)
+	if not made_change:
+		exit(f"Did not make a change when processing {id}")
+	this_dict["authority"] = copy.deepcopy(new_authority)
+	create_n_file(id, compare_name, desc, this_dict)
 
 	# The Additional section contains at least one A or AAAA record found in the zone associated with at least one NS record found in the Authority section. [cjm]
 	id = "fvg"
 	compare_name = "p-tld-ns"
 	desc = "Start with p-tld-ns, remove all the glue records and add a fake one" 
-	file_lines = []
-	for this_line in p_files[compare_name]:
-		if "cctld.us. 172800 IN" in this_line:
-			file_lines.append("        - z.cctld.us. 172800 IN A 156.154.127.70")
-		else:
-			file_lines.append(this_line)
-	create_n_file(id, compare_name, desc, file_lines) 
+	this_dict = copy.deepcopy(p_dicts[compare_name])
+	this_dict["additional"] = [{'name': 'no-an-ns.of.us.', 'rdata': ['10.10.10.1'], 'rdtype': 'A', 'ttl': 172800}]
+	create_n_file(id, compare_name, desc, this_dict)
 
 	##########
 
@@ -361,52 +336,39 @@ p-by-ns
 	id = "ttr"
 	compare_name = "p-tld-ds"
 	desc = "Start with p-tld-ds, remove the AA bit"
-	file_lines = []
-	for this_line in p_files[compare_name]:
-		if this_line == "      flags: qr aa":
-			file_lines.append("      flags: qr")
-		else:
-			file_lines.append(this_line)
-	create_n_file(id, compare_name, desc, file_lines) 
+	this_dict = copy.deepcopy(p_dicts[compare_name])
+	this_dict["flags"] = this_dict["flags"].replace(" AA", "").replace("AA ", "")
+	create_n_file(id, compare_name, desc, this_dict)
 
-	# The Answer section contains the signed DS RRset for the query name. [cpf]
+ 	# The Answer section contains the signed DS RRset for the query name. [cpf]
 	id = "zjs"
 	compare_name = "p-tld-ds"
-	desc = "Start with p-tld-ds, remove the the first DS record; validation will fail"
-	file_lines = []
-	removed_one = False
-	for this_line in p_files[compare_name]:
-		if ("- us. 86400 IN DS" in this_line) and not removed_one:
-			removed_one = True
-			continue
-		else:
-			file_lines.append(this_line)
-	create_n_file(id, compare_name, desc, file_lines) 
+	desc = "Start with p-tld-ds, remove the the first DS record in the Answer section; validation will fail"
+	this_dict = copy.deepcopy(p_dicts[compare_name])
+	made_change = False
+	for this_r in this_dict["answer"]:
+		if this_r["name"] == "us." and this_r["rdtype"] == "DS":
+			this_r["rdata"].pop()
+			made_change = True
+	if not made_change:
+		exit(f"Did not make a change when processing {id}")
+	create_n_file(id, compare_name, desc, this_dict)
 
 	# The Authority section is empty. [xdu]
 	id = "rpr"
 	compare_name = "p-tld-ds"
 	desc = "Start with p-tld-ds, add an Authority section with an NS record"
-	file_lines = []
-	for this_line in p_files[compare_name]:
-		if "us. 86400 IN RRSIG" in this_line:
-			file_lines.append(this_line)
-			file_lines.append("      AUTHORITY_SECTION:")
-			file_lines.append("        - us. 172800 IN NS c.cctld.us.")
-		else:
-			file_lines.append(this_line)
-	create_n_file(id, compare_name, desc, file_lines) 
+	this_dict = copy.deepcopy(p_dicts[compare_name])
+	this_dict["authority"] = [ {'name': 'us.', 'rdata': ['k.cctld.us.', 'x.cctld.us.', 'b.cctld.us.', 'y.cctld.us.', 'w.cctld.us.', 'f.cctld.us.'], 'rdtype': 'NS', 'ttl': 172800} ]
+	create_n_file(id, compare_name, desc, this_dict)
 			
 	# The Additional section is empty. [mle]
 	id = "ekf"
 	compare_name = "p-tld-ds"
 	desc = "Start with p-tld-ds, add an Additonal section with an A record"
-	file_lines = []
-	for this_line in p_files[compare_name]:
-			file_lines.append(this_line)
-	file_lines.append("      ADDITIONAL_SECTION:")
-	file_lines.append("        - c.cctld.us. 172800 IN A 156.154.127.70")
-	create_n_file(id, compare_name, desc, file_lines) 
+	this_dict = copy.deepcopy(p_dicts[compare_name])
+	this_dict["additional"] = [ {'name': 'x.cctld.us.', 'rdata': ['2001:dcd:2::15'], 'rdtype': 'AAAA', 'ttl': 172800} ]
+	create_n_file(id, compare_name, desc, this_dict)
 
 	##########
 
@@ -417,37 +379,41 @@ p-by-ns
 	id = "apf"
 	compare_name = "p-dot-soa"
 	desc = "Start with p-dot-soa, remove the AA bit"
-	file_lines = []
-	for this_line in p_files[compare_name]:
-		if this_line == "      flags: qr aa":
-			file_lines.append("      flags: qr")
-		else:
-			file_lines.append(this_line)
-	create_n_file(id, compare_name, desc, file_lines) 
+	this_dict = copy.deepcopy(p_dicts[compare_name])
+	this_dict["flags"] = this_dict["flags"].replace(" AA", "").replace("AA ", "")
+	create_n_file(id, compare_name, desc, this_dict)
 
 	# The Answer section contains the signed SOA record for the root. [obw]
 	id = "jjg"
 	compare_name = "p-dot-soa"
 	desc = "Start with p-dot-soa, remove the SOA from Answer section; this will fail validation"
-	file_lines = []
-	for this_line in p_files[compare_name]:
-		if ". 86400 IN SOA" in this_line:
+	this_dict = copy.deepcopy(p_dicts[compare_name])
+	new_answer = []
+	made_change = False
+	for this_r in this_dict["answer"]:
+		if this_r["rdtype"] in ("SOA"):
+			made_change = True
 			continue
 		else:
-			file_lines.append(this_line)
-	create_n_file(id, compare_name, desc, file_lines) 
+			new_answer.append(this_r)
+	if not made_change:
+		exit(f"Did not make a change when processing {id}")
+	this_dict["answer"] = copy.deepcopy(new_answer)
+	create_n_file(id, compare_name, desc, this_dict)
 
 	# The Authority section contains the signed NS RRset for the root. [ktm]
 	id = "mtg"
 	compare_name = "p-dot-soa"
-	desc = "Start with p-dot-soa, remove a.root-servers.net from the Authority section; this will fail validation"
-	file_lines = []
-	for this_line in p_files[compare_name]:
-		if this_line == "        - . 518400 IN NS a.root-servers.net.":
-			continue
-		else:
-			file_lines.append(this_line)
-	create_n_file(id, compare_name, desc, file_lines) 
+	desc = "Start with p-dot-soa, remove a.root-servers.net. from the NS record the Authority section; this will fail validation"
+	this_dict = copy.deepcopy(p_dicts[compare_name])
+	made_change = False
+	for this_r in this_dict["authority"]:
+		if this_r["rdtype"] == "NS":
+			this_r["rdata"].remove("a.root-servers.net.")
+			made_change = True
+	if not made_change:
+		exit(f"Did not make a change when processing {id}")
+	create_n_file(id, compare_name, desc, this_dict)
 
 	##########
 
@@ -458,37 +424,32 @@ p-by-ns
 	id = "kuc"
 	compare_name = "p-dot-ns"
 	desc = "Start with p-dot-ns, remove the AA bit"
-	file_lines = []
-	for this_line in p_files[compare_name]:
-		if this_line == "      flags: qr aa":
-			file_lines.append("      flags: qr")
-		else:
-			file_lines.append(this_line)
-	create_n_file(id, compare_name, desc, file_lines) 
+	this_dict = copy.deepcopy(p_dicts[compare_name])
+	this_dict["flags"] = this_dict["flags"].replace(" AA", "").replace("AA ", "")
+	create_n_file(id, compare_name, desc, this_dict)
 
 	# The Answer section contains the signed NS RRset for the root. [wal]
 	id = "oon"
 	compare_name = "p-dot-ns"
 	desc = "Start with p-dot-ns, remove a.root-servers.net. from the Answer section; this will fail validation"
-	file_lines = []
-	for this_line in p_files[compare_name]:
-		if this_line == "        - . 518400 IN NS a.root-servers.net.":
-			continue
-		else:
-			file_lines.append(this_line)
-	create_n_file(id, compare_name, desc, file_lines) 
+	this_dict = copy.deepcopy(p_dicts[compare_name])
+	made_change = False
+	for this_r in this_dict["answer"]:
+		if this_r["rdtype"] == "NS":
+			this_r["rdata"].remove("a.root-servers.net.")
+			made_change = True
+	if not made_change:
+		exit(f"Did not make a change when processing {id}")
+	create_n_file(id, compare_name, desc, this_dict)
 
 	# The Authority section is empty. [eyk]
 	id = "hmp"
 	compare_name = "p-dot-ns"
 	desc = "Start with p-dot-ns, add an Authority section with an A record for a.root-servers.net."
-	file_lines = []
-	for this_line in p_files[compare_name]:
-		file_lines.append(this_line)
-	file_lines.append("      AUTHORITY_SECTION:")
-	file_lines.append("        - a.root-servers.net. 518400 IN A 198.41.0.4")
-	create_n_file(id, compare_name, desc, file_lines)
-
+	this_dict = copy.deepcopy(p_dicts[compare_name])
+	this_dict["authority"] = [ {'name': 'a.root-servers.net.', 'rdata': ['198.41.0.4'], 'rdtype': 'A', 'ttl': 518400} ]
+	create_n_file(id, compare_name, desc, this_dict)
+	
 	##########
 
 	# For positive responses for QNAME = . and QTYPE = DNSKEY, a correct result requires all of the following: [djd]
@@ -498,132 +459,121 @@ p-by-ns
 	id = "kbc"
 	compare_name = "p-dot-dnskey"
 	desc = "Start with p-dot-dnskey, remove the AA bit"
-	file_lines = []
-	for this_line in p_files[compare_name]:
-		if this_line == "      flags: qr aa":
-			file_lines.append("      flags: qr")
-		else:
-			file_lines.append(this_line)
-	create_n_file(id, compare_name, desc, file_lines) 
+	this_dict = copy.deepcopy(p_dicts[compare_name])
+	this_dict["flags"] = this_dict["flags"].replace(" AA", "").replace("AA ", "")
+	create_n_file(id, compare_name, desc, this_dict)
 
 	# The Answer section contains the signed DNSKEY RRset for the root. [eou]
 	id = "nsz"
 	compare_name = "p-dot-dnskey"
-	desc = "Start with p-dot-dnskey, remove the DNSKEY that contains 'AwEAAc4qsciJ5MdMU'; this will fail validation "
-	file_lines = []
-	for this_line in p_files[compare_name]:
-		if "AwEAAc4qsciJ5MdMU" in this_line:
-			continue
-		else:
-			file_lines.append(this_line)
-	create_n_file(id, compare_name, desc, file_lines) 
+	desc = "Start with p-dot-dnskey, remove the DNSKEY that contains 'AwEAAY+o'; this will fail validation "
+	made_change = False
+	for this_r in this_dict["answer"]:
+		for this_record in this_r["rdata"]:
+			if 'AwEAAY+o' in this_record:
+				this_r["rdata"].remove(this_record)
+				made_change = True
+	if not made_change:
+		exit(f"Did not make a change when processing {id}")
+	this_dict["answer"] = copy.deepcopy(new_answer)
+	create_n_file(id, compare_name, desc, this_dict)
 
 	# The Authority section is empty. [kka]
 	id = "coh"
 	compare_name = "p-dot-dnskey"
 	desc = "Start with p-dot-dnskey, add an Authority section with an NS record for a.root-servers.net."
-	file_lines = []
-	for this_line in p_files[compare_name]:
-		file_lines.append(this_line)
-	file_lines.append("      AUTHORITY_SECTION:")
-	file_lines.append("        - . 518400 IN NS a.root-servers.net.")
-	create_n_file(id, compare_name, desc, file_lines)
+	this_dict = copy.deepcopy(p_dicts[compare_name])
+	this_dict["authority"] = [ {'name': 'a.root-servers.net.', 'rdata': ['198.41.0.4'], 'rdtype': 'A', 'ttl': 518400} ]
+	create_n_file(id, compare_name, desc, this_dict)
 
 	# The Additional section is empty. [jws]
 	id = "nnd"
 	compare_name = "p-dot-dnskey"
 	desc = "Start with p-dot-dnskey, add an Additional section with an A record for a.root-servers.net."
-	file_lines = []
-	for this_line in p_files[compare_name]:
-		file_lines.append(this_line)
-	file_lines.append("      ADDITIONAL_SECTION:")
-	file_lines.append("        - a.root-servers.net. 518400 IN A 198.41.0.4")
-	create_n_file(id, compare_name, desc, file_lines)
-
+	this_dict = copy.deepcopy(p_dicts[compare_name])
+	this_dict["additional"] = [ {'name': 'a.root-servers.net.', 'rdata': ['198.41.0.4'], 'rdtype': 'A', 'ttl': 518400} ]
+	create_n_file(id, compare_name, desc, this_dict)
+	
 	##########
 
 	# For negative responses, a correct result requires all of the following: [vcu]
 	#   Use p-neg
 
-	# The header AA bit is set. [gpl]
+		# The header AA bit is set. [gpl]
 	id = "ymb"
 	compare_name = "p-neg"
 	desc = "Start with p-neg, remove the AA bit"
-	file_lines = []
-	for this_line in p_files[compare_name]:
-		if this_line == "      flags: qr aa":
-			file_lines.append("      flags: qr")
-		else:
-			file_lines.append(this_line)
-	create_n_file(id, compare_name, desc, file_lines) 
+	this_dict = copy.deepcopy(p_dicts[compare_name])
+	this_dict["flags"] = this_dict["flags"].replace(" AA", "").replace("AA ", "")
+	create_n_file(id, compare_name, desc, this_dict)
 
 	# The Answer section is empty. [dvh]
 	id = "njw"
 	compare_name = "p-neg"
-	desc = "Start with p-neg, , create a bogus Answer section with an A record"
-	file_lines = []
-	for this_line in p_files[compare_name]:
-		if this_line == "      AUTHORITY_SECTION:":
-			file_lines.append("      ANSWER_SECTION:")
-			file_lines.append("        - www.rssac047-test.hwzvpicwen. 518400 IN A 127.0.0.1")
-			file_lines.append("      AUTHORITY_SECTION:")
-		else:
-			file_lines.append(this_line)
-	create_n_file(id, compare_name, desc, file_lines) 
+	desc = "Start with p-neg, create a bogus Answer section with an A record"
+	this_dict = copy.deepcopy(p_dicts[compare_name])
+	this_dict["answer"] = [ {'name': 'www.rssac047-test.zyxwvutsrqp.', 'rdata': ['10.10.10.10'], 'rdtype': 'A', 'ttl': 518400} ]
+	create_n_file(id, compare_name, desc, this_dict)
 
 	# The Authority section contains the signed . / SOA record. [axj]
 	id = "pho"
 	compare_name = "p-neg"
-	desc = "Start with p-neg, , remove the SOA record and its RRSIG"
-	file_lines = []
-	for this_line in p_files[compare_name]:
-		if ". 86400 IN SOA" in this_line:
-			continue
-		if ". 86400 IN RRSIG SOA" in this_line:
+	desc = "Start with p-neg, remove the SOA record and its RRSIG"
+	new_authority = []
+	made_change = False
+	for this_r in this_dict["authority"]:
+		if (this_r["name"] == "." and this_r["rdtype"] == "SOA") or (this_r["name"] == "." and this_r["rdtype"] == "RRSIG"):
+			made_change = True
 			continue
 		else:
-			file_lines.append(this_line)
-	create_n_file(id, compare_name, desc, file_lines) 
+			new_authority.append(this_r)
+	if not made_change:
+		exit(f"Did not make a change when processing {id}")
+	this_dict["authority"] = copy.deepcopy(new_authority)
+	create_n_file(id, compare_name, desc, this_dict)
 
 	# The Authority section contains a signed NSEC record covering the query name. [czb]
 	id = "czg"
 	compare_name = "p-neg"
-	desc = "Start with p-neg, , remove the NSEC record covering the query and its RRSIG"
-	file_lines = []
-	for this_line in p_files[compare_name]:
-		if ". 86400 IN NSEC" in this_line:
-			continue
-		if ". 86400 IN RRSIG NSEC" in this_line:
+	desc = "Start with p-neg, remove the NSEC record covering the query and its RRSIG"
+	new_authority = []
+	made_change = False
+	for this_r in this_dict["authority"]:
+		if (this_r["name"] == "zw." and this_r["rdtype"] == "NSEC") or (this_r["name"] == "zw." and this_r["rdtype"] == "RRSIG"):
+			made_change = True
 			continue
 		else:
-			file_lines.append(this_line)
-	create_n_file(id, compare_name, desc, file_lines) 
+			new_authority.append(this_r)
+	if not made_change:
+		exit(f"Did not make a change when processing {id}")
+	this_dict["authority"] = copy.deepcopy(new_authority)
+	create_n_file(id, compare_name, desc, this_dict)
 
 	# The Authority section contains a signed NSEC record with owner name “.” proving no wildcard exists in the zone. [jhz]
 	id = "pdu"
 	compare_name = "p-neg"
-	desc = "Start with p-neg, , remove the NSEC record covering the . and its RRSIG"
-	file_lines = []
-	for this_line in p_files[compare_name]:
-		if ". 86400 IN NSEC aaa." in this_line:
-			continue
-		if ". 86400 IN RRSIG NSEC" in this_line:
+	desc = "Start with p-neg, remove the NSEC record covering the . and its RRSIG"
+	new_authority = []
+	made_change = False
+	for this_r in this_dict["authority"]:
+		if (this_r["name"] == "." and this_r["rdtype"] == "NSEC") or (this_r["name"] == "." and this_r["rdtype"] == "RRSIG"):
+			made_change = True
 			continue
 		else:
-			file_lines.append(this_line)
-	create_n_file(id, compare_name, desc, file_lines) 
+			new_authority.append(this_r)
+	if not made_change:
+		exit(f"Did not make a change when processing {id}")
+	this_dict["authority"] = copy.deepcopy(new_authority)
+	create_n_file(id, compare_name, desc, this_dict)
 
 	# The Additional section is empty. [trw]
 	id = "anj"
 	compare_name = "p-neg"
 	desc = "Start with p-neg,add an Additonal section with an A record"
-	file_lines = []
-	for this_line in p_files[compare_name]:
-		file_lines.append(this_line)
-	file_lines.append("      ADDITIONAL_SECTION:")
-	file_lines.append("        - c.cctld.us. 172800 IN A 156.154.127.70")
-	create_n_file(id, compare_name, desc, file_lines) 
-
+	this_dict = copy.deepcopy(p_dicts[compare_name])
+	this_dict["additional"] = [ {'name': 'a.root-servers.net.', 'rdata': ['198.41.0.4'], 'rdtype': 'A', 'ttl': 518400} ]
+	create_n_file(id, compare_name, desc, this_dict)
+	
 	##########
 
 	exit(f"Created {len(all_n_ids)} files for the negative tests")
