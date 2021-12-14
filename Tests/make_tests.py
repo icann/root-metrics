@@ -576,4 +576,4 @@ if __name__ == "__main__":
 	
 	##########
 
-	exit(f"Created {len(all_n_ids)} files for the negative tests")
+	print(f"Created {len(all_n_ids)} files for the negative tests")

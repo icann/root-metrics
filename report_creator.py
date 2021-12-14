@@ -4,7 +4,7 @@
 # Run as the metrics user
 # Three-letter items in square brackets (such as [xyz]) refer to parts of rssac-047.md
 
-import argparse, datetime, glob, logging, math, os, psycopg2, statistics
+import argparse, datetime, glob, logging, math, os, pickle, psycopg2, statistics
 from pathlib import Path
 
 if __name__ == "__main__":
@@ -146,6 +146,7 @@ if __name__ == "__main__":
 	# Get the records from the database
 	with psycopg2.connect(dbname="metrics", user="metrics") as conn:
 		with conn.cursor() as cur:
+			# Set the dates for the search
 			where_date = f"where date_derived between '{report_start_timestamp}' and  '{report_end_timestamp}' "
 
 			# Get all the SOA records for this period
@@ -157,6 +158,12 @@ if __name__ == "__main__":
 			cur.execute("select filename_record, target, is_correct from record_info " +
 				f"{where_date} and record_type = 'C' order by date_derived")
 			correctness_recs = cur.fetchall()
+			
+			# Get all the failed correctness records to report in the additional section
+			cur.execute("select filename_record, target, internet, transport, failure_reason, source_pickle from record_info " +
+				f"{where_date} and record_type = 'C' and is_correct = 'n' order by date_derived")
+			correctness_failures = cur.fetchall()
+		
 	log(f"Found {len(soa_recs)} SOA records and {len(correctness_recs)} correctness records for {report_start_timestamp} to {report_end_timestamp}")
 		
 	# Create dicts from the lists so that we can add derived values
@@ -464,7 +471,27 @@ if __name__ == "__main__":
 	r_out(f"   Entire RSS {rss_publication_latency_median} median, {pass_fail_text}, {len(rss_publication_latency_list):>8,} measurements", additional_text)  # [daz]
 
 	##############################################################
+
+	# List the correctness failures
+	if len(correctness_failures) > 0:
+		r_out(f"\nThere were {len(correctness_failures)} correctness failures during the period:\n")
+		for (filename_record, target, internet, transport, failure_reason, source_pickle) in correctness_failures:
+			culled_reasons = []
+			this_source = pickle.loads(source_pickle)
+			for this_line in failure_reason:
+				# If this is a . / SOA record, only put out the actual error, not the stuff indicating that we tested against other SOAs
+				if this_source["question"]["name"] == "." and this_source["question"]["rdtype"] == "SOA":
+					if this_line.startswith("Set of RRset value {'A.ROOT-SERVERS.NET. NSTLD.VERISIGN-GRS.COM.") or this_line.startswith("Correctness was first tested"):
+						continue
+				culled_reasons.append(this_line.strip())
+			r_out(f"   {filename_record}: {target} {internet} {transport}:\n")
+			for this_reason in culled_reasons:
+				r_out(f"      {this_reason}\n")
+	else:
+		r_out("\nThere were no correctness failures during the period.\n")
 	
+	##############################################################
+
 	# Write out the report
 	with open(new_report_name, mode="wt") as f_out:
 		f_out.write("".join(report_main))
