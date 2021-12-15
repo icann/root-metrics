@@ -15,10 +15,15 @@ from collections import namedtuple
 def run_tests_only():
 	# Used to run local tests, then exit.
 	log("Running tests instead of a real run")
+	try:
+		test_dir = f"{str(Path('~').expanduser())}/repo/Tests"
+		os.chdir(test_dir)
+	except:
+		exit(f"Could not chdir to {test_dir}")
 	# Sanity check that you are in the Tests directory
 	for this_check in [ "make_tests.py", "p-dot-soa", "root_name_and_types.pickle" ]:
 		if not os.path.exists(this_check):
-			exit("Did not find {} for running under --test. Exiting.".format(this_check))
+			exit(f"Did not find {this_check} for running under --test. Exiting.")
 	# Test the positives
 	p_count = 0
 	for this_test_file in sorted(Path(".").glob("p-*")):
@@ -27,7 +32,7 @@ def run_tests_only():
 		this_resp_pickle = pickle.dumps(open(this_test_file, mode="rb"))
 		this_response = ("test", process_one_correctness_tuple(["", [ "test" ], this_resp_pickle]))
 		if this_response:
-			log("Expected pass, but got failure, on {}\n{}\n".format(this_id, this_response))
+			log(f"Expected pass, but got failure, on {this_id}\n{this_response}\n")
 	# Test the negatives
 	n_count = 0
 	# Collect the negative responses to put in a file
@@ -41,18 +46,18 @@ def run_tests_only():
 		this_resp_pickle = pickle.dumps(open(this_test_file, mode="rt"))
 		this_response = ("test", process_one_correctness_tuple(["", [ "test" ], this_resp_pickle]))
 		if not this_response:
-			log("Expected failure, but got pass, on {}".format(this_id))
+			log(f"Expected failure, but got pass, on {this_id}")
 		else:
 			n_responses[this_id]["resp"] = this_response
-	log("Finished testing {} positive and {} negative tests".format(p_count, n_count))
+	log(f"Finished testing {p_count} positive and {n_count} negative tests")
 	tests_results_file = "results.txt"
 	out_f = open(tests_results_file, mode="wt")
 	for this_id in n_responses:
-		out_f.write("\n{}\n".format(n_responses[this_id]["desc"]))
+		out_f.write("f\n{n_responses[this_id]['desc']}\n")
 		for this_line in n_responses[this_id]["resp"].splitlines():
-			out_f.write("{}\n".format(this_line))
+			out_f.write(f"{this_line}\n")
 	out_f.close()
-	die("Wrote out testing log as {}".format(tests_results_file))
+	die(f"Wrote out testing log as {tests_results_file}")
 
 ###############################################################
 def process_one_incoming_file(full_file_name):
@@ -75,7 +80,7 @@ def process_one_incoming_file(full_file_name):
 
 		# Check for wrong type of file
 		if not full_file_name.endswith(".pickle.gz"):
-			alert("Found {} that did not end in .pickle.gz".format(full_file_name))
+			alert(f"Found {full_file_name} that did not end in .pickle.gz")
 			return
 	
 		short_file_name = os.path.basename(full_file_name).replace(".pickle.gz", "")
@@ -187,7 +192,7 @@ def check_for_signed_rr(list_of_records_from_section, name_of_rrtype):
 			found_rrtype = True
 			break
 	if not found_rrtype:
-		return "No record of type {} was found in that section".format(name_of_rrtype)
+		return f"No record of type {name_of_rrtype} was found in that section"
 	found_rrsig = False
 	for this_rec_dict in list_of_records_from_section:
 		rec_qtype = this_rec_dict["rdtype"]
@@ -195,7 +200,7 @@ def check_for_signed_rr(list_of_records_from_section, name_of_rrtype):
 			found_rrsig = True
 			break
 	if not found_rrsig:
-		return "One more more records of type {} were found in that section, but there was no RRSIG".format(name_of_rrtype)
+		return f"One more more records of type {name_of_rrtype} were found in that section, but there was no RRSIG"
 	return ""
 	
 ###############################################################
@@ -474,10 +479,10 @@ def process_one_correctness_tuple(in_tuple):
 							rec_qtype = this_rec_dict["rdtype"]
 							if rec_qtype == "DS":
 								if not rec_qname == this_qname:
-									failure_reasons.append("DS in Answer section had QNAME {} instead of {} [cpf]".format(rec_qname, this_qname))
+									failure_reasons.append(f"DS in Answer section had QNAME {rec_qname} instead of {this_qname} [cpf]")
 						this_resp = check_for_signed_rr(resp["answer"], "DS")
 						if this_resp:
-							failure_reasons.append("{} [cpf]".format(this_resp))
+							failure_reasons.append(f"{this_resp} [cpf]")
 					# The Authority section is empty. [xdu]
 					if resp.get("authority"):
 						failure_reasons.append("Authority section was not empty [xdu]")
@@ -491,7 +496,7 @@ def process_one_correctness_tuple(in_tuple):
 					# The Answer section contains the signed SOA record for the root. [obw]
 					this_resp = check_for_signed_rr(resp["answer"], "SOA")
 					if this_resp:
-						failure_reasons.append("{} [obw]".format(this_resp))
+						failure_reasons.append(f"{this_resp} [obw]")
 					# The Authority section contains the signed NS RRset for the root. [ktm]
 					if not resp.get("authority"):
 						failure_reasons.append("The Authority section was empty [ktm]")
@@ -506,7 +511,7 @@ def process_one_correctness_tuple(in_tuple):
 					# The Answer section contains the signed NS RRset for the root. [wal]
 					this_resp = check_for_signed_rr(resp["answer"], "NS")
 					if this_resp:
-						failure_reasons.append("{} [wal]".format(this_resp))
+						failure_reasons.append(f"{this_resp} [wal]")
 					# The Authority section is empty. [eyk]
 					if resp.get("authority"):
 						failure_reasons.append("Authority section was not empty [eyk]")
@@ -517,7 +522,7 @@ def process_one_correctness_tuple(in_tuple):
 					# The Answer section contains the signed DNSKEY RRset for the root. [eou]
 					this_resp = check_for_signed_rr(resp["answer"], "DNSKEY")
 					if this_resp:
-						failure_reasons.append("{} [eou]".format(this_resp))
+						failure_reasons.append(f"{this_resp} [eou]")
 					# The Authority section is empty. [kka]
 					if resp.get("authority"):
 						failure_reasons.append("Authority section was not empty [kka]")
@@ -546,7 +551,7 @@ def process_one_correctness_tuple(in_tuple):
 								failure_reasons.append(f"SOA in Authority section had QNAME {rec_qname} instead of '.' [vcu]")
 					this_resp = check_for_signed_rr(resp["authority"], "SOA")
 					if this_resp:
-						failure_reasons.append("{} [axj]".format(this_resp))
+						failure_reasons.append(f"{this_resp} [axj]")
 					# The Authority section contains a signed NSEC record covering the query name. [czb]
 					#   Note that the query name might have multiple labels, so only compare against the last label
 					this_qname_TLD = this_qname.split(".")[-2] + "."
@@ -663,14 +668,12 @@ if __name__ == "__main__":
 	this_parser.add_argument("--test", action="store_true", dest="test",
 		help="Run tests on requests; must be run in the Tests directory")
 	this_parser.add_argument("--limit", action="store_true", dest="limit",
-		help="Limit procesing to {} items".format(limit_size))
+		help=f"Limit procesing to {limit_size} items")
 	
 	opts = this_parser.parse_args()
 	if opts.limit:
-		log("Limiting record processing to {} records".format(limit_size))
+		log(f"Limiting record processing to {limit_size} records")
 
-	# Where the binaries are
-	target_dir = "/home/metrics/Target"	
 	# Where to store the incoming files comeing from the vantage points
 	incoming_dir = f"{str(Path('~').expanduser())}/Incoming"
 	if not os.path.exists(incoming_dir):
