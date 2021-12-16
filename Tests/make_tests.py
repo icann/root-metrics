@@ -65,6 +65,7 @@ if __name__ == "__main__":
 		["cm.", "NS", "p-tld-ns-no-ds"],
 		["by.", "NS", "p-by-ns"]		
 	]
+	# If the name for p-neg above is changed, the covering name in the test in [czb] below needs to be changed as well
 
 	for (in_q, in_t, out_filename) in queries_list:
 		q = dns.message.make_query(dns.name.from_text(in_q), dns.rdatatype.from_text(in_t))
@@ -545,6 +546,8 @@ if __name__ == "__main__":
 	new_authority = []
 	made_change = False
 	for this_r in this_dict["authority"]:
+		###### Important note: the .zw here was chosen because that is the that would precede the query name "www.rssac047-test.zyxwvutsrqp" given in queries_list
+		###### If the negative name in queries_list is changed, this needs to be changed too
 		if (this_r["name"] == "zw." and this_r["rdtype"] == "NSEC") or (this_r["name"] == "zw." and this_r["rdtype"] == "RRSIG"):
 			made_change = True
 			continue
