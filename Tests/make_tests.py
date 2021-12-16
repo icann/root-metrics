@@ -304,7 +304,7 @@ if __name__ == "__main__":
 
 	id = "gpn"
 	compare_name = "p-tld-ns-no-ds"
-	desc = "Start with p-tld-ns-no-ds, remove the NSEC and its signature from the Authority section" 
+	desc = "Start with p-tld-ns-no-ds, remove the NSEC and the NSEC type  from the Authority section" 
 	this_dict = copy.deepcopy(p_dicts[compare_name])
 	new_authority = []
 	made_change = False
@@ -467,6 +467,7 @@ if __name__ == "__main__":
 	id = "nsz"
 	compare_name = "p-dot-dnskey"
 	desc = "Start with p-dot-dnskey, remove the DNSKEY that contains 'AwEAAY+o'; this will fail validation "
+	this_dict = copy.deepcopy(p_dicts[compare_name])
 	made_change = False
 	for this_r in this_dict["answer"]:
 		for this_record in this_r["rdata"]:
@@ -519,12 +520,17 @@ if __name__ == "__main__":
 	id = "pho"
 	compare_name = "p-neg"
 	desc = "Start with p-neg, remove the SOA record and its RRSIG"
+	this_dict = copy.deepcopy(p_dicts[compare_name])
 	new_authority = []
 	made_change = False
 	for this_r in this_dict["authority"]:
-		if (this_r["name"] == "." and this_r["rdtype"] == "SOA") or (this_r["name"] == "." and this_r["rdtype"] == "RRSIG"):
+		if (this_r["name"] == "." and this_r["rdtype"] == "SOA"):
 			made_change = True
 			continue
+		elif (this_r["name"] == "." and this_r["rdtype"] == "RRSIG"):
+			if this_r["rdata"][0].startswith("SOA"):
+				made_change = True
+				continue
 		else:
 			new_authority.append(this_r)
 	if not made_change:
@@ -533,9 +539,9 @@ if __name__ == "__main__":
 	create_n_file(id, compare_name, desc, this_dict)
 
 	# The Authority section contains a signed NSEC record covering the query name. [czb]
-	id = "czg"
+	id = "czb"
 	compare_name = "p-neg"
-	desc = "Start with p-neg, remove the NSEC record covering the query and its RRSIG"
+	desc = "Start with p-neg, remove the NSEC record covering the query"
 	new_authority = []
 	made_change = False
 	for this_r in this_dict["authority"]:
@@ -553,6 +559,7 @@ if __name__ == "__main__":
 	id = "pdu"
 	compare_name = "p-neg"
 	desc = "Start with p-neg, remove the NSEC record covering the . and its RRSIG"
+	this_dict = copy.deepcopy(p_dicts[compare_name])
 	new_authority = []
 	made_change = False
 	for this_r in this_dict["authority"]:
@@ -569,7 +576,7 @@ if __name__ == "__main__":
 	# The Additional section is empty. [trw]
 	id = "anj"
 	compare_name = "p-neg"
-	desc = "Start with p-neg,add an Additonal section with an A record"
+	desc = "Start with p-neg, add an Additonal section with an A record"
 	this_dict = copy.deepcopy(p_dicts[compare_name])
 	this_dict["additional"] = [ {'name': 'a.root-servers.net.', 'rdata': ['198.41.0.4'], 'rdtype': 'A', 'ttl': 518400} ]
 	create_n_file(id, compare_name, desc, this_dict)
