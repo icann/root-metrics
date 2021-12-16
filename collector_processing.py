@@ -13,8 +13,8 @@ from collections import namedtuple
 ###############################################################
 
 def run_tests_only():
-	# Used to run local tests, then exit.
-	log("Running tests instead of a real run")
+	# Run just the tests locally, then exit.
+	debug("Running tests instead of a real run")
 	try:
 		test_dir = f"{str(Path('~').expanduser())}/repo/Tests"
 		os.chdir(test_dir)
@@ -29,10 +29,10 @@ def run_tests_only():
 	for this_test_file in sorted(Path(".").glob("p-*")):
 		p_count += 1
 		this_id = os.path.basename(this_test_file)
-		this_resp_pickle = pickle.dumps(open(this_test_file, mode="rb"))
-		this_response = ("test", process_one_correctness_tuple(["", [ "test" ], this_resp_pickle]))
+		this_resp_pickle = open(this_test_file, mode="rb").read()
+		this_response = process_one_correctness_tuple(("test", this_resp_pickle))
 		if this_response:
-			log(f"Expected pass, but got failure, on {this_id}\n{this_response}\n")
+			debug(f"Expected pass, but got failure, on {this_id}\n{this_response}\n")
 	# Test the negatives
 	n_count = 0
 	# Collect the negative responses to put in a file
@@ -40,24 +40,24 @@ def run_tests_only():
 	for this_test_file in sorted(Path(".").glob("n-*")):
 		n_count += 1
 		this_id = os.path.basename(this_test_file)
-		in_lines = open(this_test_file, mode="rt").read().splitlines()
-		n_responses[this_id] = {}
-		n_responses[this_id]["desc"] = in_lines[0]
-		this_resp_pickle = pickle.dumps(open(this_test_file, mode="rt"))
-		this_response = ("test", process_one_correctness_tuple(["", [ "test" ], this_resp_pickle]))
+		this_resp_pickle = open(this_test_file, mode="rb").read()
+		this_response = process_one_correctness_tuple(("test", this_resp_pickle))
 		if not this_response:
-			log(f"Expected failure, but got pass, on {this_id}")
+			debug(f"Expected failure, but got success, on {this_id}")
 		else:
+			n_responses[this_id] = {}
+			this_resp_full = pickle.loads(this_resp_pickle)
+			n_responses[this_id]["desc"] = this_resp_full["test-desc"]
 			n_responses[this_id]["resp"] = this_response
-	log(f"Finished testing {p_count} positive and {n_count} negative tests")
+	debug(f"Finished testing {p_count} positive and {n_count} negative tests")
 	tests_results_file = "results.txt"
 	out_f = open(tests_results_file, mode="wt")
-	for this_id in n_responses:
-		out_f.write("f\n{n_responses[this_id]['desc']}\n")
+	for this_id in sorted(n_responses):
+		out_f.write(f"\n{this_id} -- {n_responses[this_id]['desc']}\n")
 		for this_line in n_responses[this_id]["resp"].splitlines():
-			out_f.write(f"{this_line}\n")
+			out_f.write(f"   {this_line}\n")
 	out_f.close()
-	die(f"Wrote out testing log as {tests_results_file}")
+	debug(f"Wrote out testing log as {tests_results_file}")
 
 ###############################################################
 def process_one_incoming_file(full_file_name):
@@ -218,29 +218,41 @@ def process_one_correctness_tuple(in_tuple):
 		return
 	with psycopg2.connect(dbname="metrics", user="metrics") as conn:
 		conn.set_session(autocommit=True)
-		with conn.cursor() as cur:
-			cur.execute("select timeout, likely_soa, is_correct, source_pickle from record_info where filename_record = %s", (in_filename_record, ))
-			this_found = cur.fetchall()
-		if len(this_found) > 1:
-			alert(f"When checking correctness on {in_filename_record}, found {len(this_found)} records instead of just 1")
-			return
-		(this_timeout, this_soa_to_check, this_is_correct, this_resp_pickle) = this_found[0]
-
-		# Before trying to load the pickled data, first see if it is a timeout; if so, set is_correct but move on [lbl]
-		if not this_timeout == "":
-			if opts.test:
-				return f"Timeout {this_timeout} [lbl]"
-			else:
-				with conn.cursor() as cur:
-					cur.execute("update record_info set (is_correct, failure_reason) = (%s, %s) where filename_record = %s", ("y", "timeout", in_filename_record))
+		if request_type == "normal":
+			with conn.cursor() as cur:
+				cur.execute("select timeout, likely_soa, is_correct, source_pickle from record_info where filename_record = %s", (in_filename_record, ))
+				this_found = cur.fetchall()
+			if len(this_found) > 1:
+				alert(f"When checking correctness on {in_filename_record}, found {len(this_found)} records instead of just 1")
 				return
-	
-		# Get the pickled object		
-		try:
-			resp = pickle.loads(this_resp_pickle)
-		except Exception as e:
-			alert(f"Could not unpickle the source_pickle in {in_filename_record}: {e}")
-			return
+			(this_timeout, this_soa_to_check, this_is_correct, this_resp_pickle) = this_found[0]
+			# Before trying to load the pickled data, first see if it is a timeout; if so, set is_correct but move on [lbl]
+			if not this_timeout == "":
+				cur.execute("update record_info set (is_correct, failure_reason) = (%s, %s) where filename_record = %s", ("y", "timeout", in_filename_record))
+				return
+			# Get the pickled object		
+			try:
+				resp = pickle.loads(this_resp_pickle)
+			except Exception as e:
+				alert(f"Could not unpickle the source_pickle in {in_filename_record}: {e}")
+				return
+		else:  # For tests
+			this_timeout = ""
+			# Unpickle the object to get the values
+			try:
+				resp = pickle.loads(in_filename_record)
+			except:
+				return "Could not unpickle this test."
+			test_name = resp["test-on"]
+			if test_name[0] == "p":
+				this_is_correct = "y"
+			elif test_name[0] == "n":
+				this_is_correct = "n"
+			else:
+				return f"In {test_name}, the first letter was not 'p' or 'n'."
+			# Change in_filename_record in tests to be the test ID so that errors come out more readable
+			in_filename_record = test_name
+			this_soa_to_check = ""			
 
 		#  Get the question
 		#   Only look at the first record in the question section; it is completely unclear what to do if the the question section has more records
@@ -342,7 +354,7 @@ def process_one_correctness_tuple(in_tuple):
 							r_short = this_root_to_check[this_rrset_key]
 							if not len(rrsets_for_checking[this_rrset_key]) == len(this_root_to_check[this_rrset_key]):
 								failure_reasons.append(f"{this_rrset_key} in {this_section_name} in the response has {len(z_short)} members instead of {len(r_short)} in root zone;" +
-									" {z_short} instead of {r_short} [vnk]")
+									f" {z_short} instead of {r_short} [vnk]")
 								continue
 							# Need to match case, so uppercase all the records in both sets
 							#   It is OK to do this for any type that is not displayed as Base64, and RRSIG is already excluded by [ygx]
@@ -399,7 +411,7 @@ def process_one_correctness_tuple(in_tuple):
 						try:
 							dns.dnssec.validate(signed_rrset, rrsig_rrset, root_keys_for_matching)
 						except Exception as e:
-							failure_reasons.append(f"Validating {rec_qname}/{rec_qtype} in {this_section_name} in {in_filename_record} got error of {e} [yds]")
+							failure_reasons.append(f"Validating {rec_qname}/{rec_qtype} in {this_section_name} in {in_filename_record} got error of '{e}' [yds]")
 	
 			# Check that all the parts of the resp structure are correct, based on the type of answer
 			if resp["rcode"] == "NOERROR":
