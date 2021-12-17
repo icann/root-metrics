@@ -24,36 +24,6 @@ if __name__ == "__main__":
 	this_parser.add_argument("--addr", dest="addr", default="198.41.0.4",
 		help="IP address of root server to get tests from")
 	opts = this_parser.parse_args()
-	
-	# Make a file of the root names and types to be passed to the correction checking function
-	# Keep track of all the records in this temporary root zone, both to find the SOA but also to save for later matching comparisons
-	# Get the current root zone
-	internic_url = "https://www.internic.net/domain/root.zone"
-	try:
-		root_zone_request = requests.get(internic_url)
-	except Exception as e:
-		exit(f"Could not do the requests.get on {internic_url}: {e}")
-	text_from_zone_file = root_zone_request.text
-	# Turn tabs into spaces
-	text_from_zone_file = re.sub("\t", " ", text_from_zone_file)
-	# Turn runs of spaces into a single space
-	text_from_zone_file = re.sub(" +", " ", text_from_zone_file)
-	# Get the output after removing comments
-	out_root_text = ""
-	# Remove the comments
-	for this_line in text_from_zone_file.splitlines():
-		if not this_line.startswith(";"):
-			out_root_text += this_line + "\n"
-	# Now save the name and types data
-	root_name_and_types = {}
-	for this_line in out_root_text.splitlines():
-		(this_name, _, _, this_type, this_rdata) = this_line.split(" ", maxsplit=4)
-		this_key = f"{this_name}/{this_type}"
-		if not this_key in root_name_and_types:
-			root_name_and_types[this_key] = set()
-		root_name_and_types[this_key].add(this_rdata)
-	with open("root_name_and_types.pickle", mode="wb") as f_out:
-		pickle.dump(root_name_and_types, f_out)
 
 	queries_list = [
 		[".", "SOA", "p-dot-soa"],
@@ -62,13 +32,12 @@ if __name__ == "__main__":
 		["www.rssac047-test.zyxwvutsrqp.", "A", "p-neg"],
 		["us.", "DS", "p-tld-ds"],
 		["us.", "NS", "p-tld-ns"],
-		["cm.", "NS", "p-tld-ns-no-ds"],
-		["by.", "NS", "p-by-ns"]		
+		["cm.", "NS", "p-tld-ns-no-ds"]
 	]
 	# If the name for p-neg above is changed, the covering name in the test in [czb] below needs to be changed as well
 
-	for (in_q, in_t, out_filename) in queries_list:
-		q = dns.message.make_query(dns.name.from_text(in_q), dns.rdatatype.from_text(in_t))
+	for (in_qname, in_type, out_filename) in queries_list:
+		q = dns.message.make_query(dns.name.from_text(in_qname), dns.rdatatype.from_text(in_type))
 		# Turn off the RD bit
 		q.flags &= ~dns.flags.RD
 		# Add NSID
@@ -234,7 +203,7 @@ if __name__ == "__main__":
 	made_change = False
 	for this_r in this_dict["answer"]:
 		if this_r["name"] == "us." and this_r["rdtype"] == "RRSIG":
-			this_r["rdata"][0] = this_r["rdata"][0].replace("a", "b")
+			this_r["rdata"][0] = this_r["rdata"][0].replace("W", "X")
 			made_change = True
 	if not made_change:
 		exit(f"Did not make a change when processing {id}")
@@ -305,7 +274,7 @@ if __name__ == "__main__":
 
 	id = "gpn"
 	compare_name = "p-tld-ns-no-ds"
-	desc = "Start with p-tld-ns-no-ds, remove the NSEC and the NSEC type  from the Authority section" 
+	desc = "Start with p-tld-ns-no-ds, remove the NSEC and its RRSIG from the Authority section" 
 	this_dict = copy.deepcopy(p_dicts[compare_name])
 	new_authority = []
 	made_change = False
@@ -344,7 +313,7 @@ if __name__ == "__main__":
  	# The Answer section contains the signed DS RRset for the query name. [cpf]
 	id = "zjs"
 	compare_name = "p-tld-ds"
-	desc = "Start with p-tld-ds, remove the the first DS record in the Answer section; validation will fail"
+	desc = "Start with p-tld-ds, remove the one DS record in the Answer section; validation will fail"
 	this_dict = copy.deepcopy(p_dicts[compare_name])
 	made_change = False
 	for this_r in this_dict["answer"]:
@@ -366,7 +335,7 @@ if __name__ == "__main__":
 	# The Additional section is empty. [mle]
 	id = "ekf"
 	compare_name = "p-tld-ds"
-	desc = "Start with p-tld-ds, add an Additonal section with an A record"
+	desc = "Start with p-tld-ds, add an Additonal section with an AAAA record"
 	this_dict = copy.deepcopy(p_dicts[compare_name])
 	this_dict["additional"] = [ {'name': 'x.cctld.us.', 'rdata': ['2001:dcd:2::15'], 'rdtype': 'AAAA', 'ttl': 172800} ]
 	create_n_file(id, compare_name, desc, this_dict)
@@ -392,7 +361,7 @@ if __name__ == "__main__":
 	new_answer = []
 	made_change = False
 	for this_r in this_dict["answer"]:
-		if this_r["rdtype"] in ("SOA"):
+		if this_r["rdtype"] in ("SOA", "RRSIG"):
 			made_change = True
 			continue
 		else:
@@ -467,14 +436,13 @@ if __name__ == "__main__":
 	# The Answer section contains the signed DNSKEY RRset for the root. [eou]
 	id = "nsz"
 	compare_name = "p-dot-dnskey"
-	desc = "Start with p-dot-dnskey, remove the DNSKEY that contains 'AwEAAY+o'; this will fail validation "
+	desc = "Start with p-dot-dnskey, remove one of the DNSKEY records; this will fail validation "
 	this_dict = copy.deepcopy(p_dicts[compare_name])
 	made_change = False
 	for this_r in this_dict["answer"]:
-		for this_record in this_r["rdata"]:
-			if 'AwEAAY+o' in this_record:
-				this_r["rdata"].remove(this_record)
-				made_change = True
+		if this_r["rdtype"] == "DNSKEY":
+			this_r["rdata"] = this_r["rdata"][1:]
+			made_change = True
 	if not made_change:
 		exit(f"Did not make a change when processing {id}")
 	this_dict["answer"] = copy.deepcopy(new_answer)
@@ -512,7 +480,7 @@ if __name__ == "__main__":
 	# The Answer section is empty. [dvh]
 	id = "njw"
 	compare_name = "p-neg"
-	desc = "Start with p-neg, create a bogus Answer section with an A record"
+	desc = "Start with p-neg, create an Answer section with an A record"
 	this_dict = copy.deepcopy(p_dicts[compare_name])
 	this_dict["answer"] = [ {'name': 'www.rssac047-test.zyxwvutsrqp.', 'rdata': ['10.10.10.10'], 'rdtype': 'A', 'ttl': 518400} ]
 	create_n_file(id, compare_name, desc, this_dict)
@@ -586,4 +554,20 @@ if __name__ == "__main__":
 	
 	##########
 
-	print(f"Created {len(all_n_ids)} files for the negative tests")
+	# Go through all the negative tests, and compare them to the postive ones
+	import pprint, subprocess, tempfile
+	for this_neg in all_n_ids:
+		with tempfile.NamedTemporaryFile(mode="wt", delete=False) as neg_file:
+			neg_dict = pickle.load(open(f"n-{this_neg}", mode="rb"))
+			neg_file_name = neg_file.name
+			neg_file.write(pprint.pformat(neg_dict, indent=1, width=500))
+			neg_file.close()
+			with tempfile.NamedTemporaryFile(mode="wt", delete=False) as pos_file:
+				pos_file_name = pos_file.name
+				pos_file.write(pprint.pformat(pickle.load(open(f"{neg_dict['test-on']}", mode="rb")), indent=1, width=500))
+				pos_file.close()
+				diff_cmd = f"diff {pos_file_name} {neg_file_name}"
+				p = subprocess.run(diff_cmd, shell=True, capture_output=True, text=True)
+				this_diff = p.stdout
+				print(f"\n{this_diff}")
+	

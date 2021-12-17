@@ -21,7 +21,7 @@ def run_tests_only():
 	except:
 		exit(f"Could not chdir to {test_dir}")
 	# Sanity check that you are in the Tests directory
-	for this_check in [ "make_tests.py", "p-dot-soa", "root_name_and_types.pickle" ]:
+	for this_check in [ "make_tests.py", "p-dot-soa", "n-ffr" ]:
 		if not os.path.exists(this_check):
 			exit(f"Did not find {this_check} for running under --test. Exiting.")
 	# Test the positives
