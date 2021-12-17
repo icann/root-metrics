@@ -25,6 +25,36 @@ if __name__ == "__main__":
 		help="IP address of root server to get tests from")
 	opts = this_parser.parse_args()
 
+	# Make a file of the root names and types to be passed to the correction checking function
+	# Keep track of all the records in this temporary root zone, both to find the SOA but also to save for later matching comparisons
+	# Get the current root zone
+	internic_url = "https://www.internic.net/domain/root.zone"
+	try:
+		root_zone_request = requests.get(internic_url)
+	except Exception as e:
+		exit(f"Could not do the requests.get on {internic_url}: {e}")
+	text_from_zone_file = root_zone_request.text
+	# Turn tabs into spaces
+	text_from_zone_file = re.sub("\t", " ", text_from_zone_file)
+	# Turn runs of spaces into a single space
+	text_from_zone_file = re.sub(" +", " ", text_from_zone_file)
+	# Get the output after removing comments
+	out_root_text = ""
+	# Remove the comments
+	for this_line in text_from_zone_file.splitlines():
+		if not this_line.startswith(";"):
+			out_root_text += this_line + "\n"
+	# Now save the name and types data
+	root_name_and_types = {}
+	for this_line in out_root_text.splitlines():
+		(this_name, _, _, this_type, this_rdata) = this_line.split(" ", maxsplit=4)
+		this_key = f"{this_name}/{this_type}"
+		if not this_key in root_name_and_types:
+			root_name_and_types[this_key] = set()
+		root_name_and_types[this_key].add(this_rdata)
+	with open("root_name_and_types.pickle", mode="wb") as f_out:
+		pickle.dump(root_name_and_types, f_out)
+
 	queries_list = [
 		[".", "SOA", "p-dot-soa"],
 		[".", "DNSKEY", "p-dot-dnskey"],
