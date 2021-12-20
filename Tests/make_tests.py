@@ -25,7 +25,7 @@ if __name__ == "__main__":
 		help="IP address of root server to get tests from")
 	opts = this_parser.parse_args()
 
-	# Make a file of the root names and types to be passed to the correction checking function
+	# Make a file of the root names and types for the collector_processing.py program
 	# Keep track of all the records in this temporary root zone, both to find the SOA but also to save for later matching comparisons
 	# Get the current root zone
 	internic_url = "https://www.internic.net/domain/root.zone"
