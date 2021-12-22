@@ -7,6 +7,8 @@ The purpose of this document is to mark all text that might be linked to the sou
 The text of this document is basically what is in RSSAC047, but tags are added in every place that something from RSSAC047 might affect implementation.
 All tags are given as `[xyz]`, where "xyz" is a unique, randomly selected three-letter string. That bracketed tag "[xyz]" will appear in the implementation code or other documents.
 
+Changes in RSSAC047v2 are denoted with ^^.
+
 ## Preface
 
 {{ elided }}
@@ -57,6 +59,8 @@ Vantage points may be deployed on “bare metal” or virtual machines (VMs). Wh
 
 The metrics defined in this report shall be reported by the collection system on a monthly basis. `[rps]`
 
+^^Response latency measurements are reported in milliseconds. If an implementation tool has known precision limits, it should be reported.^^
+
 For RSI metrics (Section 5), the collection system reports results for each metric in a given month as either “pass” or “fail.” `[ntt]` An RSI is reported to “pass” the metric when its value meets the appropriate threshold, and reported to “fail” when its value does not meet the threshold. The metric’s measured value is not reported in either reading. `[cpm]` As stated in Section 2.2, these metrics are not designed to make performance comparisons between RSIs. See Section 8.1 for an example of an RSI metrics report.
 
 For RSS metrics (Section 6), the collection system reports the results for each metric in a given month with the measured value, as well as a pass or fail indication. `[nuc]` See Section 8.2 for an example of an RSS metrics report.
@@ -75,9 +79,9 @@ Some vantage point measurements have timeouts or are designed to measure elapsed
 
 For connectionless requests (i.e., over UDP) a timer starts immediately after the UDP message has been sent. It stops when the entire response has been received. `[tsm]`
 
-For connection-based requests (e.g., over TCP) a timer starts when the connection is initiated. It stops when the entire DNS response has been received (although not waiting for the TCP connection to close). `[epp]` __*The current implementation uses `dig`, which does not include the connection setup time at the beginning of the TCP query.*__
+For connection-based requests (e.g., over TCP) a timer starts when the connection is initiated. It stops when the entire DNS response has been received (although not waiting for the TCP connection to close). `[epp]`
 
-__*Requirements in this paragraph are not currently implemented.*__ Some features such as TCP Fast Open (TFO) reduce connection setup delays. None of those features should be turned on in the measurement platform. `[zbf]` Environments and/or operating systems that do not allow TFO to be disabled should not be used for these measurements, if at all possible. `[jbt]`
+Some features such as TCP Fast Open (TFO) reduce connection setup delays. None of those features should be turned on in the measurement platform. `[zbf]` Environments and/or operating systems that do not allow TFO to be disabled should not be used for these measurements, if at all possible. `[jbt]`
 
 ### 4.4 Connection Errors
 
@@ -85,7 +89,7 @@ Both connectionless and connection-based transactions may terminate in an error.
 
 ### 4.5 Spoofing Protections
 
-Vantage points must take reasonable steps to prevent acceptance of spoofed responses. Vantage point software must use proper source port randomization, `[uym]` query id randomization, `[wsb]` optional “0x20” mixed case, `[zon]` __*Not currently implemented*__ and proper query and response matching. `[doh]` DNS Cookies may be used as a lightweight DNS transaction security mechanism that provides limited protection to DNS servers and clients. `[ujj]`
+Vantage points must take reasonable steps to prevent acceptance of spoofed responses. Vantage point software must use proper source port randomization, `[uym]` query id randomization, `[wsb]` optional “0x20” mixed case, `[zon]` and proper query and response matching. `[doh]` DNS Cookies may be used as a lightweight DNS transaction security mechanism that provides limited protection to DNS servers and clients. `[ujj]`
 
 If vantage points detect malicious or spoofed traffic, such events should be recorded and logged so that manual inspection of measurements can be performed and disregarded if necessary. 
 
@@ -102,8 +106,6 @@ In some cases, queries and responses for one measurement are used in more than o
 When the collection system observes unexpected measurements or metrics, they may warrant further investigation. Examples of unexpected results may include very high response latency to some or all instances of an RSI, DNSSEC validation failures, and excessive staleness. Investigation and publication of unexpected results is most likely in the best interest of affected parties to understand the reasons for and, if possible, rectify situations that lead to such results.
 
 To aid in debugging unexpected results, all DNS query measurements shall include the Name Server Identifier Option (NSID) option. `[mgj]` Furthermore, vantage points shall record the network route to both IPv4 and IPv6 addresses of each RSI, in every measurement interval, using commonly available tools such as traceroute, tracepath, or mtr. `[vno]` This additional information helps diagnose issues with the monitoring system (for example, if a route local to the monitoring system disappears it will show up in traceroute). The collection and storage of the extra debugging information is not the primary purpose of the vantage point and must not cause interruption or disturbance to measurement gathering.
-
-__*Requirements in the following four paragraphs are not currently implemented.*__
 
 If, in the course of collecting and aggregating the measurements from the vantage points, one or more vantage points is clearly impacted by a software or network failure, the collection system can temporarily exclude those vantage points from the threshold calculations. `[raz]` Any such exclusion needs to be described publicly, and the times that the vantage points' data is excluded be clearly stated. `[hnr]`
 
@@ -232,7 +234,7 @@ For positive responses with QNAME = <TLD> and QTYPE = NS, a correct result requi
   - The Authority section contains the signed DS RRset for the query name. `[kbd]`
 - If the DS RRset for the query name does not exist in the zone: `[fot]`
   - The Authority section contains no DS RRset. `[bgr]`
-  - The Authority section contains a signed NSEC RRset covering the query name. `[mkl]` __*Need better wording here*__
+  - The Authority section contains a signed NSEC RRset ^^with an owner name matching the QNAME and with the DS type omitted from the Type Bit Maps field^^. `[mkl]`
 - The Additional section contains at least one A or AAAA record found in the zone associated with at least one NS record found in the Authority section. `[cjm]`
 
 For positive responses where QNAME = <TLD> and QTYPE = DS, a correct result requires all of the following: `[dru]`
@@ -246,7 +248,7 @@ For positive responses for QNAME = . and QTYPE = SOA, a correct result requires 
 
 - The header AA bit is set. `[xhr]`
 - The Answer section contains the signed SOA record for the root. `[obw]`
-- The Authority section contains the signed NS RRset for the root. `[ktm]` __*This requirement fails for many RSOs, maybe due to BIND settings*__
+- The Authority section contains the signed NS RRset for the root^^, or is empty^^. `[ktm]`
 
 For positive responses for QNAME = . and QTYPE = NS, a correct result requires all of the following: `[amj]`
 
@@ -266,7 +268,7 @@ For negative responses, a correct result requires all of the following: `[vcu]`
 - The header AA bit is set. `[gpl]`
 - The Answer section is empty. `[dvh]`
 - The Authority section contains the signed . / SOA record. `[axj]`
-- The Authority section contains a signed NSEC record covering the query name. `[czb]`
+- The Authority section contains a signed NSEC record ^^whose owner name would appear before the QNAME and whose Next Domain Name field would appear after the QNAME according to the canonical DNS name order defined in RFC4034, proving no records for QNAME exist in the zone^^. `[czb]`
 - The Authority section contains a signed NSEC record with owner name “.” proving no wildcard exists in the zone. `[jhz]`
 - The Additional section is empty. `[trw]`
 
@@ -288,15 +290,15 @@ The publication latency metric may also be affected by the situation described i
 
 __Measurements.__ The metrics are based on the amount of time between publication of a new root zone serial number, and the time the new serial number is observed by each vantage point over all of the transports and address types for each RSI. Rather than make additional SOA queries, this metric reuses the root zone SOA responses received from the response latency measurements from Section 5.2. `[kzu]`
 
-__*The following section needs to be changed. It needs to be clear that it is describing metrics, not measurements. It also needs to remove "In each measurement interval" because the metrics are per SOA, not per time interval.*__
+^^__Aggregation.__ The process of calculating the publication latency metric involves the following steps, which take place on the collection system:^^
 
-In each measurement interval, the collection system examines the response latency measurements and calculates the minimum SOA serial value over all of the transports and address types for each vantage point and RSI. `[cnj]` This is because the RSI might return different SOA serials over UDP/TCP and IPv4/IPv6. Timed out and bogus responses must not be used in this calculation. `[tub]`
+1. In each measurement interval, the collection system examines the response latency measurements and calculates the minimum SOA serial value over all of the transports and address types for each vantage point and RSI. `[cnj]` This is because the RSI might return different SOA serials over UDP/TCP and IPv4/IPv6. Timed out and bogus responses must not be used in this calculation. `[tub]`
 
-The collection system needs to know, approximately, when new zones are published by the root zone maintainer. This is accomplished by examining the collective SOA serial responses from all RSIs. `[yxn]`
+1. The collection system needs to know, approximately, when new zones are published by the root zone maintainer. This is accomplished by examining the collective SOA serial responses from all RSIs. `[yxn]`
 
-The collection system then calculates the amount of time elapsed until a given vantage point observes the new serial number in a response from the RSI. `[kvg]` Note that this will always be a multiple of five minutes. For vantage points that observe the new serial number in the same interval as the root zone publication time, the publication latency shall be recorded as zero minutes. `[udz]`
+1. The collection system then calculates the amount of time elapsed until a given vantage point observes the new serial number in a response from the RSI. `[kvg]` Note that this will always be a multiple of five minutes. For vantage points that observe the new serial number in the same interval as the root zone publication time, the publication latency shall be recorded as zero minutes. `[udz]`
 
-__Aggregation.__ All of the measurements, from all vantage points, covering a period of one month are aggregated together. `[jtz]` Publication latency is calculated as the median value of the aggregated latency measurements. `[yzp]`
+1. All of the values ^^collected in step 3^^, from all vantage points, covering a period of one month are aggregated together. `[jtz]` Publication latency is calculated as the median value of the aggregated latency measurements. `[yzp]`
 
 Note that the number of aggregated measurements depends on the number of root zones published in the aggregation interval. Most commonly there are two root zones published each day, which would result in at least approximately “sixty times the number of vantage points” measurements each month for each RSI. 
 
@@ -359,9 +361,7 @@ Since the individual RSI response latency measurements are sent over specific tr
 
 __Measurements.__ In this method, the metric is derived from the set of RSI response latency measurements described in Section 5.1. `[spx]`
 
-__Aggregation.__ In each five-minutes measurement interval, find the best k RSI response latencies for each vantage point and for each transport and address type. `[bom]` The aggregated response latency is calculated as the median value of the subset of lowest latencies. `[jbr]`
-
-__*The paragraph above should be replaced with:*__  Aggregation. For each five-minute measurement interval, and for each each transport and address type, find the median of the lowest k RSI response latencies from the set of vantage points. The aggregated response latency for each each transport and address type is calculated as the median of the medians from the set of five-minute measurement intervals.
+__Aggregation.__ In each five-minutes measurement interval, find the ^^lowest^^ k RSI response latencies for each vantage point and for each transport and address type. `[bom]` The aggregated response latency is calculated as the median value of the subset of lowest latencies. `[jbr]`
 
 __Precision.__ Measurement Count shall be presented to convey the measurement range and precision. `[hgm]`
 
@@ -436,6 +436,8 @@ Recommendation 3: The RSSAC, in collaboration with ICANN and the Internet commun
 - Investigate a better long-term plan for the location of the vantage points. Such a plan would distribute the vantage points by network topology instead of geographic location.
 
 - Whereas the current work is based on a largely empirical model of the RSS, future versions of this document may want to take a more analytical and theoretical modeling approach.
+
+^^Recommendation 4: The RSSAC should review the measurements, metrics, and thresholds listed in this document every two to three years, and determine if updates are needed.^^
 
 ## 9 Example Results
 
