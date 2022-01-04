@@ -25,7 +25,8 @@ def get_files_from_one_vp(this_vp):
 		try:
 			p = subprocess.run(f"rsync -av --timeout=5 metrics@{vp_number}.mtric.net:{this_dir} {pull_to_dir}/", shell=True, capture_output=True, text=True, check=True)
 		except Exception as e:
-			return f"For {vp_number}, failed to rsync {this_dir}: {e}"
+			debug(f"For {vp_number}, failed to rsync {this_dir}: {e}")
+			return ""
 		# Keep the log
 		try:
 			log_f = open(f"{pull_to_dir}/rsync-log.txt", mode="at")

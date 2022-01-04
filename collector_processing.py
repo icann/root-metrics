@@ -446,14 +446,18 @@ def process_one_correctness_tuple(in_tuple):
 							if rec_qtype == "DS":
 								failure_reasons.append("Found DS in Authority section [bgr]")
 								break
-						# The Authority section contains a signed NSEC RRset covering the query name. [mkl]
+						# The Authority section contains a signed NSEC RRset with an owner name matching the QNAME and with the DS type omitted from the Type Bit Maps field [mkl]
 						has_covering_nsec = False
 						for this_rec_dict in resp["authority"]:
-							rec_qname = this_rec_dict["name"]
 							rec_qtype = this_rec_dict["rdtype"]
 							if rec_qtype == "NSEC":
+								rec_qname = this_rec_dict["name"]
 								if rec_qname == this_rec_dict["name"]:
-									has_covering_nsec = True
+									rec_rdata = this_rec_dict["rdata"][0]
+									(next_name, type_bit_map) = rec_rdata.split(" ", maxsplit=1)
+									nsec_types = type_bit_map.split(" ")
+									if not "DS" in nsec_types:
+										has_covering_nsec = True
 									break
 						if not has_covering_nsec:
 							failure_reasons.append("Authority section had no covering NSEC record [mkl]")
@@ -509,9 +513,10 @@ def process_one_correctness_tuple(in_tuple):
 					this_resp = check_for_signed_rr(resp["answer"], "SOA")
 					if this_resp:
 						failure_reasons.append(f"{this_resp} [obw]")
-					# The Authority section contains the signed NS RRset for the root. [ktm]
+					# The Authority section contains the signed NS RRset for the root, or is empty. [ktm]
+					#   The "or is empty" is added in v2.
 					if not resp.get("authority"):
-						failure_reasons.append("The Authority section was empty [ktm]")
+						debug(f"The Authority section was empty in {in_filename_record}")
 					else:
 						this_resp = check_for_signed_rr(resp["authority"], "NS")
 						if this_resp:
@@ -564,25 +569,25 @@ def process_one_correctness_tuple(in_tuple):
 					this_resp = check_for_signed_rr(resp["authority"], "SOA")
 					if this_resp:
 						failure_reasons.append(f"{this_resp} [axj]")
-					# The Authority section contains a signed NSEC record covering the query name. [czb]
+					# The Authority section contains a signed NSEC record whose owner name would appear before the QNAME and whose Next Domain Name field
+					#   would appear after the QNAME according to the canonical DNS name order defined in RFC4034, proving no records for QNAME exist in the zone. [czb]
 					#   Note that the query name might have multiple labels, so only compare against the last label
 					this_qname_TLD = this_qname.split(".")[-2] + "."
 					nsec_covers_query_name = False
 					nsecs_in_authority = set()
 					for this_rec_dict in resp["authority"]:
-						rec_qname = this_rec_dict["name"]
 						rec_qtype = this_rec_dict["rdtype"]
-						rec_rdata = this_rec_dict["rdata"]
 						if rec_qtype == "NSEC":
 							# Just looking at the first NSEC record
-							nsec_parts = rec_rdata[0].split(" ")
-							nsec_parts_covered = nsec_parts[0]
+							rec_qname = this_rec_dict["name"]
+							rec_rdata = this_rec_dict["rdata"][0]
+							(next_name, _) = rec_rdata.split(" ", maxsplit=1)  # Ignore the type_bit_map
 							# Sorting against "." doesn't work, so instead use the longest TLD that could be in the root zone
-							if nsec_parts_covered == ".":
-								nsec_parts_covered = "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"
-							nsecs_in_authority.add(f"{rec_qname}|{nsec_parts_covered}")
+							if next_name == ".":
+								next_name = "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"
+							nsecs_in_authority.add(f"{rec_qname}|{next_name}")
 							# Make a list of the three strings, then make sure the original QNAME is in the middle
-							test_sort = sorted([rec_qname, nsec_parts_covered, this_qname_TLD])
+							test_sort = sorted([rec_qname, next_name, this_qname_TLD])
 							if test_sort[1] == this_qname_TLD:
 								nsec_covers_query_name = True
 								break
