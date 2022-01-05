@@ -67,7 +67,7 @@ def process_one_incoming_file(full_file_name):
 	
 	# Open the database so that we can define the insert function
 	with psycopg2.connect(dbname="metrics", user="metrics") as conn:
-		conn.set_session(autocommit=True)
+		#########################################################  conn.set_session(autocommit=True)
 
 		# First define a function to insert records into one of the two databases
 		def insert_from_template(this_cmd_string, this_values):
