@@ -61,7 +61,7 @@ def run_tests_only():
 
 ###############################################################
 def process_one_incoming_file(full_file_name):
-	# Process an incoming file, and move it when done
+	# Process an incoming file
 	#   Returns nothing
 	#   File-level errors cause "die", record-level errors cause "alert" and skipping the record
 	
@@ -748,7 +748,7 @@ if __name__ == "__main__":
 
 	processed_incoming_count = 0
 	with futures.ProcessPoolExecutor() as executor:
-		for (this_file, _) in zip(all_files, executor.map(process_one_incoming_file, all_files)):
+		for (this_file, _) in zip(all_files, executor.map(process_one_incoming_file, all_files, chunksize=1000)):
 			processed_incoming_count += 1
 	log(f"Finished processing {processed_incoming_count} incoming files in {int(time.time() - processed_incoming_start)} seconds")
 
