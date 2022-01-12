@@ -683,7 +683,7 @@ if __name__ == "__main__":
 		log(f"Died with '{error_message}'")
 		exit()
 	
-	limit_size = 10000
+	limit_size = 100000
 	
 	this_parser = argparse.ArgumentParser()
 	this_parser.add_argument("--test", action="store_true", dest="test",
