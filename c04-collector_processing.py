@@ -777,7 +777,7 @@ if __name__ == "__main__":
 	# If limit is set, use only the first few
 	if opts.limit:
 		full_correctness_list = full_correctness_list[0:limit_size]
-	with psycopg2.connect(dbname="metrics", user="metrics", async_=True) as conn:
+	with psycopg2.connect(dbname="metrics", user="metrics") as conn:
 		with futures.ProcessPoolExecutor() as executor:
 			for (this_correctness, _) in zip(full_correctness_list, executor.map(process_one_correctness_tuple, full_correctness_list, chunksize=1000)):
 				processed_correctness_count += 1
