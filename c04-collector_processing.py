@@ -218,7 +218,6 @@ def process_one_correctness_tuple(in_tuple):
 	if request_type == "normal":
 		with conn.cursor() as cur:
 			cur.execute("select timeout, likely_soa, is_correct from record_info where filename_record = %s", (in_filename_record, ))
-			wait(cur.connection)
 			this_found = cur.fetchall()
 		if len(this_found) > 1:
 			alert(f"When checking correctness on {in_filename_record}, found {len(this_found)} records instead of just 1")
@@ -795,7 +794,7 @@ if __name__ == "__main__":
 	# If limit is set, use only the first few
 	if opts.limit:
 		full_correctness_list = full_correctness_list[0:limit_size]
-	with psycopg2.connect(dbname="metrics", user="metrics", async_=True) as conn:
+	with psycopg2.connect(dbname="metrics", user="metrics") as conn:
 		with futures.ProcessPoolExecutor() as executor:
 			for (this_correctness, _) in zip(full_correctness_list, executor.map(process_one_correctness_tuple, full_correctness_list, chunksize=1000)):
 				processed_correctness_count += 1
