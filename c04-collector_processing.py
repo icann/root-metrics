@@ -217,7 +217,7 @@ def process_one_correctness_tuple(in_tuple):
 	if not request_type in ("normal", "test"):
 		alert(f"While running process_one_correctness_tuple on {in_filename_record}, got unknown first argument {request_type}")
 		return
-	with psycopg2.connect(dbname="metrics", user="metrics", async=True) as conn:
+	with psycopg2.connect(dbname="metrics", user="metrics", async=1) as conn:
 		if request_type == "normal":
 			with conn.cursor() as cur:
 				cur.execute("select timeout, likely_soa, is_correct from record_info where filename_record = %s", (in_filename_record, ))
