@@ -67,8 +67,6 @@ def process_one_incoming_file(full_file_name):
 	
 	# Open the database so that we can define the insert function
 	with psycopg2.connect(dbname="metrics", user="metrics") as conn:
-		#########################################################  conn.set_session(autocommit=True)
-
 		# First define a function to insert records into one of the two databases
 		def insert_from_template(this_cmd_string, this_values):
 			with conn.cursor() as curi:
@@ -231,7 +229,8 @@ def process_one_correctness_tuple(in_tuple):
 			this_resp_pickle = f_in.read()
 		# Before trying to load the pickled data, first see if it is a timeout; if so, set is_correct but move on [lbl]
 		if not this_timeout == "":
-			cur.execute("update record_info set (is_correct, failure_reason) = (%s, %s) where filename_record = %s", ("y", "timeout", in_filename_record))
+			with conn.cursor() as cur:
+				cur.execute("update record_info set (is_correct, failure_reason) = (%s, %s) where filename_record = %s", ("y", "timeout", in_filename_record))
 			return
 		# Get the pickled object		
 		try:
