@@ -72,7 +72,7 @@ def process_one_incoming_file(full_file_name):
 		def insert_from_template(this_cmd_string, this_values):
 			with conn.cursor() as curi:
 				try:
-					curi.execute("commit")
+					curi.execute(this_cmd_string, this_values)
 				except Exception as e:
 					die(f"Failed to execute '{this_cmd_string}' on '{this_values}': '{e}'")
 				return
