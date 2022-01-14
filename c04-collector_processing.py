@@ -67,11 +67,12 @@ def process_one_incoming_file(full_file_name):
 	
 	# Open the database so that we can define the insert function
 	with psycopg2.connect(dbname="metrics", user="metrics") as conn:
+		conn.set_session(autocommit=True)
 		# First define a function to insert records into one of the two databases
 		def insert_from_template(this_cmd_string, this_values):
 			with conn.cursor() as curi:
 				try:
-					curi.execute(this_cmd_string, this_values)
+					curi.execute("commit")
 				except Exception as e:
 					die(f"Failed to execute '{this_cmd_string}' on '{this_values}': '{e}'")
 				return
@@ -737,6 +738,7 @@ if __name__ == "__main__":
 		all_files = all_files[0:limit_size]
 	# Cull the ones that have already been processed
 	with psycopg2.connect(dbname="metrics", user="metrics") as conn:
+		conn.set_session(autocommit=True)
 		with conn.cursor() as cur:
 			for full_file_name in all_files.copy():
 				short_file_name = os.path.basename(full_file_name).replace(".pickle.gz", "")
@@ -771,6 +773,7 @@ if __name__ == "__main__":
 
 	# There might be some records with is_correct that is "r" from the last run. Rerun process_one_correctness_tuple over these
 	with psycopg2.connect(dbname="metrics", user="metrics") as conn:
+		conn.set_session(autocommit=True)
 		with conn.cursor() as cur:
 			cur.execute("select filename_record from record_info where record_type = 'C' and is_correct = 'r'")
 			redo_correct_to_check = cur.fetchall()
@@ -782,12 +785,14 @@ if __name__ == "__main__":
 	if opts.limit:
 		full_correctness_list = full_correctness_list[0:limit_size]
 	with psycopg2.connect(dbname="metrics", user="metrics") as conn:
+		conn.set_session(autocommit=True)
 		with futures.ProcessPoolExecutor() as executor:
 			for (this_correctness, _) in zip(full_correctness_list, executor.map(process_one_correctness_tuple, full_correctness_list, chunksize=1000)):
 				processed_correctness_count += 1
 
 	# Iterate over the new records where is_correct is "?"
 	with psycopg2.connect(dbname="metrics", user="metrics") as conn:
+		conn.set_session(autocommit=True)
 		with conn.cursor() as cur:
 			cur.execute("select filename_record from record_info where record_type = 'C' and is_correct = '?'")
 			initial_correct_to_check = cur.fetchall()
@@ -799,6 +804,7 @@ if __name__ == "__main__":
 	if opts.limit:
 		full_correctness_list = full_correctness_list[0:limit_size]
 	with psycopg2.connect(dbname="metrics", user="metrics") as conn:
+		conn.set_session(autocommit=True)
 		with futures.ProcessPoolExecutor() as executor:
 			for (this_correctness, _) in zip(full_correctness_list, executor.map(process_one_correctness_tuple, full_correctness_list, chunksize=1000)):
 				processed_correctness_count += 1
