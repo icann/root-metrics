@@ -218,9 +218,13 @@ def process_one_correctness_tuple(in_tuple):
 	if request_type == "normal":
 		with conn.cursor() as cur:
 			cur.execute("select timeout, likely_soa, is_correct from record_info where filename_record = %s", (in_filename_record, ))
-			this_found = cur.fetchall()
+			try:
+				this_found = cur.fetchall()
+			except:
+				alert(f"When checking correctness on {in_filename_record}, found no records instead of one")
+				return
 		if len(this_found) > 1:
-			alert(f"When checking correctness on {in_filename_record}, found {len(this_found)} records instead of just 1")
+			alert(f"When checking correctness on {in_filename_record}, found {len(this_found)} records instead of just one")
 			return
 		(this_timeout, this_soa_to_check, this_is_correct) = this_found[0]
 		# Get the pickled response
