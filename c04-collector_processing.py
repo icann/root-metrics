@@ -218,8 +218,8 @@ def process_one_correctness_tuple(in_tuple):
 			cur.execute("select timeout, likely_soa, is_correct from record_info where filename_record = %s", (in_filename_record, ))
 			try:
 				this_found = cur.fetchall()
-			except:
-				alert(f"When checking correctness on {in_filename_record}, found no records instead of one")
+			except Exception as e:
+				alert(f"When checking correctness on {in_filename_record}, found no records instead of one: {e}")
 				return
 		if len(this_found) > 1:
 			alert(f"When checking correctness on {in_filename_record}, found {len(this_found)} records instead of just one")
