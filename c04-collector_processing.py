@@ -771,7 +771,7 @@ if __name__ == "__main__":
 # There might be some records with is_correct that is "r" from the last run. Rerun process_one_correctness_tuple over these
 	processed_correctness_r_start = time.time()
 	processed_correctness_count = 0
-		with psycopg2.connect(dbname="metrics", user="metrics") as conn:
+	with psycopg2.connect(dbname="metrics", user="metrics") as conn:
 		conn.set_session(autocommit=True)
 		with conn.cursor() as cur:
 			cur.execute("select filename_record from record_info where record_type = 'C' and is_correct = 'r'")
