@@ -685,7 +685,7 @@ if __name__ == "__main__":
 		log(f"Died with '{error_message}'")
 		exit()
 	
-	limit_size = 100000
+	limit_size = 10000
 	
 	this_parser = argparse.ArgumentParser()
 	this_parser.add_argument("--test", action="store_true", dest="test",
@@ -695,7 +695,7 @@ if __name__ == "__main__":
 	
 	opts = this_parser.parse_args()
 	if opts.limit:
-		log(f"Limiting record processing to {limit_size} records")
+		log(f"Limiting record processing to {limit_size} files")
 
 	# Where to store the incoming files comeing from the vantage points
 	incoming_dir = f"{str(Path('~').expanduser())}/Incoming"
@@ -768,11 +768,10 @@ if __name__ == "__main__":
 	#   This finds record_type = "C" records that have not been evaluated yet
 	#   This does not log or alert
 
-	processed_correctness_start = time.time()
+# There might be some records with is_correct that is "r" from the last run. Rerun process_one_correctness_tuple over these
+	processed_correctness_r_start = time.time()
 	processed_correctness_count = 0
-
-	# There might be some records with is_correct that is "r" from the last run. Rerun process_one_correctness_tuple over these
-	with psycopg2.connect(dbname="metrics", user="metrics") as conn:
+		with psycopg2.connect(dbname="metrics", user="metrics") as conn:
 		conn.set_session(autocommit=True)
 		with conn.cursor() as cur:
 			cur.execute("select filename_record from record_info where record_type = 'C' and is_correct = 'r'")
@@ -789,8 +788,11 @@ if __name__ == "__main__":
 		with futures.ProcessPoolExecutor() as executor:
 			for (this_correctness, _) in zip(full_correctness_list, executor.map(process_one_correctness_tuple, full_correctness_list, chunksize=1000)):
 				processed_correctness_count += 1
+	log(f"Finished correctness checking {processed_correctness_count} 'r' records in {int(time.time() - processed_correctness_r_start)} seconds; finished processing")
 
 	# Iterate over the new records where is_correct is "?"
+	processed_correctness_new_start = time.time()
+	processed_correctness_count = 0
 	with psycopg2.connect(dbname="metrics", user="metrics") as conn:
 		conn.set_session(autocommit=True)
 		with conn.cursor() as cur:
@@ -807,7 +809,6 @@ if __name__ == "__main__":
 		conn.set_session(autocommit=True)
 		with futures.ProcessPoolExecutor() as executor:
 			for (this_correctness, _) in zip(full_correctness_list, executor.map(process_one_correctness_tuple, full_correctness_list, chunksize=1000)):
-				processed_correctness_count += 1
-	
-	log(f"Finished correctness checking {processed_correctness_count} records in {int(time.time() - processed_correctness_start)} seconds; finished processing")
+				processed_correctness_count += 1	
+	log(f"Finished correctness checking {processed_correctness_count} '?' records in {int(time.time() - processed_correctness_new_start)} seconds; finished processing")
 	exit()
