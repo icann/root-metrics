@@ -175,9 +175,6 @@ def process_one_incoming_file(full_file_name):
 					insert_values = insert_values._replace(is_correct="?")
 			# Write out this record
 			insert_from_template(insert_template, insert_values)
-		
-		# End of response items loop
-		cur.close()
 	return
 
 ###############################################################
@@ -780,9 +777,7 @@ if __name__ == "__main__":
 	full_correctness_list = []
 	for this_initial_correct in redo_correct_to_check:
 		full_correctness_list.append(("normal", this_initial_correct[0]))
-	# If limit is set, use only the first few
-	if opts.limit:
-		full_correctness_list = full_correctness_list[0:limit_size]
+	log(f"Found {len(full_correctness_list)} 'r' records")
 	with psycopg2.connect(dbname="metrics", user="metrics") as conn:
 		conn.set_session(autocommit=True)
 		with futures.ProcessPoolExecutor() as executor:
@@ -802,9 +797,7 @@ if __name__ == "__main__":
 	full_correctness_list = []
 	for this_initial_correct in initial_correct_to_check:
 		full_correctness_list.append(("normal", this_initial_correct[0]))
-	# If limit is set, use only the first few
-	if opts.limit:
-		full_correctness_list = full_correctness_list[0:limit_size]
+	log(f"Found {len(full_correctness_list)} '?' records")
 	with psycopg2.connect(dbname="metrics", user="metrics") as conn:
 		conn.set_session(autocommit=True)
 		with futures.ProcessPoolExecutor() as executor:
