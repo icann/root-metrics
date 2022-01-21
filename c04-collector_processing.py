@@ -88,7 +88,8 @@ def process_one_incoming_file(full_file_name):
 			with gzip.open(full_file_name, mode="rb") as pf:
 				in_pickle = pf.read()
 		except Exception as e:
-			die(f"Could not unzip {full_file_name}: {e}")
+			alert(f"Could not unzip {full_file_name}: {e}")
+			return
 		# Unpickle it
 		try:
 			in_obj = pickle.loads(in_pickle)
