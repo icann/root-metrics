@@ -755,7 +755,7 @@ if __name__ == "__main__":
 
 	processed_incoming_count = 0
 	with futures.ProcessPoolExecutor() as executor:
-		for (this_file, _) in zip(all_files, executor.map(process_one_incoming_file, all_files, chunksize=1000)):
+		for (this_file, _) in zip(all_files, executor.map(process_one_incoming_file, all_files)):
 			processed_incoming_count += 1
 	log(f"Finished processing {processed_incoming_count} incoming files in {int(time.time() - processed_incoming_start)} seconds")
 
@@ -781,7 +781,7 @@ if __name__ == "__main__":
 	with psycopg2.connect(dbname="metrics", user="metrics") as conn:
 		conn.set_session(autocommit=True)
 		with futures.ProcessPoolExecutor() as executor:
-			for (this_correctness, _) in zip(full_correctness_list, executor.map(process_one_correctness_tuple, full_correctness_list, chunksize=1000)):
+			for (this_correctness, _) in zip(full_correctness_list, executor.map(process_one_correctness_tuple, full_correctness_list)):
 				processed_correctness_count += 1
 	log(f"Finished correctness checking {processed_correctness_count} 'r' records in {int(time.time() - processed_correctness_r_start)} seconds; finished processing")
 
@@ -801,7 +801,7 @@ if __name__ == "__main__":
 	with psycopg2.connect(dbname="metrics", user="metrics") as conn:
 		conn.set_session(autocommit=True)
 		with futures.ProcessPoolExecutor() as executor:
-			for (this_correctness, _) in zip(full_correctness_list, executor.map(process_one_correctness_tuple, full_correctness_list, chunksize=1000)):
+			for (this_correctness, _) in zip(full_correctness_list, executor.map(process_one_correctness_tuple, full_correctness_list)):
 				processed_correctness_count += 1	
 	log(f"Finished correctness checking {processed_correctness_count} '?' records in {int(time.time() - processed_correctness_new_start)} seconds; finished processing")
 	exit()
