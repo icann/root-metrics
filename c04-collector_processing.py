@@ -63,7 +63,6 @@ def run_tests_only():
 def process_one_incoming_file(full_file_name):
 	# Process an incoming file
 	#   Returns nothing
-	#   File-level errors cause "die", record-level errors cause "alert" and skipping the record
 	
 	# Open the database so that we can define the insert function
 	with psycopg2.connect(dbname="metrics", user="metrics") as conn:
@@ -74,7 +73,7 @@ def process_one_incoming_file(full_file_name):
 				try:
 					curi.execute(this_cmd_string, this_values)
 				except Exception as e:
-					die(f"Failed to execute '{this_cmd_string}' on '{this_values}': '{e}'")
+					alert(f"Failed to execute '{this_cmd_string}' on '{this_values}': '{e}'")
 				return
 
 		# Check for wrong type of file
@@ -94,10 +93,12 @@ def process_one_incoming_file(full_file_name):
 		try:
 			in_obj = pickle.loads(in_pickle)
 		except Exception as e:
-			die(f"Could not unpickle {full_file_name}: {e}")
+			alert(f"Could not unpickle {full_file_name}: {e}")
+			return
 		# Sanity check the record
 		if not ("v" in in_obj) and ("d" in in_obj) and ("e" in in_obj) and ("l" in in_obj) and ("r" in in_obj):
-			die(f"Object in {full_file_name} did not contain keys d, e, l, r, and v")
+			alert(f"Object in {full_file_name} did not contain keys d, e, l, r, and v")
+			return
 	
 		# Update the metadata
 		insert_files_string = "insert into files_gotten (processed_at, version, delay, elapsed, filename_short) values (%s, %s, %s, %s, %s)"
@@ -110,7 +111,8 @@ def process_one_incoming_file(full_file_name):
 			file_date = datetime.datetime(int(file_date_text[0:4]), int(file_date_text[4:6]), int(file_date_text[6:8]),\
 				int(file_date_text[8:10]), int(file_date_text[10:12]))
 		except Exception as e:
-			die(f"Could not split the file name {short_file_name} into a datetime: {e}")
+			alert(f"Could not split the file name {short_file_name} into a datetime: {e}")
+			return
 
 		# Named tuple for the record templates
 		template_names_raw = "filename_record date_derived target internet transport ip_addr record_type query_elapsed timeout soa_found " \
