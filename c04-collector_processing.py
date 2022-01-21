@@ -678,7 +678,7 @@ if __name__ == "__main__":
 	this_parser.add_argument("--test", action="store_true", dest="test",
 		help="Run tests on requests; must be run in the Tests directory")
 	this_parser.add_argument("--limit", action="store_true", dest="limit",
-		help=f"Limit procesing to {limit_size} items")
+		help=f"Limit procesing to {limit_size} correctness items")
 	
 	opts = this_parser.parse_args()
 	if opts.limit:
@@ -720,9 +720,6 @@ if __name__ == "__main__":
 	# Go through the files in incoming_dir
 	processed_incoming_start = time.time()
 	all_files = [ str(x) for x in Path(f"{incoming_dir}").glob("**/*.pickle.gz") ]
-	# If limit is set, use only the first few
-	if opts.limit:
-		all_files = all_files[0:limit_size]
 	# Cull the ones that have already been processed
 	with psycopg2.connect(dbname="metrics", user="metrics") as conn:
 		conn.set_session(autocommit=True)
@@ -755,7 +752,7 @@ if __name__ == "__main__":
 	#   This finds record_type = "C" records that have not been evaluated yet
 	#   This does not log or alert
 
-# There might be some records with is_correct that is "r" from the last run. Rerun process_one_correctness_tuple over these
+	# There might be some records with is_correct that is "r" from the last run. Rerun process_one_correctness_tuple over these
 	processed_correctness_r_start = time.time()
 	processed_correctness_count = 0
 	with psycopg2.connect(dbname="metrics", user="metrics") as conn:
@@ -792,6 +789,10 @@ if __name__ == "__main__":
 		##### full_correctness_list.append(("normal", this_initial_correct[0]))
 		full_correctness_list.append(("normal", this_initial_correct))
 	log(f"Found {len(full_correctness_list)} '?' records")
+	# If limit is set, use only the first few
+	if opts.limit:
+		full_correctness_list = full_correctness_list[0:limit_size]
+		log(f"Limiting to {limit_size} records")
 	with psycopg2.connect(dbname="metrics", user="metrics") as conn:
 		conn.set_session(autocommit=True)
 		with futures.ProcessPoolExecutor() as executor:
