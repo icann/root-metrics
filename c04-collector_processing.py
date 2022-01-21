@@ -682,8 +682,6 @@ if __name__ == "__main__":
 		help=f"Limit procesing to {limit_size} correctness items")
 	
 	opts = this_parser.parse_args()
-	if opts.limit:
-		log(f"Limiting record processing to {limit_size} files")
 
 	# Where to store the incoming files comeing from the vantage points
 	incoming_dir = f"{str(Path('~').expanduser())}/Incoming"
