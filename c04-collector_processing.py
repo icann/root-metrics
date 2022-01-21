@@ -203,28 +203,18 @@ def check_for_signed_rr(list_of_records_from_section, name_of_rrtype):
 ###############################################################
 
 def process_one_correctness_tuple(in_tuple):
-	# Tuple is (request_type, filename_record)
+	# Tuple is (request_type, tuple of (filename_record, timeout, likely_soa, is_correct)
 	# request_type is "test" or "normal"
 	#    For "normal", process one filename_record
 	#    For "test", process one id/pickle_blob pair
 	# Normally, this function returns nothing because it is writing the results into the record_info database
 	#    However, if the type is "test", the function does not write into the database but instead returns the results as text
-	(request_type, in_filename_record) = in_tuple
+	(request_type, record_tuple) = in_tuple
 	if not request_type in ("normal", "test"):
-		alert(f"While running process_one_correctness_tuple on {in_filename_record}, got unknown first argument {request_type}")
+		alert(f"While running process_one_correctness_tuple on {in_tuple}, got unknown first argument {request_type}")
 		return
+	(in_filename_record, this_timeout, this_soa_to_check, this_is_correct) = record_tuple
 	if request_type == "normal":
-		with conn.cursor() as cur:
-			cur.execute("select timeout, likely_soa, is_correct from record_info where filename_record = %s", (in_filename_record, ))
-			try:
-				this_found = cur.fetchall()
-			except Exception as e:
-				alert(f"When checking correctness on {in_filename_record}, found no records instead of one: {e}")
-				return
-		if len(this_found) > 1:
-			alert(f"When checking correctness on {in_filename_record}, found {len(this_found)} records instead of just one")
-			return
-		(this_timeout, this_soa_to_check, this_is_correct) = this_found[0]
 		# Get the pickled response
 		with open(f"{saved_response_dir}/{in_filename_record}", mode="rb") as f_in:
 			this_resp_pickle = f_in.read()
@@ -771,12 +761,14 @@ if __name__ == "__main__":
 	with psycopg2.connect(dbname="metrics", user="metrics") as conn:
 		conn.set_session(autocommit=True)
 		with conn.cursor() as cur:
-			cur.execute("select filename_record from record_info where record_type = 'C' and is_correct = 'r'")
+			##### cur.execute("select filename_record from record_info where record_type = 'C' and is_correct = 'r'")
+			cur.execute("select filename_record, timeout, likely_soa, is_correct from record_info where record_type = 'C' and is_correct = 'r'")
 			redo_correct_to_check = cur.fetchall()
 	# Make a list of tuples with the filename_record
 	full_correctness_list = []
 	for this_initial_correct in redo_correct_to_check:
-		full_correctness_list.append(("normal", this_initial_correct[0]))
+		##### full_correctness_list.append(("normal", this_initial_correct[0]))
+		full_correctness_list.append(("normal", this_initial_correct))
 	log(f"Found {len(full_correctness_list)} 'r' records")
 	with psycopg2.connect(dbname="metrics", user="metrics") as conn:
 		conn.set_session(autocommit=True)
@@ -791,12 +783,14 @@ if __name__ == "__main__":
 	with psycopg2.connect(dbname="metrics", user="metrics") as conn:
 		conn.set_session(autocommit=True)
 		with conn.cursor() as cur:
-			cur.execute("select filename_record from record_info where record_type = 'C' and is_correct = '?'")
+			##### cur.execute("select filename_record from record_info where record_type = 'C' and is_correct = '?'")
+			cur.execute("select filename_record, timeout, likely_soa, is_correct from record_info where record_type = 'C' and is_correct = '?'")
 			initial_correct_to_check = cur.fetchall()
 	# Make a list of tuples with the filename_record
 	full_correctness_list = []
 	for this_initial_correct in initial_correct_to_check:
-		full_correctness_list.append(("normal", this_initial_correct[0]))
+		##### full_correctness_list.append(("normal", this_initial_correct[0]))
+		full_correctness_list.append(("normal", this_initial_correct))
 	log(f"Found {len(full_correctness_list)} '?' records")
 	with psycopg2.connect(dbname="metrics", user="metrics") as conn:
 		conn.set_session(autocommit=True)
