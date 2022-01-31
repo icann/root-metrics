@@ -409,9 +409,8 @@ def process_one_correctness_tuple(in_tuple):
 								if first_field == rec_qtype:
 									rrsig_rrset.add(dns.rdata.from_text(class_in, dns.rdatatype.from_text("RRSIG"), this_rrsig_rdata))
 					try:
-						if opts.debug:
-							breakpoint()
-						dns.dnssec.validate(signed_rrset, rrsig_rrset, root_keys_for_matching)
+						pass ########################################################################## Temporarily not validating #####################################
+						######################## dns.dnssec.validate(signed_rrset, rrsig_rrset, root_keys_for_matching) ################################################
 					except Exception as e:
 						failure_reasons.append(f"Validating {rec_qname}/{rec_qtype} in {this_section_name} in {in_filename_record} failed. [yds]")
 						die(f"Validation failure: signed_rrset {signed_rrset}, rrsig_rrset {rrsig_rrset}, root_keys_for_matching {root_keys_for_matching}")
