@@ -108,13 +108,13 @@
       creates: /home/metrics/.local/lib/python3.7/site-packages/dns
   - name: crontab entry for get_root_zone.py
     cron:   # [mba] [wca]
-      disabled: no
+      disabled: yes
       name: Get the new root zone
       minute: "0,15,30,45"
       job: "/home/metrics/repo/get_root_zone.py >>/home/metrics/Logs/cron-alert.txt 2>&1"
   - name: crontab entry for copy_files_from_vps.py
     cron:
-      disabled: no
+      disabled: yes
       name: Get the files from the VPs
       minute: "1,16,31,46"
       job: "/home/metrics/repo/copy_files_from_vps.py >>/home/metrics/Logs/cron-alert.txt 2>&1"
@@ -164,3 +164,12 @@
       - likely_soa text
       - is_correct text
       - failure_reason text
+  - name: Create index in metrics table
+    postgresql_idx:
+      login_user: metrics
+      db: metrics
+      table: record_info
+      columns: filename_record
+      name: filename_record_idx
+      idxtype: btree
+

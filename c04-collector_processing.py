@@ -81,7 +81,10 @@ def process_one_incoming_file(full_file_name):
 			alert(f"Found {full_file_name} that did not end in .pickle.gz")
 			return
 	
-		short_file_name = os.path.basename(full_file_name).replace(".pickle.gz", "")
+		# Sometimes ones slip in that are empty
+		if os.path.getsize(full_file_name) == 0:
+			alert(f"File {full_file_name} had zero length")
+			return
 		# Un-gzip it
 		try:
 			with gzip.open(full_file_name, mode="rb") as pf:
@@ -101,6 +104,7 @@ def process_one_incoming_file(full_file_name):
 			return
 	
 		# Update the metadata
+		short_file_name = os.path.basename(full_file_name).replace(".pickle.gz", "")
 		insert_files_string = "insert into files_gotten (processed_at, version, delay, elapsed, filename_short) values (%s, %s, %s, %s, %s)"
 		insert_files_values = (datetime.datetime.now(datetime.timezone.utc), in_obj["v"], in_obj["d"], in_obj["e"], short_file_name) 
 		insert_from_template(insert_files_string, insert_files_values)
@@ -210,7 +214,7 @@ def process_one_correctness_tuple(in_tuple):
 	# request_type is "test" or "normal"
 	#    For "normal", process one filename_record
 	#    For "test", process one id/pickle_blob pair
-	# Normally, this function returns nothing because it is writing the results into the record_info database
+	# For test type "normal" return a tuple that is handed to Postgres as a command; otherwise return an empty string (usually after an alert)
 	#    However, if the type is "test", the function does not write into the database but instead returns the results as text
 	(request_type, record_tuple) = in_tuple
 	if not request_type in ("normal", "test"):
@@ -223,9 +227,7 @@ def process_one_correctness_tuple(in_tuple):
 			this_resp_pickle = f_in.read()
 		# Before trying to load the pickled data, first see if it is a timeout; if so, set is_correct but move on [lbl]
 		if not this_timeout == "":
-			with conn.cursor() as cur:
-				cur.execute("update record_info set (is_correct, failure_reason) = (%s, %s) where filename_record = %s", ("y", "timeout", in_filename_record))
-			return
+			return ("update record_info set (is_correct, failure_reason) = (%s, %s) where filename_record = %s", ("y", "timeout", in_filename_record))
 		# Get the pickled object		
 		try:
 			resp = pickle.loads(this_resp_pickle)
@@ -238,14 +240,16 @@ def process_one_correctness_tuple(in_tuple):
 		try:
 			resp = pickle.loads(in_filename_record)
 		except:
-			return "Could not unpickle this test."
+			alert("Could not unpickle this test.")
+			return
 		test_name = resp["test-on"]
 		if test_name[0] == "p":
 			this_is_correct = "y"
 		elif test_name[0] == "n":
 			this_is_correct = "n"
 		else:
-			return f"In {test_name}, the first letter was not 'p' or 'n'."
+			alert(f"In {test_name}, the first letter was not 'p' or 'n'.")
+			return
 		# Change in_filename_record in tests to be the test ID so that errors come out more readable
 		in_filename_record = test_name
 		this_soa_to_check = ""			
@@ -405,9 +409,12 @@ def process_one_correctness_tuple(in_tuple):
 								if first_field == rec_qtype:
 									rrsig_rrset.add(dns.rdata.from_text(class_in, dns.rdatatype.from_text("RRSIG"), this_rrsig_rdata))
 					try:
+						if opts.debug:
+							breakpoint()
 						dns.dnssec.validate(signed_rrset, rrsig_rrset, root_keys_for_matching)
 					except Exception as e:
-						failure_reasons.append(f"Validating {rec_qname}/{rec_qtype} in {this_section_name} in {in_filename_record} got error of '{e}' [yds]")
+						failure_reasons.append(f"Validating {rec_qname}/{rec_qtype} in {this_section_name} in {in_filename_record} failed. [yds]")
+						die(f"Validation failure: signed_rrset {signed_rrset}, rrsig_rrset {rrsig_rrset}, root_keys_for_matching {root_keys_for_matching}")
 
 		# Check that all the parts of the resp structure are correct, based on the type of answer
 		if resp["rcode"] == "NOERROR":
@@ -628,14 +635,12 @@ def process_one_correctness_tuple(in_tuple):
 		if opts.test:
 			return failure_reason_text
 		# Here if it is not a test. Enter the new value in the database, and stop if it is a "y"
-		with conn.cursor() as cur:
-			cur.execute("update record_info set (is_correct, failure_reason) = (%s, %s) where filename_record = %s", \
-				(new_is_correct, failure_reason_text, in_filename_record))
-		# As soon as you get a correct entry return; otherwise, go back through the loop
 		if new_is_correct == "y":
-			return
+			return("update record_info set (is_correct, failure_reason) = (%s, %s) where filename_record = %s", \
+				(new_is_correct, failure_reason_text, in_filename_record))
 	# Here at the end of the loop over the roots to check
-	return
+	return("update record_info set (is_correct, failure_reason) = (%s, %s) where filename_record = %s", \
+		(new_is_correct, failure_reason_text, in_filename_record))
 
 ###############################################################
 
@@ -675,13 +680,13 @@ if __name__ == "__main__":
 		log(f"Died with '{error_message}'")
 		exit()
 	
-	limit_size = 10000
+	limit_size = 10
 	
 	this_parser = argparse.ArgumentParser()
 	this_parser.add_argument("--test", action="store_true", dest="test",
 		help="Run tests on requests; must be run in the Tests directory")
-	this_parser.add_argument("--limit", action="store_true", dest="limit",
-		help=f"Limit procesing to {limit_size} correctness items")
+	this_parser.add_argument("--debug", action="store_true", dest="debug",
+		help=f"Limit procesing to {limit_size} correctness items and run single-threaded")
 	
 	opts = this_parser.parse_args()
 
@@ -715,35 +720,27 @@ if __name__ == "__main__":
 	###############################################################
 
 	log("Started collector processing")
-	
+
 	###############################################################
 
 	# Go through the files in incoming_dir
 	processed_incoming_start = time.time()
-	all_files = [ str(x) for x in Path(f"{incoming_dir}").glob("**/*.pickle.gz") ]
-	# Cull the ones that have already been processed
+	all_files = { os.path.basename(x).replace(".pickle.gz", ""): str(x) for x in Path(f"{incoming_dir}").glob("**/*.pickle.gz") }
+	# Compare this list to the list of those already processed
 	with psycopg2.connect(dbname="metrics", user="metrics") as conn:
-		conn.set_session(autocommit=True)
 		with conn.cursor() as cur:
-			for full_file_name in all_files.copy():
-				short_file_name = os.path.basename(full_file_name).replace(".pickle.gz", "")
-				# See if this file has already been processed
-				cur.execute("select count(*) from files_gotten where filename_short = %s", (short_file_name, ))
-				if cur.rowcount == -1:
-					alert(f"Got rowcount of -1 for {short_file_name}; skipping this file")
-					continue
-				files_gotten_check = cur.fetchone()
-				if files_gotten_check[0] == 0:
-					continue
-				elif files_gotten_check[0] == 1:
-					all_files.remove(full_file_name)
-				else:
-					all_files.remove(full_file_name)
-					alert(f"Got file_gotten_check of {files_gotten_check[0]} for {short_file_name}")
-
+			cur.execute("select filename_short from files_gotten")
+			this_fetch = cur.fetchall()
+			all_in_db = list(this_fetch)
+	for this_db_tuple in all_in_db:
+		this_db_name = this_db_tuple[0]
+		if this_db_name in all_files:
+			all_files.pop(this_db_name)
+	log(f"Found {len(all_files)} files on disk, {len(all_in_db)} files in the database, left with {len(all_files)} files after culling")
+	all_full_files = all_files.values()
 	processed_incoming_count = 0
 	with futures.ProcessPoolExecutor() as executor:
-		for (this_file, _) in zip(all_files, executor.map(process_one_incoming_file, all_files)):
+		for (this_file, _) in zip(all_full_files, executor.map(process_one_incoming_file, all_full_files)):
 			processed_incoming_count += 1
 	log(f"Finished processing {processed_incoming_count} incoming files in {int(time.time() - processed_incoming_start)} seconds")
 
@@ -753,51 +750,51 @@ if __name__ == "__main__":
 	#   This finds record_type = "C" records that have not been evaluated yet
 	#   This does not log or alert
 
-	# There might be some records with is_correct that is "r" from the last run. Rerun process_one_correctness_tuple over these
-	processed_correctness_r_start = time.time()
-	processed_correctness_count = 0
-	with psycopg2.connect(dbname="metrics", user="metrics") as conn:
-		conn.set_session(autocommit=True)
-		with conn.cursor() as cur:
-			##### cur.execute("select filename_record from record_info where record_type = 'C' and is_correct = 'r'")
-			cur.execute("select filename_record, timeout, likely_soa, is_correct from record_info where record_type = 'C' and is_correct = 'r'")
-			redo_correct_to_check = cur.fetchall()
-	# Make a list of tuples with the filename_record
-	full_correctness_list = []
-	for this_initial_correct in redo_correct_to_check:
-		##### full_correctness_list.append(("normal", this_initial_correct[0]))
-		full_correctness_list.append(("normal", this_initial_correct))
-	log(f"Found {len(full_correctness_list)} 'r' records")
-	with psycopg2.connect(dbname="metrics", user="metrics") as conn:
-		conn.set_session(autocommit=True)
-		with futures.ProcessPoolExecutor() as executor:
-			for (this_correctness, _) in zip(full_correctness_list, executor.map(process_one_correctness_tuple, full_correctness_list)):
-				processed_correctness_count += 1
-	log(f"Finished correctness checking {processed_correctness_count} 'r' records in {int(time.time() - processed_correctness_r_start)} seconds; finished processing")
+	def do_correctness(in_correct_type):
+		corr_start_time = time.time()
+		processed_correctness_count = 0
+		with psycopg2.connect(dbname="metrics", user="metrics") as conn:
+			conn.set_session(autocommit=True)
+			with conn.cursor() as cur:
+				cur.execute(f"select filename_record, timeout, likely_soa, is_correct from record_info where record_type = 'C' and is_correct = '{in_correct_type}'")
+				correct_to_check = cur.fetchall()
+		# Make a list of tuples with the filename_record
+		full_correctness_list = []
+		for this_initial_correct in correct_to_check:
+			full_correctness_list.append(("normal", this_initial_correct))
+		log(f"Found {len(full_correctness_list)} '{in_correct_type}' records")
+		with psycopg2.connect(dbname="metrics", user="metrics") as conn:
+			conn.set_session(autocommit=True)
+			with conn.cursor() as cur:
+				if opts.debug:
+					log(f"Limiting to {limit_size} records")
+					for this_correctness in full_correctness_list[0:limit_size]:
+						this_ret = process_one_correctness_tuple(this_correctness)
+						processed_correctness_count += 1
+						if this_ret:
+							if not len(this_ret) == 2:
+								alert(f"Got a bad correctness return of {this_ret}")
+							else:
+								try:
+									cur.execute(this_ret[0], this_ret[1])
+								except Exception as e:
+									alert(f"Could not execute {this_ret}: {e}")					
+				else:
+					with futures.ProcessPoolExecutor() as executor:
+						for (this_correctness, this_ret) in zip(full_correctness_list, executor.map(process_one_correctness_tuple, full_correctness_list)):
+							processed_correctness_count += 1
+							if this_ret:
+								if not len(this_ret) == 2:
+									alert(f"Got a bad correctness return of {this_ret}")
+								else:
+									try:
+										cur.execute(this_ret[0], this_ret[1])
+									except Exception as e:
+										alert(f"Could not execute {this_ret}: {e}")
+		log(f"Finished correctness checking {processed_correctness_count} '{in_correct_type}' records in {int(time.time() - corr_start_time)} seconds")
 
-	# Iterate over the new records where is_correct is "?"
-	processed_correctness_new_start = time.time()
-	processed_correctness_count = 0
-	with psycopg2.connect(dbname="metrics", user="metrics") as conn:
-		conn.set_session(autocommit=True)
-		with conn.cursor() as cur:
-			##### cur.execute("select filename_record from record_info where record_type = 'C' and is_correct = '?'")
-			cur.execute("select filename_record, timeout, likely_soa, is_correct from record_info where record_type = 'C' and is_correct = '?'")
-			initial_correct_to_check = cur.fetchall()
-	# Make a list of tuples with the filename_record
-	full_correctness_list = []
-	for this_initial_correct in initial_correct_to_check:
-		##### full_correctness_list.append(("normal", this_initial_correct[0]))
-		full_correctness_list.append(("normal", this_initial_correct))
-	log(f"Found {len(full_correctness_list)} '?' records")
-	# If limit is set, use only the first few
-	if opts.limit:
-		full_correctness_list = full_correctness_list[0:limit_size]
-		log(f"Limiting to {limit_size} records")
-	with psycopg2.connect(dbname="metrics", user="metrics") as conn:
-		conn.set_session(autocommit=True)
-		with futures.ProcessPoolExecutor() as executor:
-			for (this_correctness, _) in zip(full_correctness_list, executor.map(process_one_correctness_tuple, full_correctness_list)):
-				processed_correctness_count += 1	
-	log(f"Finished correctness checking {processed_correctness_count} '?' records in {int(time.time() - processed_correctness_new_start)} seconds; finished processing")
+	# There might be some records with is_correct that is "r" from the last run. Do them first.
+	for correct_type in ["r", "?"]:
+		do_correctness(correct_type)
+
 	exit()
