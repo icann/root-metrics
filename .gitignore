@@ -3,5 +3,6 @@ Ansible/authorized_keys
 Tests/p-*
 Tests/n-*
 Tests/results.txt
-Tests/root_name_and_types.pickle
 Tests/root_zone.txt
+Tests/diffs-for-negatives.txt
+Tests/root_name_and_types.json
