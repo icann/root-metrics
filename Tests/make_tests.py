@@ -1,21 +1,22 @@
 #!/usr/bin/env python3
 ''' Program to make tests for metrics testing '''
-import argparse, copy, glob, os, pickle, re, requests
+import argparse, copy, glob, json, os, re, requests
 import dns.edns, dns.flags, dns.message, dns.query, dns.rdatatype
+from pathlib import Path
 
 def create_n_file(id, compare_name, desc, in_dict):
 	if id in all_n_ids:
 		exit(f"Found {id} a second time. Exiting.")
-	compare_dict = pickle.load(open(compare_name, mode="rb"))
+	compare_dict = json.load(open(compare_name, mode="rt"))
 	# Check if nothing changed
 	if in_dict == compare_dict:
-		exit(f"Found unchanged test creation for {id}")
+		exit(f"Found unchanged test creation for {id} and {compare_name}. Exiting")
 	in_dict["test-desc"] = desc
 	in_dict["test-id"] = id
 	in_dict["test-on"] = compare_name
 	# Write the file
-	with open(f"n-{id}", mode="wb") as f:
-		pickle.dump(in_dict, f)
+	with open(f"n-{id}", mode="wt") as f:
+		json.dump(in_dict, f, indent=1)
 	all_n_ids.append(id)
 
 if __name__ == "__main__":
@@ -24,6 +25,11 @@ if __name__ == "__main__":
 	this_parser.add_argument("--addr", dest="addr", default="198.41.0.4",
 		help="IP address of root server to get tests from")
 	opts = this_parser.parse_args()
+	
+	tests_dir = Path('~').expanduser() / "repo/Tests"
+	if not tests_dir.exists():
+		exit(f"Could not find {tests_dir}. Exiting.")
+	os.chdir(tests_dir)
 
 	# Make a file of the root names and types for the collector_processing.py program
 	# Keep track of all the records in this temporary root zone, both to find the SOA but also to save for later matching comparisons
@@ -50,10 +56,10 @@ if __name__ == "__main__":
 		(this_name, _, _, this_type, this_rdata) = this_line.split(" ", maxsplit=4)
 		this_key = f"{this_name}/{this_type}"
 		if not this_key in root_name_and_types:
-			root_name_and_types[this_key] = set()
-		root_name_and_types[this_key].add(this_rdata)
-	with open("root_name_and_types.pickle", mode="wb") as f_out:
-		pickle.dump(root_name_and_types, f_out)
+			root_name_and_types[this_key] = []
+		root_name_and_types[this_key].append(this_rdata)
+	with open("root_name_and_types.json", mode="wt") as f_out:
+		json.dump(root_name_and_types, f_out, indent=1)
 
 	queries_list = [
 		[".", "SOA", "p-dot-soa"],
@@ -80,7 +86,7 @@ if __name__ == "__main__":
 		r_dict["flags"] = dns.flags.to_text(r.flags)
 		r_dict["edns"] = {}
 		for this_option in r.options:
-			r_dict["edns"][this_option.otype.value] = this_option.data
+			r_dict["edns"][this_option.otype.value] = this_option.data.decode("ascii")
 		get_sections = ("question", "answer", "authority", "additional")
 		for (this_section_number, this_section_name) in enumerate(get_sections):
 			r_dict[this_section_name] = []
@@ -89,20 +95,20 @@ if __name__ == "__main__":
 				for this_record in this_rrset:
 					this_rrset_dict["rdata"].append(this_record.to_text())
 				r_dict[this_section_name].append(this_rrset_dict)
-		with open(out_filename, mode="wb") as out_f:
-			pickle.dump(r_dict, out_f)
+		with open(out_filename, mode="wt") as out_f:
+			json.dump(r_dict, out_f, indent=1)
 		
 	# Delete all the negative files before re-creating them
 	for this_to_delete in glob.glob("n-*"):
 		try:
 			os.unlink(this_to_delete)
 		except:
-			exit(f"Stopping early because can't delete {this_to_delete}")
+			exit(f"Stopping early because can't delete {this_to_delete}. Exiting.")
 
 	# Read all the positive files into memory
 	p_dicts = {}
 	for (_, _, this_file) in queries_list:
-		p_dicts[this_file] = pickle.load(open(this_file, mode="rb"))
+		p_dicts[this_file] = json.load(open(this_file, mode="rt"))
 
 	# Keep track of the IDs to make sure we don't accidentally copy one
 	all_n_ids = []
@@ -130,7 +136,7 @@ if __name__ == "__main__":
 			this_r["rdata"].append("z.root-servers.net.")
 			made_change = True
 	if not made_change:
-		exit(f"Did not make a change when processing {id}")
+		exit(f"Did not make a change when processing {id} -- {desc}. Exiting.")
 	create_n_file(id, compare_name, desc, this_dict)
 	
 	# Change a record in Answer
@@ -145,7 +151,7 @@ if __name__ == "__main__":
 			this_r["rdata"].append("z.root-servers.net.")
 			made_change = True
 	if not made_change:
-		exit(f"Did not make a change when processing {id}")
+		exit(f"Did not make a change when processing {id} -- {desc}. Exiting.")
 	create_n_file(id, compare_name, desc, this_dict)
 
 	# Add a new record to Authority 
@@ -159,7 +165,7 @@ if __name__ == "__main__":
 			this_r["rdata"].append("z.cctld.us.")
 			made_change = True
 	if not made_change:
-		exit(f"Did not make a change when processing {id}")
+		exit(f"Did not make a change when processing {id} -- {desc}. Exiting.")
 	create_n_file(id, compare_name, desc, this_dict)
 
 	# Change a record in Authority
@@ -174,7 +180,7 @@ if __name__ == "__main__":
 			this_r["rdata"].append("z.cctld.us.")
 			made_change = True
 	if not made_change:
-		exit(f"Did not make a change when processing {id}")
+		exit(f"Did not make a change when processing {id} -- {desc}. Exiting.")
 	create_n_file(id, compare_name, desc, this_dict)
 	
 	# Add a new record to Additional
@@ -188,7 +194,7 @@ if __name__ == "__main__":
 			this_r["rdata"].append("37.209.194.99")
 			made_change = True
 	if not made_change:
-		exit(f"Did not make a change when processing {id}")
+		exit(f"Did not make a change when processing {id} -- {desc}. Exiting.")
 	create_n_file(id, compare_name, desc, this_dict)
 
 	# Change a record in Additional
@@ -203,7 +209,7 @@ if __name__ == "__main__":
 			this_r["rdata"].append("37.209.194.99")
 			made_change = True
 	if not made_change:
-		exit(f"Did not make a change when processing {id}")
+		exit(f"Did not make a change when processing {id} -- {desc}. Exiting.")
 	create_n_file(id, compare_name, desc, this_dict)
 	
 	##########
@@ -214,15 +220,18 @@ if __name__ == "__main__":
 	# Change the RDATA
 	id = "uuc"
 	compare_name = "p-tld-ds"
+	to_replace = "0c67e6"
 	desc = "Start with p-tld-ds, change the DS RData in the Answer; causes validation failure"
 	this_dict = copy.deepcopy(p_dicts[compare_name])
 	made_change = False
 	for this_r in this_dict["answer"]:
 		if this_r["name"] == "us." and this_r["rdtype"] == "DS":
-			this_r["rdata"][0] = this_r["rdata"][0].replace("a59b9c", "abcdef")
+			if not to_replace in this_r["rdata"][0]:
+				exit(f"In uuc, didn't find {to_replace} in {this_r['rdata'][0]}. Exiting.")
+			this_r["rdata"][0] = this_r["rdata"][0].replace(to_replace, "abcdef")
 			made_change = True
 	if not made_change:
-		exit(f"Did not make a change when processing {id}")
+		exit(f"Did not make a change when processing {id} -- {desc}. Exiting.")
 	create_n_file(id, compare_name, desc, this_dict)
 
 	# Change the signature value itself
@@ -236,7 +245,7 @@ if __name__ == "__main__":
 			this_r["rdata"][0] = this_r["rdata"][0].replace("W", "X")
 			made_change = True
 	if not made_change:
-		exit(f"Did not make a change when processing {id}")
+		exit(f"Did not make a change when processing {id} -- {desc}. Exiting.")
 	create_n_file(id, compare_name, desc, this_dict)
 
 	##########
@@ -272,7 +281,7 @@ if __name__ == "__main__":
 			this_r["rdata"].remove("x.cctld.us.")
 			made_change = True
 	if not made_change:
-		exit(f"Did not make a change when processing {id}")
+		exit(f"Did not make a change when processing {id} -- {desc}. Exiting.")
 	create_n_file(id, compare_name, desc, this_dict)
 
 	# If the DS RRset for the query name exists in the zone: [hue]
@@ -287,7 +296,7 @@ if __name__ == "__main__":
 			this_r["rdata"].pop()
 			made_change = True
 	if not made_change:
-		exit(f"Did not make a change when processing {id}")
+		exit(f"Did not make a change when processing {id} -- {desc}. Exiting.")
 	create_n_file(id, compare_name, desc, this_dict)
 
 	# If the DS RRset for the query name does not exist in the zone: [fot]
@@ -315,7 +324,7 @@ if __name__ == "__main__":
 		else:
 			new_authority.append(this_r)
 	if not made_change:
-		exit(f"Did not make a change when processing {id}")
+		exit(f"Did not make a change when processing {id} -- {desc}. Exiting.")
 	this_dict["authority"] = copy.deepcopy(new_authority)
 	create_n_file(id, compare_name, desc, this_dict)
 
@@ -351,7 +360,7 @@ if __name__ == "__main__":
 			this_r["rdata"].pop()
 			made_change = True
 	if not made_change:
-		exit(f"Did not make a change when processing {id}")
+		exit(f"Did not make a change when processing {id} -- {desc}. Exiting.")
 	create_n_file(id, compare_name, desc, this_dict)
 
 	# The Authority section is empty. [xdu]
@@ -397,7 +406,7 @@ if __name__ == "__main__":
 		else:
 			new_answer.append(this_r)
 	if not made_change:
-		exit(f"Did not make a change when processing {id}")
+		exit(f"Did not make a change when processing {id} -- {desc}. Exiting.")
 	this_dict["answer"] = copy.deepcopy(new_answer)
 	create_n_file(id, compare_name, desc, this_dict)
 
@@ -412,7 +421,7 @@ if __name__ == "__main__":
 			this_r["rdata"].remove("a.root-servers.net.")
 			made_change = True
 	if not made_change:
-		exit(f"Did not make a change when processing {id}")
+		exit(f"Did not make a change when processing {id} -- {desc}. Exiting.")
 	create_n_file(id, compare_name, desc, this_dict)
 
 	##########
@@ -439,7 +448,7 @@ if __name__ == "__main__":
 			this_r["rdata"].remove("a.root-servers.net.")
 			made_change = True
 	if not made_change:
-		exit(f"Did not make a change when processing {id}")
+		exit(f"Did not make a change when processing {id} -- {desc}. Exiting.")
 	create_n_file(id, compare_name, desc, this_dict)
 
 	# The Authority section is empty. [eyk]
@@ -474,7 +483,7 @@ if __name__ == "__main__":
 			this_r["rdata"] = this_r["rdata"][1:]
 			made_change = True
 	if not made_change:
-		exit(f"Did not make a change when processing {id}")
+		exit(f"Did not make a change when processing {id} -- {desc}. Exiting.")
 	this_dict["answer"] = copy.deepcopy(new_answer)
 	create_n_file(id, compare_name, desc, this_dict)
 
@@ -533,7 +542,7 @@ if __name__ == "__main__":
 		else:
 			new_authority.append(this_r)
 	if not made_change:
-		exit(f"Did not make a change when processing {id}")
+		exit(f"Did not make a change when processing {id} -- {desc}. Exiting.")
 	this_dict["authority"] = copy.deepcopy(new_authority)
 	create_n_file(id, compare_name, desc, this_dict)
 
@@ -541,6 +550,7 @@ if __name__ == "__main__":
 	id = "czb"
 	compare_name = "p-neg"
 	desc = "Start with p-neg, remove the NSEC record covering the query"
+	this_dict = copy.deepcopy(p_dicts[compare_name])
 	new_authority = []
 	made_change = False
 	for this_r in this_dict["authority"]:
@@ -552,7 +562,7 @@ if __name__ == "__main__":
 		else:
 			new_authority.append(this_r)
 	if not made_change:
-		exit(f"Did not make a change when processing {id}")
+		exit(f"Did not make a change when processing {id} -- {desc}. Exiting.")
 	this_dict["authority"] = copy.deepcopy(new_authority)
 	create_n_file(id, compare_name, desc, this_dict)
 
@@ -570,7 +580,7 @@ if __name__ == "__main__":
 		else:
 			new_authority.append(this_r)
 	if not made_change:
-		exit(f"Did not make a change when processing {id}")
+		exit(f"Did not make a change when processing {id} -- {desc}. Exiting.")
 	this_dict["authority"] = copy.deepcopy(new_authority)
 	create_n_file(id, compare_name, desc, this_dict)
 
@@ -586,18 +596,22 @@ if __name__ == "__main__":
 
 	# Go through all the negative tests, and compare them to the postive ones
 	import pprint, subprocess, tempfile
-	for this_neg in all_n_ids:
-		with tempfile.NamedTemporaryFile(mode="wt", delete=False) as neg_file:
-			neg_dict = pickle.load(open(f"n-{this_neg}", mode="rb"))
-			neg_file_name = neg_file.name
-			neg_file.write(pprint.pformat(neg_dict, indent=1, width=500))
-			neg_file.close()
-			with tempfile.NamedTemporaryFile(mode="wt", delete=False) as pos_file:
-				pos_file_name = pos_file.name
-				pos_file.write(pprint.pformat(pickle.load(open(f"{neg_dict['test-on']}", mode="rb")), indent=1, width=500))
-				pos_file.close()
-				diff_cmd = f"diff {pos_file_name} {neg_file_name}"
-				p = subprocess.run(diff_cmd, shell=True, capture_output=True, text=True)
-				this_diff = p.stdout
-				print(f"\n{this_diff}")
-	
+	ret = "\n"
+	out_diff_name = "diffs-for-negatives.txt"
+	with open(out_diff_name, mode="wt") as f:
+		for this_neg in all_n_ids:
+			with tempfile.NamedTemporaryFile(mode="wt", delete=False) as neg_file:
+				neg_dict = json.load(open(f"n-{this_neg}", mode="rt"))
+				neg_file_name = neg_file.name
+				neg_file.write(pprint.pformat(neg_dict, indent=1, width=500))
+				neg_file.close()
+				with tempfile.NamedTemporaryFile(mode="wt", delete=False) as pos_file:
+					pos_file_name = pos_file.name
+					pos_file.write(pprint.pformat(json.load(open(neg_dict['test-on'], mode="rt")), indent=1, width=500))
+					pos_file.close()
+					diff_cmd = f"diff {pos_file_name} {neg_file_name}"
+					p = subprocess.run(diff_cmd, shell=True, capture_output=True, text=True)
+					this_diff = p.stdout
+					this_diff = this_diff.replace("\ No newline at end of file\n", "")
+					f.write(f"###{this_neg}###{ret}{this_diff}{ret}")
+	exit(f"Saved diffs in {out_diff_name}. Exiting.")
