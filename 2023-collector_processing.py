@@ -718,7 +718,7 @@ if __name__ == "__main__":
 	this_parser.add_argument("--test", action="store_true", dest="test",
 		help="Run tests on requests; must be run in the Tests directory")
 	this_parser.add_argument("--debug", action="store_true", dest="debug",
-		help=f"Limit procesing to {limit_size} correctness items and run single-threaded")
+		help=f"Limit procesing to {limit_size} incoming files and/or correctness items")
 	
 	opts = this_parser.parse_args()
 
@@ -753,6 +753,9 @@ if __name__ == "__main__":
 			all_files.pop(this_db_name)
 	log(f"Found {len(all_files)} files on disk, {len(all_in_db)} files in the database, left with {len(all_files)} files after culling")
 	all_file_paths = all_files.values()
+	if opts.debug:
+		all_file_paths = all_file_paths[0:limit_size]
+		log(f"Olnly processing {limit_size} incoming files due to presence of --debug")
 	processed_incoming_count = 0
 	with futures.ProcessPoolExecutor() as executor:
 		for (this_file, _) in zip(all_file_paths, executor.map(process_one_incoming_file, all_file_paths)):
