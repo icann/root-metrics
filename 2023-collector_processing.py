@@ -754,8 +754,8 @@ if __name__ == "__main__":
 	log(f"Found {len(all_files)} files on disk, {len(all_in_db)} files in the database, left with {len(all_files)} files after culling")
 	all_file_paths = all_files.values()
 	if opts.debug:
-		all_file_paths = all_file_paths[0:limit_size]
-		log(f"Olnly processing {limit_size} incoming files due to presence of --debug")
+		all_file_paths = list(all_file_paths)[0:limit_size]
+		log(f"Only processing {limit_size} incoming files due to presence of --debug")
 	processed_incoming_count = 0
 	with futures.ProcessPoolExecutor() as executor:
 		for (this_file, _) in zip(all_file_paths, executor.map(process_one_incoming_file, all_file_paths)):
