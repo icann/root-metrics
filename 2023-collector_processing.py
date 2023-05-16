@@ -191,7 +191,7 @@ def process_one_incoming_file(file_as_path):
 				if this_resp.get("answer") == None or len(this_resp["answer"]) == 0:
 					alert(f"Found a message of type 'S' without an answer in record {response_count} of {str_of_file_path}")
 					continue
-				# Set is_correct to "s" because correctness is not being checked for record_type = s
+				# Set is_correct to "s" because correctness is not being checked for SOA records
 				insert_values = insert_values._replace(is_correct="s")
 				# This chooses only the first SOA record; there really should only be one SOA record in the response
 				this_soa_record = this_resp["answer"][0]["rdata"][0]
