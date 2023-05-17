@@ -212,7 +212,7 @@ def process_one_incoming_file(file_as_path):
 			# Write out this record
 			insert_from_template(insert_template, insert_values)
 		# Write out the C response
-		with (saved_response_dir / short_file_name + ".pickle").open(mode="wb") as f_out:
+		with (saved_response_dir / (short_file_name + ".pickle")).open(mode="wb") as f_out:
 			pickle.dump(c_responses, f_out)
 	return
 
