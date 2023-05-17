@@ -153,7 +153,9 @@ def process_one_incoming_file(file_as_path):
 		percent_s_string = str("%s, " * len(template_names_raw.split(" ")))[:-2]
 		# Create the template
 		insert_values_template = namedtuple("insert_values_template", field_names=template_names_with_commas)
-	
+		
+		# Save all the C responses for this file in one dict
+		c_responses = {}
 		# Go through each response item
 		response_count = 0
 		for this_resp in in_obj["r"]:
@@ -199,9 +201,8 @@ def process_one_incoming_file(file_as_path):
 				this_soa = soa_record_parts[2]
 				insert_values = insert_values._replace(soa_found=this_soa)
 			elif insert_values.record_type == "C":
-				this_short_name_and_count = saved_response_dir / short_name_and_count
-				with this_short_name_and_count.open(mode="wb") as f_out:
-					pickle.dump(this_resp, f_out)
+				# Save the response in the collection for this file
+				c_responses[short_name_and_count] = this_resp
 				# Make is_correct "t" for correctness tests that times out, otherwise mark it as "?" so that it gets checked
 				##################### Set it to "C" until we have figured out correctness checking ##################################
 				if this_resp["timeout"]:
@@ -210,6 +211,9 @@ def process_one_incoming_file(file_as_path):
 					insert_values = insert_values._replace(is_correct="C")
 			# Write out this record
 			insert_from_template(insert_template, insert_values)
+		# Write out the C response
+		with (saved_response_dir / short_file_name + ".pickle").open(mode="wb") as f_out:
+			pickle.dump(c_responses, f_out)
 	return
 
 ###############################################################
