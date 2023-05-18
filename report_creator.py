@@ -150,10 +150,13 @@ if __name__ == "__main__":
 			# Set the dates for the search
 			where_date = f"where date_derived between '{report_start_timestamp}' and  '{report_end_timestamp}' "
 
+			""" Experiment with speeding up the queries by deriving correctness_recs and correctness_failures from soa_recs
+
 			# Get all the SOA records for this period
 			cur.execute("select filename_record, target, internet, transport, query_elapsed, timeout, soa_found, date_derived from record_info " +
 				f"{where_date} and record_type = 'S' order by date_derived")
 			soa_recs = cur.fetchall()
+			
 	
 			# Get all the correctness records for this period
 			cur.execute("select filename_record, target, is_correct from record_info " +
@@ -177,6 +180,32 @@ if __name__ == "__main__":
 	correctness_dict = {}
 	for x in correctness_recs:
 		correctness_dict[x[0]] = { "rsi": x[1], "is_correct": x[2]}
+
+"""
+			# Get all the SOA records for this period
+			cur.execute("select filename_record, target, internet, transport, query_elapsed, timeout, soa_found, date_derived, is_correct, failure_reason, record_type " +
+				f"from record_info {where_date} order by date_derived")
+			dated_recs = cur.fetchall()
+
+	log(f"Found {len(dated_recs)} records for {report_start_timestamp} to {report_end_timestamp}")
+		
+	# Create dicts from the lists so that we can add derived values
+	soa_dict = {}
+	correctness_dict = {}
+	correctness_failures = []
+	for x in dated_recs:
+		# Get the SOA values
+		if x[10] == "S":
+			soa_dict[x[0]] = { "rsi": x[1], "internet": x[2], "transport": x[3], "query_elapsed": x[4], "timeout": x[5], "soa_found": x[6], "date_time": x[7]}
+			(_, vp, _) = x[0].split("-")
+			soa_dict[x[0]]["vp"] = vp
+		# Fill in the correctness values
+		if x[10] == "C":
+			correctness_dict[x[0]] = { "rsi": x[1], "is_correct": x[8]}
+		# Fill in the correctness failues
+		if x[10] == "C" and x[8] == "n":
+			correctness_failures.append([x[0], x[1], x[2], x[3], x[9]])
+
 
 	##############################################################
 	

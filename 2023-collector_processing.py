@@ -129,11 +129,7 @@ def process_one_incoming_file(file_as_path):
 			alert(f"Object in {str_of_file_path} did not contain keys d, e, l, r, and v")
 			return
 	
-		# Update the metadata
 		short_file_name = (file_as_path.name).replace(".pickle.gz", "")
-		insert_files_string = "insert into files_gotten (processed_at, version, delay, elapsed, filename_short) values (%s, %s, %s, %s, %s)"
-		insert_files_values = (datetime.datetime.now(datetime.timezone.utc), in_obj["v"], in_obj["d"], in_obj["e"], short_file_name) 
-		insert_from_template(insert_files_string, insert_files_values)
 
 		# Get the derived date and VP name from the file name
 		(file_date_text, _) = short_file_name.split("-")
@@ -211,7 +207,15 @@ def process_one_incoming_file(file_as_path):
 					insert_values = insert_values._replace(is_correct="C")
 			# Write out this record
 			insert_from_template(insert_template, insert_values)
-		# Write out the C response
+		# Insert the record in the files_gotten table
+		#   Note that if this function gets interrupted, some records will be written out but their associated file won't be in the files_gotten table.
+		#   When the program is run again, the records will be duplicated (other than timestamp being different
+		#   Maybe there should be an occaisional cleanup of duplicate records in the record_info table
+		insert_files_string = "insert into files_gotten (processed_at, version, delay, elapsed, filename_short) values (%s, %s, %s, %s, %s)"
+		insert_files_values = (datetime.datetime.now(datetime.timezone.utc), in_obj["v"], in_obj["d"], in_obj["e"], short_file_name) 
+		insert_from_template(insert_files_string, insert_files_values)
+		# Write out the all the responses to the C records to disk as a single pickle file for the whole input file
+		#   This is done as a single file to preserve inodes on the collector
 		with (saved_response_dir / (short_file_name + ".pickle")).open(mode="wb") as f_out:
 			pickle.dump(c_responses, f_out)
 	return
