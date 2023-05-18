@@ -161,7 +161,7 @@ if __name__ == "__main__":
 			correctness_recs = cur.fetchall()
 			
 			# Get all the failed correctness records to report in the additional section
-			cur.execute("select filename_record, target, internet, transport, failure_reason, source_pickle from record_info " +
+			cur.execute("select filename_record, target, internet, transport, failure_reason from record_info " +
 				f"{where_date} and record_type = 'C' and is_correct = 'n' order by date_derived")
 			correctness_failures = cur.fetchall()
 		
@@ -474,9 +474,12 @@ if __name__ == "__main__":
 	##############################################################
 
 	# List the correctness failures
+	######################## Correctness testing is currently turned off, so this section does not apply
+	######################## However, when it does apply, the pickle of the bad replies is now found in saved_response_dir / short_file_name
+	"""
 	if len(correctness_failures) > 0:
 		r_out("", f"\nThere were {len(correctness_failures)} correctness failures during the period:")
-		for (filename_record, target, internet, transport, failure_reason, source_pickle) in correctness_failures:
+		for (filename_record, target, internet, transport, failure_reason) in correctness_failures:
 			culled_reasons = []
 			this_source = pickle.loads(source_pickle)
 			r_out("", f"   {filename_record}: {target} {internet} {transport} for {this_source['question'][0]['name']}/{this_source['question'][0]['rdtype']}:")
@@ -491,6 +494,7 @@ if __name__ == "__main__":
 				r_out("", f"      {this_reason}")
 	else:
 		r_out("", "\nThere were no correctness failures during the period.")
+	"""
 	
 	##############################################################
 
