@@ -309,9 +309,9 @@ def process_one_correctness_tuple(in_tuple):
 		# The root is known is known for opts.test; for the normal checking, it is the likely_soa
 		if opts.test:
 			try:
-				roots_to_check.append(pickle.load(open("root_name_and_types.pickle", mode="rb")))
+				roots_to_check.append(json.load(open("root_name_and_types.json", mode="rb")))
 			except:
-				alert("While running under --test, could not find and unpickle 'root_name_and_types.pickle'. Exiting.")
+				alert("While running under --test, could not find and un-json 'root_name_and_types.json'. Exiting.")
 				return
 		elif this_is_correct == "?":
 			one_root_file = f"{saved_matching_dir}/{this_soa_to_check}.matching.pickle"
