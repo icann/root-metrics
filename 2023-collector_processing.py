@@ -473,7 +473,7 @@ def process_one_correctness_tuple(in_tuple):
 					for this_rec_dict in resp["authority"]:
 						if this_rec_dict["rdtype"] == "NS":
 							for this_ns in this_rec_dict["rdata"]:
-								auth_ns_for_qname.add(this_ns.upper())
+								auth_ns_for_qname.add(this_ns.lower())
 					if not set(auth_ns_for_qname) == set(root_ns_for_qname):
 						failure_reasons.append(f"NS RRset in Authority was {auth_ns_for_qname}, but NS from root was {root_ns_for_qname} [pdd]")
 					# If the DS RRset for the query name exists in the zone: [hue]
