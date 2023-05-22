@@ -366,7 +366,7 @@ def process_one_correctness_tuple(in_tuple):
 		# Go through the correctness checking against each root, stopping if you get one root for which everything is correct
 		for this_root_to_check in roots_to_check:
 			# failure_reasons holds an expanding set of reasons
-			#   It is checked at the end of testing, and all "" entries eliminted
+			#   It is checked at the end of testing, and all "" entries eliminated
 			#   If it is empty, then all correctness tests passed
 			failure_reasons = []
 			# Check that each of the RRsets in the Answer, Authority, and Additional sections match RRsets found in the zone [vnk]
@@ -400,8 +400,10 @@ def process_one_correctness_tuple(in_tuple):
 							# Need to match case, so uppercase all the records in both sets
 							#   It is OK to do this for any type that is not displayed as Base64, and RRSIG is already excluded by [ygx]
 							#   But don't change case on DNSKEY
-							for this_comparator in [rrsets_for_checking[this_rrset_key], this_root_to_check[this_rrset_key]]:
-								for this_rdata in this_comparator.copy():
+							# Do this by making two comparitors that are copies of the rrsets, process, and compare those
+							r_comparitors = [(rrsets_for_checking[this_rrset_key]).copy(), (this_root_to_check[this_rrset_key]).copy()]
+							for this_comparator in r_comparitors:
+								for this_rdata in this_comparator:
 									this_comparator.remove(this_rdata)
 									if this_rrset_key.endswith("/DNSKEY"):
 										(d_flags, d_prot, d_alg, d_key) = this_rdata.split(" ", maxsplit=3)
@@ -412,7 +414,7 @@ def process_one_correctness_tuple(in_tuple):
 										this_comparator.add(dns.ipv6.inet_ntoa(dns.ipv6.inet_aton(this_rdata)))
 									else:
 										this_comparator.add(this_rdata.upper())
-							if not rrsets_for_checking[this_rrset_key] == this_root_to_check[this_rrset_key]:
+							if not r_comparitors[0] == r_comparitors[1]:
 								failure_reasons.append(f"Set of RRset value {z_short} in {this_section_name} in response is different than {r_short} in root zone [vnk]")
 
 			# Check that each of the RRsets that are signed have their signatures validated. [yds]
