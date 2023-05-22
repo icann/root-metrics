@@ -401,7 +401,7 @@ def process_one_correctness_tuple(in_tuple):
 							#   It is OK to do this for any type that is not displayed as Base64, and RRSIG is already excluded by [ygx]
 							#   But don't change case on DNSKEY
 							# Do this by making two comparitors that are copies of the rrsets, process, and compare those
-							r_comparitors = [(rrsets_for_checking[this_rrset_key]).copy(), (this_root_to_check[this_rrset_key]).copy()]
+							r_comparitors = [set((rrsets_for_checking[this_rrset_key]).copy()), set((this_root_to_check[this_rrset_key]).copy())]
 							for this_comparator in r_comparitors:
 								for this_rdata in this_comparator:
 									this_comparator.remove(this_rdata)
@@ -474,7 +474,7 @@ def process_one_correctness_tuple(in_tuple):
 						if this_rec_dict["rdtype"] == "NS":
 							for this_ns in this_rec_dict["rdata"]:
 								auth_ns_for_qname.add(this_ns.upper())
-					if not auth_ns_for_qname == root_ns_for_qname:
+					if not set(auth_ns_for_qname) == set(root_ns_for_qname):
 						failure_reasons.append(f"NS RRset in Authority was {auth_ns_for_qname}, but NS from root was {root_ns_for_qname} [pdd]")
 					# If the DS RRset for the query name exists in the zone: [hue]
 					if this_root_to_check.get(f"{this_qname}/DS"):
