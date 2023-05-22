@@ -278,6 +278,7 @@ def process_one_correctness_tuple(in_tuple):
 				alert(f"Could not unpickle the source_pickle in {in_filename_record}: {e}")
 				return
 		else:  # For tests
+			# Note that we have already os.chdir'd to the tests directory at this point
 			this_timeout = ""
 			# Un-JSON the object to get the values
 			try:
@@ -307,8 +308,9 @@ def process_one_correctness_tuple(in_tuple):
 		#   For type "test", it is the fixed root
 		roots_to_check = []
 		# The root is known is known for opts.test; for the normal checking, it is the likely_soa
-		if opts.test:
+		if request_type == "test":
 			try:
+				# Note that we have already os.chdir'd to the tests directory at this point
 				roots_to_check.append(json.load(open("root_name_and_types.json", mode="rb")))
 			except:
 				alert("While running under --test, could not find and un-json 'root_name_and_types.json'. Exiting.")
