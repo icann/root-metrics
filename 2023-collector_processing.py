@@ -266,7 +266,7 @@ def process_one_correctness_tuple(in_tuple):
 			if len(this_found) > 1:
 				alert(f"When checking correctness on {in_filename_record}, found {len(this_found)} records instead of just 1")
 				return
-			(this_timeout, this_soa_to_check, this_is_correct, this_resp_pickle) = this_found[0]
+			(this_timeout, this_soa_to_check, this_is_correct) = this_found[0]
 			# Before trying to load the pickled data, first see if it is a timeout; if so, set is_correct but move on [lbl]
 			if not this_timeout == "":
 				cur.execute("update record_info set (is_correct, failure_reason) = (%s, %s) where filename_record = %s", ("y", "timeout", in_filename_record))
@@ -820,6 +820,7 @@ if __name__ == "__main__":
 		with conn.cursor() as cur:
 			cur.execute("select filename_record from record_info where record_type = 'C' and (is_correct = '?' or is_correct = 'r')")
 			correct_to_check = cur.fetchall()
+	log(f"At the start of correctness checking, found {len(correct_to_check)} records with '?' or 'r'")
 	# Make a list of tuples with the filename_record
 	full_correctness_list = []
 	for this_correct in correct_to_check:
@@ -830,6 +831,5 @@ if __name__ == "__main__":
 	with futures.ProcessPoolExecutor() as executor:
 		for (this_correctness, _) in zip(full_correctness_list, executor.map(process_one_correctness_tuple, full_correctness_list, chunksize=1000)):
 			processed_correctness_count += 1
-	
 	log(f"Finished correctness checking {processed_correctness_count} records in {int(time.time() - processed_correctness_start)} seconds; finished processing")
 	exit()
