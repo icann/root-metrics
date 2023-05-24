@@ -257,6 +257,7 @@ def process_one_correctness_tuple(in_tuple):
 	if not request_type in ("normal", "test"):
 		alert(f"While running process_one_correctness_tuple on {in_filename_record}, got unknown first argument {request_type}")
 		return
+	# Open a database connection that is in use for the whole function
 	with psycopg2.connect(dbname="metrics", user="metrics") as conn:
 		conn.set_session(autocommit=True)
 		if request_type == "normal":
@@ -319,88 +320,58 @@ def process_one_correctness_tuple(in_tuple):
 		this_qtype = question_record_dict["rdtype"]
 
 		# root_to_check holds the contents of the root to check in this round (not just the names)
+		root_to_check = {}
 		#   For type "test", it is the fixed root
 		#   For type "C" and is_correct "?", it is just the root associated with the likely_soa
-		#   For type "C" and is_correct "r", it is the roots for 48 hours before likely_soa, and the SOA after
-		root_to_check = {}
-		# The root is known is known for opts.test; for the normal checking, it is the likely_soa
+		#   For type "C" and is_correct "r", it is one of the roots from the "incorrect" table
+		#     That table has the likely_soa, the roots for 48 hours before likely_soa, and the SOA after the likely_soa
+		#       create table incorrect (filename_record text, root_checked text, has_been_checked boolean, failure_reason text);
 		if request_type == "test":
+			# The root is known is known for opts.test; for the normal checking, it is the likely_soa
 			try:
 				# Note that we have already os.chdir'd to the tests directory at this point
 				root_to_check = json.load(open("root_name_and_types.json", mode="rb"))
 			except:
 				alert("While running under --test, could not find and un-json 'root_name_and_types.json'. Exiting.")
 				return
-		elif this_is_correct == "?":
-			one_root_file = saved_matching_dir / f"{this_soa_to_check}.matching.pickle"
-			if not one_root_file.exists():
-				# Just return, leaving the is_correct as "?" so it will get caught on the next run
-				alert(f"When checking correctness on {in_filename_record}, could not find root file {str(one_root_file)}")
-				return
-			# Try to read the file	
-			with one_root_file.open(mode="rb") as root_contents_f:
-				try:
-					root_to_check = pickle.load(root_contents_f)
-				except:
-					alert(f"Could not unpickle root file {str(one_root_file)} while processing {in_filename_record} for correctness the first time")
-					return
-		elif this_is_correct == "r":
-			## create table incorrect (filename_record text, root_checked text, failure_reason text);
-			# See if there are already roots to check on reply
-			with conn.cursor() as cur:
-				cur.execute("select to_retry from retries where filename_record = %s", (in_filename_record, ))
-				retries_found = cur.fetchall()
-				if len(retries_found) > 1:
-					alert(f"When looking for retries on {in_filename_record}, found {len(retries_found)} when there should only be one record")
-					return
-				elif len(retries_found) == 1:
-					retries_array = retries_found[0]
-					if len(retries_array) == 0:  # We have tried all the root zones, time to give up
-						with conn.cursor() as cur:
-							cur.execute("update record_info set (is_correct, failure_reason) = (%s, %s) where filename_record = %s", \
-								("n", "Tried all appropriate root files, but none of them matched.", in_filename_record))
-						return
-					else:
-						# Get the first root out of the array, replace the array with the shorter version
-						#  Record is (filename_record text, to_retry text[])
-						############################################################################################################
-						pass ###############
-				else:  # The record has not been created yet
-					# Get the starting date from the file name, then pick all zone files whose names have that date or the date from the 48 hours before [xog]
-					start_date = datetime.date(int(in_filename_record[0:4]), int(in_filename_record[4:6]), int(in_filename_record[6:8]))
-					start_date_minus_one = start_date - datetime.timedelta(days=1)
-					start_date_minus_two = start_date - datetime.timedelta(days=2)
-					soa_matching_date_files = []
-					for this_start in [start_date, start_date_minus_one, start_date_minus_two]:
-						soa_matching_date_files.extend(saved_matching_dir.glob(f"{this_start.strftime('%Y%m%d')}*.matching.pickle"))
-					# Also get the root zone with the SOA after this_soa_to_check
-					soa_already_checked = saved_matching_dir / f"{this_soa_to_check}.matching.pickle"
-					all_matching_files = sorted(glob.glob(str(Path(f"{saved_matching_dir}/*.matching.pickle"))))
-					try:
-						this_root_by_soa = all_matching_files.index(soa_already_checked)
-					except:
-						alert(f"When looking for the root after {soa_already_checked}, could not even find {soa_already_checked}")
-						return
-					try:
-						next_soa_to_check = all_matching_files[this_root_by_soa + 1]
-						soa_matching_date_files.add(next_soa_to_check)
-					except:
-						pass  # This indicates that this_root_by_soa was the last file in the directory
-					# Try to read the files
-					for this_root_file in soa_matching_date_files:
-						try:
-							with open(this_root_file, mode="rb") as root_contents_f:
-								try:
-									roots_to_check.append(pickle.load(root_contents_f))
-								except:
-									alert(f"Could not unpickle root file {this_root_file} while retrying processing of {in_filename_record} for correctness")
-									return
-						except Exception as e:
-							alert(f"When processing {this_root_file} among {soa_matching_date_files} in {in_filename_record}, got {e}")
-							return
-		else:
+		if not this_is_correct in ("r", "?"):
 			alert(f"Got unexpected value '{this_is_correct}' for is_correct in {in_filename_record}")
 			return
+		if this_is_correct == "r":
+			# Get the list of possible roots that was filled in earlier, then pick one that is has not been checked
+			with conn.cursor() as cur:
+				cur.execute("select (root_checked, has_been_checked) from incorrect where filename_record = %s", (in_filename_record, ))
+				retries_found = cur.fetchall()
+				if len(retries_found) == 0:
+					alert(f"When looking for retries on {in_filename_record}, found nothing in the 'incorrect' table when there should have beenmore than one record")
+					return
+				this_retry_to_check = ""
+				for this_retry in retries_found:
+					if this_retry[1]:
+						this_retry_to_check = this_retry[0]
+						break
+				if not this_retry_to_check:
+					# All the retries have been tested, report failure
+					tried_string = " ".join(retries_found)
+					cur.execute("update record_info set (is_correct, failure_reason) = (%s, %s) where filename_record = %s", \
+						("n", f"Tried root files {tried_string} but all had failures; see 'incorrect' table", in_filename_record))
+					return
+				one_root_file = saved_matching_dir / f"{this_retry_to_check}.matching.pickle"
+		elif this_is_correct == "?":
+			# Use the likely SOA
+			one_root_file = saved_matching_dir / f"{this_soa_to_check}.matching.pickle"
+		# Here after sucessfully getting a root file name from "r" or "?"
+		# Try to read the file and unpickle it
+		if not one_root_file.exists():
+			# Just return, leaving the is_correct as "?" so it will get caught on the next run
+			alert(f"When checking correctness on {in_filename_record}, could not find root file {str(one_root_file)}")
+			return
+		with one_root_file.open(mode="rb") as root_contents_f:
+			try:
+				root_to_check = pickle.load(root_contents_f)
+			except:
+				alert(f"Could not unpickle root file {str(one_root_file)} while processing {in_filename_record} for correctness the first time")
+				return
 
 		# Go through the correctness checking against root_to_check
 		# failure_reasons holds an expanding set of reasons
@@ -698,29 +669,55 @@ def process_one_correctness_tuple(in_tuple):
 			if not this_element == "":
 				pared_failure_reasons.append(this_element)
 		failure_reason_text = "\n".join(pared_failure_reasons)
-		# Determine the new value if is_correct
-		if failure_reason_text == "":
-			new_is_correct = "y"
-		elif this_is_correct == "?":
-			new_is_correct = "r"	
-		elif this_is_correct == "r":
-			new_is_correct = "n"
-			soas_checked = []
-			for this_file in soa_matching_date_files:
-				soas_checked.append(this_file.replace(f"{saved_matching_dir}/", "").replace(".matching.pickle", ""))
-			failure_reason_text += f"\nCorrectness was first tested against {this_soa_to_check} and then later against {' '.join(soas_checked)}"
 		# If this was a test, just return the failure_reason_text
 		if opts.test:
 			return failure_reason_text
-		# Here if it is not a test. Enter the new value in the database, and stop if it is a "y"
-		with conn.cursor() as cur:
-			cur.execute("update record_info set (is_correct, failure_reason) = (%s, %s) where filename_record = %s", \
-				(new_is_correct, failure_reason_text, in_filename_record))
-		# As soon as you get a correct entry return; otherwise, go back through the loop
-		if new_is_correct == "y":
+		# If there is no failure reason, the record passed all correcteness tests
+		if failure_reason_text == "":
+			with conn.cursor() as cur:
+				cur.execute("update record_info set (is_correct, failure_reason) = (%s, %s) where filename_record = %s", ("y", "", in_filename_record))
+				return
+		elif this_is_correct == "r":
+			#       create table incorrect (filename_record text, root_checked text, has_been_checked boolean, failure_reason text);
+			# Update the record in the 'incorrect' table
+			with conn.cursor() as cur:
+				cur.execute("update incorrect set (has_been_checked, failure_reason) = (%s, %s) where filename_record = %s and root_checked = %s", \
+					("true", failure_reason_text, in_filename_record, this_retry_to_check))
+				return
+		else:
+			# Here if this_is_correct is "?", meaning this is the first check for this record
+			#  This will add a new set of records to the 'incorrect' table
+			# Get the starting date from the file name, then pick all zone files whose names have that date or the date from the 48 hours before [xog]
+			start_date = datetime.date(int(in_filename_record[0:4]), int(in_filename_record[4:6]), int(in_filename_record[6:8]))
+			start_date_minus_one = start_date - datetime.timedelta(days=1)
+			start_date_minus_two = start_date - datetime.timedelta(days=2)
+			soa_matching_date_files = []
+			for this_start in [start_date, start_date_minus_one, start_date_minus_two]:
+				soa_matching_date_files.extend(saved_matching_dir.glob(f"{this_start.strftime('%Y%m%d')}*.matching.pickle"))
+			# Also get the root zone with the SOA after this_soa_to_check
+			soa_already_checked = saved_matching_dir / f"{this_soa_to_check}.matching.pickle"
+			all_matching_files = sorted(glob.glob(str(Path(f"{saved_matching_dir}/*.matching.pickle"))))
+			try:
+				this_root_by_soa = all_matching_files.index(soa_already_checked)
+			except:
+				alert(f"When looking for the root after {soa_already_checked}, could not even find {soa_already_checked}")
+				return
+			try:
+				next_soa_to_check = all_matching_files[this_root_by_soa + 1]
+				soa_matching_date_files.add(next_soa_to_check)
+			except:
+				pass  # This indicates that this_root_by_soa was the last file in the directory
+			# Create the records
+			with conn.cursor() as cur:
+				# Add the current (first) failure
+				cur.execute("insert into incorrect (filename_record, root_checked, has_been_checked, failure_reason) values (%s, %s, %s, %s)", \
+					(in_filename_record, this_soa_to_check, "true", failure_reason_text))
+				# Fill in templates for the other tests to be done
+				for this_root_file in soa_matching_date_files:
+					this_file_name = (this_root_file.name).replace(".matching.pickle", "")
+					cur.execute("insert into incorrect (filename_record, root_checked, has_been_checked, failure_reason) values (%s, %s, %s, %s)", \
+						(in_filename_record, this_file_name, "false", ""))
 			return
-	# Here at the end of the loop over the roots to check
-	return
 
 ###############################################################
 
