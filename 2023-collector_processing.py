@@ -200,11 +200,10 @@ def process_one_incoming_file(file_as_path):
 				# Save the response in the collection for this file
 				c_responses[short_name_and_count] = this_resp
 				# Make is_correct "t" for correctness tests that times out, otherwise mark it as "?" so that it gets checked
-				##################### Set it to "C" until we have figured out correctness checking ##################################
 				if this_resp["timeout"]:
 					insert_values = insert_values._replace(is_correct="t")
 				else:
-					insert_values = insert_values._replace(is_correct="C")
+					insert_values = insert_values._replace(is_correct="?")
 			# Write out this record
 			insert_from_template(insert_template, insert_values)
 		# Insert the record in the files_gotten table
@@ -807,9 +806,6 @@ if __name__ == "__main__":
 			processed_incoming_count += 1
 	log(f"Finished processing {processed_incoming_count} incoming files in {int(time.time() - processed_incoming_start)} seconds")
 	
-	############ Exiting here instead of checking for correctness; this will be fixed later #################################################
-	exit()
-
 	###############################################################
 
 	# Now that all the measurements are in, go through all records in record_info where is_correct is "?"
@@ -819,31 +815,15 @@ if __name__ == "__main__":
 	processed_correctness_start = time.time()
 	processed_correctness_count = 0
 
-	# There might be some records with is_correct that is "r" from the last run. Rerun process_one_correctness_tuple over these
+	# Iterate over the new records where is_correct is "?" or "r"
 	with psycopg2.connect(dbname="metrics", user="metrics") as conn:
 		with conn.cursor() as cur:
-			cur.execute("select filename_record from record_info where record_type = 'C' and is_correct = 'r'")
-			redo_correct_to_check = cur.fetchall()
+			cur.execute("select filename_record from record_info where record_type = 'C' and (is_correct = '?' or is_correct = 'r')")
+			correct_to_check = cur.fetchall()
 	# Make a list of tuples with the filename_record
 	full_correctness_list = []
-	for this_initial_correct in redo_correct_to_check:
-		full_correctness_list.append(("normal", this_initial_correct[0]))
-	# If limit is set, use only the first few
-	if opts.limit:
-		full_correctness_list = full_correctness_list[0:limit_size]
-	with futures.ProcessPoolExecutor() as executor:
-		for (this_correctness, _) in zip(full_correctness_list, executor.map(process_one_correctness_tuple, full_correctness_list, chunksize=1000)):
-			processed_correctness_count += 1
-
-	# Iterate over the new records where is_correct is "?"
-	with psycopg2.connect(dbname="metrics", user="metrics") as conn:
-		with conn.cursor() as cur:
-			cur.execute("select filename_record from record_info where record_type = 'C' and is_correct = '?'")
-			initial_correct_to_check = cur.fetchall()
-	# Make a list of tuples with the filename_record
-	full_correctness_list = []
-	for this_initial_correct in initial_correct_to_check:
-		full_correctness_list.append(("normal", this_initial_correct[0]))
+	for this_correct in correct_to_check:
+		full_correctness_list.append(("normal", this_correct[0]))
 	# If limit is set, use only the first few
 	if opts.limit:
 		full_correctness_list = full_correctness_list[0:limit_size]
