@@ -4,7 +4,7 @@
 # Run as the metrics user
 # Three-letter items in square brackets (such as [xyz]) refer to parts of rssac-047.md
 
-import argparse, datetime, glob, gzip, json, logging, os, pickle, psycopg2, time
+import argparse, datetime, gzip, json, logging, os, pickle, psycopg2, time
 import dns.dnssec, dns.ipv6, dns.rdata, dns.rrset
 from pathlib import Path
 from concurrent import futures
@@ -323,7 +323,7 @@ def process_one_correctness_tuple(in_tuple):
 		#   For type "test", it is the fixed root
 		#   For type "C" and is_correct "?", it is just the root associated with the likely_soa
 		#   For type "C" and is_correct "r", it is one of the roots from the "incorrect" table
-		#     That table has the likely_soa, the roots for 48 hours before likely_soa, and the SOA after the likely_soa
+		#     That table has the likely_soa, the roots for 48 hours before likely_soa
 		#       create table incorrect (filename_record text, root_checked text, has_been_checked boolean, failure_reason text);
 		if request_type == "test":
 			# The root is known is known for opts.test; for the normal checking, it is the likely_soa
@@ -693,19 +693,6 @@ def process_one_correctness_tuple(in_tuple):
 			soa_matching_date_files = []
 			for this_start in [start_date, start_date_minus_one, start_date_minus_two]:
 				soa_matching_date_files.extend(saved_matching_dir.glob(f"{this_start.strftime('%Y%m%d')}*.matching.pickle"))
-			# Also get the root zone with the SOA after this_soa_to_check
-			soa_already_checked = saved_matching_dir / f"{this_soa_to_check}.matching.pickle"
-			all_matching_files = sorted(glob.glob(str(Path(f"{saved_matching_dir}/*.matching.pickle"))))
-			try:
-				this_root_by_soa = all_matching_files.index(soa_already_checked)
-			except:
-				alert(f"When looking for the root after {soa_already_checked}, could not even find {soa_already_checked}")
-				return
-			try:
-				next_soa_to_check = all_matching_files[this_root_by_soa + 1]
-				soa_matching_date_files.add(next_soa_to_check)
-			except:
-				pass  # This indicates that this_root_by_soa was the last file in the directory
 			# Create the records
 			with conn.cursor() as cur:
 				# Add the current (first) failure
