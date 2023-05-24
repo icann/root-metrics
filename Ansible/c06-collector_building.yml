@@ -145,6 +145,14 @@
       - version int
       - delay int
       - elapsed int
+  - name: Create index in files_gotten table
+    postgresql_idx:
+      login_user: metrics
+      db: metrics
+      table: files_gotten
+      columns: filename_short
+      name: filename_short_idx
+      idxtype: btree
   - name: Create table for SOA and correctness records
     postgresql_table:
       login_user: metrics
@@ -164,7 +172,7 @@
       - likely_soa text
       - is_correct text
       - failure_reason text
-  - name: Create index in metrics table
+  - name: Create index in record_info table
     postgresql_idx:
       login_user: metrics
       db: metrics
@@ -172,4 +180,21 @@
       columns: filename_record
       name: filename_record_idx
       idxtype: btree
-
+  - name: Create table for incorrectness records
+    postgresql_table:
+      login_user: metrics
+      db: metrics
+      name: incorrect
+      columns:
+      - filename_record text
+      - root_checked text
+      - has_been_checked boolean
+      - failure_reason text
+  - name: Create index in incorrectness table
+    postgresql_idx:
+      login_user: metrics
+      db: metrics
+      table: incorrect
+      columns: filename_record
+      name: filename_record_idx
+      idxtype: btree

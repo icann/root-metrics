@@ -794,6 +794,13 @@ if __name__ == "__main__":
 	log(f"Finished processing {processed_incoming_count} incoming files in {int(time.time() - processed_incoming_start)} seconds")
 	
 	###############################################################
+	
+	# Don't do correctness checking yet because it does not work correctly.
+	#   This leaves all records correctness value as "?", meaning "not yet checked at all".
+	log("Skipping correctness checking and exiting")
+	exit()	
+	
+	###############################################################
 
 	# Now that all the measurements are in, go through all records in record_info where is_correct is "?"
 	#   This finds record_type = "C" records that have not been evaluated yet
