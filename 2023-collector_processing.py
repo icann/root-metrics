@@ -825,7 +825,7 @@ if __name__ == "__main__":
 	for this_correct in correct_to_check:
 		full_correctness_list.append(("normal", this_correct[0]))
 	# If limit is set, use only the first few
-	if opts.limit:
+	if opts.debug:
 		full_correctness_list = full_correctness_list[0:limit_size]
 	with futures.ProcessPoolExecutor() as executor:
 		for (this_correctness, _) in zip(full_correctness_list, executor.map(process_one_correctness_tuple, full_correctness_list, chunksize=1000)):
