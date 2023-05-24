@@ -789,7 +789,7 @@ if __name__ == "__main__":
 		log(f"Only processing {limit_size} incoming files due to presence of --debug")
 	processed_incoming_count = 0
 	with futures.ProcessPoolExecutor() as executor:
-		for (this_file, _) in zip(all_file_paths, executor.map(process_one_incoming_file, all_file_paths)):
+		for (this_file, _) in zip(all_file_paths, executor.map(process_one_incoming_file, all_file_paths, chunksize=1000)):
 			processed_incoming_count += 1
 	log(f"Finished processing {processed_incoming_count} incoming files in {int(time.time() - processed_incoming_start)} seconds")
 	
