@@ -4,7 +4,7 @@
 # Run as the metrics user
 # Three-letter items in square brackets (such as [xyz]) refer to parts of rssac-047.md
 
-import argparse, datetime, glob, logging, math, os, pickle, psycopg2, statistics
+import argparse, datetime, glob, logging, math, os, psycopg2, statistics
 from pathlib import Path
 
 if __name__ == "__main__":
@@ -87,8 +87,9 @@ if __name__ == "__main__":
 		# See if a monthly report needs to be written
 		if opts.test_date:
 			parts = opts.test_date.split("-")
-			if not ((len(parts) == 6) or (len(parts[0]) == 4)):
-				die("Must give argument to --test_date as YYYY-MM-DD-HH-MM-SS")
+			if not len(parts) == 6:
+				if not len(parts[0]) == 4:
+					die("Must give argument to --test_date as YYYY-MM-DD-HH-MM-SS")
 			try:
 				now = datetime.datetime(int(parts[0]), int(parts[1]), int(parts[2]), int(parts[3]), int(parts[4]), int(parts[5]))
 			except Exception as e:
