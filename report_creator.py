@@ -45,7 +45,7 @@ if __name__ == "__main__":
 	
 	this_parser = argparse.ArgumentParser()
 	this_parser.add_argument("--test_date", action="store", dest="test_date",
-		help="Give a date as YY-MM-DD-HH-MM-SS to act as today")
+		help="Give a date as YYYY-MM-DD-HH-MM-SS to act as today")
 	this_parser.add_argument("--lastmonth", action="store_true", dest="lastmonth",
 		help="Create a report for the previous month")
 	this_parser.add_argument("--thisweek", action="store_true", dest="thisweek",
@@ -88,11 +88,11 @@ if __name__ == "__main__":
 		if opts.test_date:
 			parts = opts.test_date.split("-")
 			if not len(parts) == 6:
-				die("Must give argument to --test_date as YY-MM-DD-HH-MM-SS")
+				die("Must give argument to --test_date as YYYY-MM-DD-HH-MM-SS")
 			try:
 				now = datetime.datetime(int(parts[0]), int(parts[1]), int(parts[2]), int(parts[3]), int(parts[4]), int(parts[5]))
 			except Exception as e:
-				die(f"Could not parse {opts.test_date} into YY-MM-DD-HH-MM-SS: {e}")
+				die(f"Could not parse {opts.test_date} into YYYY-MM-DD-HH-MM-SS: {e}")
 			log(f"Using test date of {opts.test_date}, which becomes {now}")
 		else:
 			now = datetime.datetime.utcnow()
