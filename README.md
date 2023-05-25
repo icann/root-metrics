@@ -1,7 +1,7 @@
 # RSSAC047 Initial Implementation
 
-This repository represents an initial implementation of [RSSAC047](https://www.icann.org/en/system/files/files/rssac-047-12mar20-en.pdf) prepared by ICANN org.
-This implementation is still in _early development_, and is presented here so that the community can see how RSSAC047 might be implemented, to get suggestions and code contributions for this code, and to help the [RSSAC Caucus](https://www.icann.org/groups/rssac-caucus) evaluate RSSAC047 for possible future changes.
+This repository represents an initial implementation of [RSSAC047](https://www.icann.org/en/system/files/files/rssac-047-03feb22-en.pdf) prepared by ICANN org.
+This implementation is an initial development, and is presented here so that the community can see how RSSAC047 might be implemented, to get suggestions and code contributions for this code, and to help the [RSSAC Caucus](https://www.icann.org/groups/rssac-caucus) evaluate RSSAC047 for possible future changes.
 
 The repo has a Markdown version of excerpts of [RSSAC047](rssac-047.md) as the file "rssac-047.md". In this file, every requirement is marked with a unique three-letter code in square brackets, and that same code appears in the source code as well as this document. The purpose of doing this it to verify that all requirements from RSSAC047 are implemented, and for readers to be able to more easily find where the requirements are reflected in the implementation.
 
@@ -65,6 +65,9 @@ The repo has a Markdown version of excerpts of [RSSAC047](rssac-047.md) as the f
 	- `--test_date` to pretend that it is a different date in order to make earlier reports
 
 ## Correctness testing
+
+_Important note_: in the current version of the testbed, correctness is not being checked.
+The data that could be used for correctness testing is being collected, but the steps from RSSAC047 used to check that data are not being performed.
 
 - `collector_processing.py` contains a twisty maze of code to check the correctness of queries to the root servers from Section 5.3 of RSSAC047
 - Clearly, this part needs test cases
