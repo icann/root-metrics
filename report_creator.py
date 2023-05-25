@@ -40,6 +40,7 @@ if __name__ == "__main__":
 		vp_debug.critical(debug_message)
 	def die(error_message):
 		vp_alert.critical(error_message)
+		print(error_message)
 		log(f"Died with '{error_message}'")
 		exit()
 	
