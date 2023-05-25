@@ -390,7 +390,7 @@ if __name__ == "__main__":
 				pass_fail_text = "Fail" if response_latency_median > rsi_response_latency_udp_threshold else "Pass"
 			else:
 				pass_fail_text = "Fail" if response_latency_median > rsi_response_latency_tcp_threshold else "Pass"
-			additional_text = f" -- {response_latency_median:.3f} median"
+			additional_text = f" -- {response_latency_median:.3f} seconds median"
 			r_out(f"    {report_pairs[this_pair]}: {pass_fail_text}  {(rsi_response_latency[this_rsi][this_pair][1]):>8,} measurements", additional_text)  # [lxr]
 	
 	# RSI correctness report
@@ -415,7 +415,7 @@ if __name__ == "__main__":
 				latency_differences.append(rsi_publication_latency[this_rsi][this_soa]["latency"])  # [kvg] [udz]
 		publication_latency_median = statistics.median(latency_differences)  # [yzp]
 		pass_fail_text = "Fail" if publication_latency_median > rsi_publication_latency_threshold else "Pass"
-		additional_text = f" -- {publication_latency_median:>7.1f} median"
+		additional_text = f" -- {publication_latency_median:>7.1f} seconds median"
 		r_out(f"    {pass_fail_text}  {len(rsi_publication_latency[this_rsi]):>8,} measurements", additional_text)  # [hms]
 
 	# RSS reports
@@ -455,7 +455,7 @@ if __name__ == "__main__":
 			pass_fail_text = "Fail" if pair_response_latency_median > rss_response_latency_udp_threshold else "Pass"
 		else:
 			pass_fail_text = "Fail" if pair_response_latency_median > rss_response_latency_tcp_threshold else "Pass"
-		additional_text = f" -- {(statistics.mean(pair_latencies)):.3f} mean"
+		additional_text = f" -- {(statistics.mean(pair_latencies)):.3f} seconds mean"
 		r_out(f"  {report_pairs[this_pair]}: {pair_response_latency_median:.3f} median, {pass_fail_text}, {pair_count:>8,} measurements", additional_text)
 	
 	# RSS correctness report
@@ -470,7 +470,7 @@ if __name__ == "__main__":
 	r_out(f"\nRSS Publication Latency\nThreshold is {rss_publication_latency_threshold} seconds")  # [tkw]
 	rss_publication_latency_median = statistics.median(rss_publication_latency_list)  # [zgb]
 	pass_fail_text = "Fail" if rss_publication_latency_median > rss_publication_latency_threshold else "Pass"
-	additional_text = f" -- {statistics.mean(rss_publication_latency_list):.3f} mean"
+	additional_text = f" -- {statistics.mean(rss_publication_latency_list):.3f} seconds mean"
 	r_out(f"   Entire RSS {rss_publication_latency_median} median, {pass_fail_text}, {len(rss_publication_latency_list):>8,} measurements", additional_text)  # [daz]
 
 	##############################################################
