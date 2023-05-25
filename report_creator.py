@@ -360,7 +360,7 @@ if __name__ == "__main__":
 	r_out(f"Report for {report_start_timestamp} to {report_end_timestamp}")
 
 	# Note the number of measurements for this report
-	r_out(f"Number of measurments across all vantage points: {len(soa_dict) + len(correctness_dict)}")
+	r_out(f"Number of measurements across all vantage points: {len(soa_dict) + len(correctness_dict)}")
 	
 	# The report only has "Pass" and "Fail", not the collated metrics [ntt] [cpm]
 	
