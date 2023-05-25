@@ -117,7 +117,7 @@ RSOs can ask the collection system that anomalies be annotated with information 
 
 ### 4.9 Determining the Number of RSIs Required for Reliable Operation of the RSS
 
-{{ elided }}
+{{ elided, but summary is k=8 }}
 
 ### 4.10 Potential Effects of Metrics on Independence and Diversity
 
