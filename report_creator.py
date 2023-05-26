@@ -294,12 +294,12 @@ if __name__ == "__main__":
 
 	# For RSS response latency, for each date_time, each internet/transport pair has a list of latencies
 	rss_response_latency_in = {}
-	rss_latency_intervals = []
+	rss_latency_intervals = set()
 	for (this_key, this_rec) in sorted(soa_dict.items()):  # [spx]
 		this_vp = this_rec["vp"]
 		this_date_time = this_rec["date_time"]
 		this_query_elapsed = this_rec["query_elapsed"]
-		rss_latency_intervals.append(this_date_time)
+		rss_latency_intervals.add(this_date_time)
 		if not rss_response_latency_in.get(this_date_time):
 			rss_response_latency_in[this_date_time] = { "v4udp": [], "v4tcp": [], "v6udp": [], "v6tcp": [] }
 		int_trans_pair = f"{this_rec['internet']}{this_rec['transport']}"
