@@ -504,7 +504,7 @@ if __name__ == "__main__":
 	with open(new_report_name, mode="wt") as f_out:
 		f_out.write("".join(report_main))
 		f_out.write(f"\n{'-'*80}\nThe following report has the calculations that support the pass/fail ratings.")
-		f_out.write(f"These are not for public consumption\n{'-'*80}\n")  #  [gkr]
+		f_out.write(f"\nThese are not for public consumption.\n{'-'*80}\n")  #  [gkr]
 		f_out.write("".join(report_additional))
 	
 	log(f"Finished report process, wrote out {new_report_name}")	
