@@ -308,9 +308,9 @@ if __name__ == "__main__":
 	# Need to remove any empty int_trans_pair because empty lists can't have a median
 	for this_latency_measurement_key in rss_response_latency_in:
 		for this_date_time in rss_response_latency_in[this_latency_measurement_key]:
-			for this_pair in  rss_response_latency_in[this_latency_measurement_key][this_date_time]:
+			for this_pair in rss_response_latency_in[this_latency_measurement_key][this_date_time]:
 				if this_pair == []:
-					this_pair in  rss_response_latency_in[this_latency_measurement_key][this_date_time].pop(this_pair, None)
+					rss_response_latency_in[this_latency_measurement_key][this_date_time].pop(this_pair, None)
 					debug(f"Removed empty pair for {this_pair} from {rss_response_latency_in[this_latency_measurement_key][this_date_time]}")
 	# Reduce each list of latencies to the median of the lowest k latencies in that last
 	rss_response_latency_aggregates = {}
