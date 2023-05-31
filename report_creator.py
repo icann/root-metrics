@@ -291,7 +291,7 @@ if __name__ == "__main__":
 	##############################################################
 	
 	# RSS response latency collation
-
+	
 	# For RSS response latency, for each date_time, each internet/transport pair has a list of latencies
 	rss_response_latency_in = {}
 	rss_latency_intervals = set()
@@ -303,23 +303,16 @@ if __name__ == "__main__":
 		if not rss_response_latency_in.get(this_date_time):
 			rss_response_latency_in[this_date_time] = { "v4udp": [], "v4tcp": [], "v6udp": [], "v6tcp": [] }
 		int_trans_pair = f"{this_rec['internet']}{this_rec['transport']}"
-		if this_query_elapsed:
+		if this_query_elapsed > 0.001:
 			rss_response_latency_in[this_date_time][int_trans_pair].append(this_query_elapsed)  # [bom]
-	# Need to remove any empty int_trans_pair because empty lists can't have a median
-	for this_latency_measurement_key in rss_response_latency_in:
-		for this_date_time in rss_response_latency_in[this_latency_measurement_key]:
-			for this_pair in rss_response_latency_in[this_latency_measurement_key][this_date_time]:
-				if this_pair == []:
-					rss_response_latency_in[this_latency_measurement_key][this_date_time].pop(this_pair, None)
-					debug(f"Removed empty pair for {this_pair} from {rss_response_latency_in[this_latency_measurement_key][this_date_time]}")
 	# Reduce each list of latencies to the median of the lowest k latencies in that last
 	rss_response_latency_aggregates = {}
 	for this_interval in rss_latency_intervals:
 		rss_response_latency_aggregates[this_interval] = {}
 		for this_pair in report_pairs:
-			this_median = statistics.median(rss_response_latency_in[this_interval][this_pair][0:rss_k-1])  # [jbr]
+			this_lowest_k = rss_response_latency_in[this_interval][this_pair][0:rss_k-1]  # [jbr]
 			this_count = len(rss_response_latency_in[this_interval][this_pair])
-			rss_response_latency_aggregates[this_interval][this_pair] = [ this_median, this_count ]
+			rss_response_latency_aggregates[this_interval][this_pair] = [ this_lowest_k, this_count ]
 			
 	##############################################################
 	
@@ -376,11 +369,11 @@ if __name__ == "__main__":
 			pass_fail_text = "Fail" if rsi_availability_ratio < rsi_availability_threshold else "Pass"
 			additional_text = f" -- {(rsi_availability_ratio * 100):>6.2f}%"
 			r_out(f"    {report_pairs[this_pair]}: {pass_fail_text} {(rsi_availability[this_rsi][this_pair][1]):>8,} measurements", additional_text)  # [lkd]
-	
+			
 	# RSI response latency report
 	rsi_response_latency_udp_threshold = .250  # [zuc]
 	rsi_response_latency_tcp_threshold = .500  # [bpl]
-	r_out(f"\nRSI Response Latency\nThreshold for UDP is {rsi_response_latency_udp_threshold:.3f} seconds")
+	r_out(f"\n\nRSI Response Latency\nThreshold for UDP is {rsi_response_latency_udp_threshold:.3f} seconds")
 	r_out(f"Threshold for TCP is {rsi_response_latency_tcp_threshold:.3f} seconds")  # [znh]
 	for this_rsi in rsi_list:
 		r_out(f"  {this_rsi}.root-servers.net:")
@@ -395,7 +388,7 @@ if __name__ == "__main__":
 	
 	# RSI correctness report
 	rsi_correctness_threshold = 100  # ...as percentage [ahw]
-	r_out("\nRSI Correctness\nThreshold is 100%")  # [mah]
+	r_out("\n\nRSI Correctness\nThreshold is 100%")  # [mah]
 	for this_rsi in rsi_list:
 		r_out(f"  {this_rsi}.root-servers.net:")
 		rsi_correctness_percentage = (rsi_correctness[this_rsi][0] / rsi_correctness[this_rsi][1]) * 100  # [skm]
@@ -405,7 +398,7 @@ if __name__ == "__main__":
 	
 	# RSI publication latency report
 	rsi_publication_latency_threshold = 65 * 60 # [fwa]
-	r_out(f"\nRSI Publication Latency\nThreshold is {rsi_publication_latency_threshold} seconds")  # [erf]
+	r_out(f"\n\nRSI Publication Latency\nThreshold is {rsi_publication_latency_threshold} seconds")  # [erf]
 	for this_rsi in rsi_list:
 		r_out(f"  {this_rsi}.root-servers.net:")
 		# latency_differences is the delays in publication for this letter
@@ -424,7 +417,7 @@ if __name__ == "__main__":
 	
 	# RSS availability report
 	rss_availability_threshold = .99999  # [wzz]
-	r_out(f"\nRSS Availability\nThreshold is {(rss_availability_threshold * 100):>5.3f}%")  # [fdy]
+	r_out(f"\n\nRSS Availability\nThreshold is {(rss_availability_threshold * 100):>5.3f}%")  # [fdy]
 	for this_pair in sorted(report_pairs):
 		rss_availability_numerator = 0
 		rss_availability_denominator = 0
@@ -442,15 +435,18 @@ if __name__ == "__main__":
 	# RSS response latency report
 	rss_response_latency_udp_threshold = .150  # [uwf]
 	rss_response_latency_tcp_threshold = .300  # [lmx]
-	r_out(f"\nRSS Response Latency\nThreshold for UDP is {rss_response_latency_udp_threshold:.3f} seconds")
+	r_out(f"\n\nRSS Response Latency\nThreshold for UDP is {rss_response_latency_udp_threshold:.3f} seconds")
 	r_out(f"Threshold for TCP is {rss_response_latency_tcp_threshold:>.3f} seconds")  # [gwm]
 	for this_pair in sorted(report_pairs):
 		pair_latencies = []
 		pair_count = 0
 		for this_interval in rss_latency_intervals:
-			pair_latencies.append(rss_response_latency_aggregates[this_interval][this_pair][0])
+			pair_latencies.extend(rss_response_latency_aggregates[this_interval][this_pair][0])
 			pair_count += rss_response_latency_aggregates[this_interval][this_pair][1]
-		pair_response_latency_median = statistics.median(pair_latencies)
+		try:
+			pair_response_latency_median = statistics.median(pair_latencies)
+		except:
+			die(f"Died finding median on {pair_latencies=}")
 		if "udp" in this_pair:
 			pass_fail_text = "Fail" if pair_response_latency_median > rss_response_latency_udp_threshold else "Pass"
 		else:
@@ -460,14 +456,14 @@ if __name__ == "__main__":
 	
 	# RSS correctness report
 	rss_correctness_threshold = 1  # [gfh]
-	r_out("\nRSS Correctness\nThreshold is 100%")  # [vpj]
+	r_out("\n\nRSS Correctness\nThreshold is 100%")  # [vpj]
 	pass_fail_text = "Fail" if rss_correctness_ratio < rss_correctness_threshold else "Pass"  # [udc]
 	additional_text = f" -- {rss_correctness_incorrect} incorrect"
 	r_out(f"   Entire RSS {(rss_correctness_ratio * 100):.6f}%, {pass_fail_text}, {rss_correctness_denominator:>8,} measurements", additional_text)  # [kea]
 
 	# RSS publication latency
 	rss_publication_latency_threshold = 35 * 60  # [zkl]
-	r_out(f"\nRSS Publication Latency\nThreshold is {rss_publication_latency_threshold} seconds")  # [tkw]
+	r_out(f"\n\nRSS Publication Latency\nThreshold is {rss_publication_latency_threshold} seconds")  # [tkw]
 	rss_publication_latency_median = statistics.median(rss_publication_latency_list)  # [zgb]
 	pass_fail_text = "Fail" if rss_publication_latency_median > rss_publication_latency_threshold else "Pass"
 	additional_text = f" -- {statistics.mean(rss_publication_latency_list):.3f} seconds mean"
