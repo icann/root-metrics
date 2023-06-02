@@ -3,7 +3,7 @@
 This repository represents an initial implementation of [RSSAC047](https://www.icann.org/en/system/files/files/rssac-047-03feb22-en.pdf) prepared by ICANN org.
 This implementation is an initial development, and is presented here so that the community can see how RSSAC047 might be implemented, to get suggestions and code contributions for this code, and to help the [RSSAC Caucus](https://www.icann.org/groups/rssac-caucus) evaluate RSSAC047 for possible future changes.
 
-The repo has a Markdown version of excerpts of [RSSAC047](rssac-047.md) as the file "rssac-047.md". In this file, every requirement is marked with a unique three-letter code in square brackets, and that same code appears in the source code as well as this document. The purpose of doing this it to verify that all requirements from RSSAC047 are implemented, and for readers to be able to more easily find where the requirements are reflected in the implementation.
+The repo has a Markdown version of excerpts of [RSSAC047v2](rssac-047.md) as the file "rssac-047.md". In this file, every requirement is marked with a unique three-letter code in square brackets, and that same code appears in the source code as well as this document. The purpose of doing this it to verify that all requirements from RSSAC047 are implemented, and for readers to be able to more easily find where the requirements are reflected in the implementation.
 
 ## Deployment
 
