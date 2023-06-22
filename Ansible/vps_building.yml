@@ -129,7 +129,7 @@
       minute: "0-59/5"
       job: "/home/metrics/repo/vantage_point_metrics.py >>/home/metrics/Logs/cron-alert.txt 2>&1"
 - name: Create and start rc.local after making dnscap
-  hosts: all_vps  
+  hosts: NONE  
   remote_user: "{{ superuser }}"
   become_user: root
   become: yes
