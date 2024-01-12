@@ -1,5 +1,5 @@
 - name: Set up the machine as root
-  hosts: c06
+  hosts: c07
   remote_user: "{{ superuser }}"
   tasks:
   - name: Initialize apt
@@ -46,7 +46,7 @@
       name: metrics
       role_attr_flags: CREATEDB,NOSUPERUSER
 - name: Install things as metrics
-  hosts: c06  
+  hosts: c07  
   remote_user: "{{ superuser }}"
   become: true
   become_user: metrics
@@ -125,7 +125,7 @@
       minute: "5"
       job: "/home/metrics/repo/collector_processing.py >>/home/metrics/Logs/cron-alert.txt 2>&1"
 - name: Do Postgres stuff
-  hosts: c06
+  hosts: c07
   remote_user: "{{ superuser }}"
   become: true
   become_user: metrics
