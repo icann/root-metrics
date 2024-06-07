@@ -252,8 +252,12 @@ if __name__ == "__main__":
 			if not rsi_publication_latency[this_rsi][this_soa_found][int_trans_pair]:
 				rsi_publication_latency[this_rsi][this_soa_found][int_trans_pair] = this_rec["date_time"]
 	# Change the "last" entry in the rsi_publication_latency to the time that the SOA was finally seen by all internet/transport pairs
+	# If no SOA was seen by the RSI for a version of the root zone, "last" should be set to the date the first next SOA is seen 
+	# When no SOA was seen towards the end of the month, "last" should be set to the end time for the report
+	first_next_date = report_end_timestamp
 	for this_rsi in rsi_list:
-		for this_soa in soa_first_seen:
+		# Go over the soas in reversed order, to set "last" to the first next SOA in case of missed SOAs
+		for this_soa in sorted(soa_first_seen, reverse = True):
 			for this_pair in report_pairs:
 				if not rsi_publication_latency[this_rsi][this_soa]["last"]:
 					# Set "last" if it doesn't already exist
@@ -262,9 +266,15 @@ if __name__ == "__main__":
 					# Reset "last" to the new value if the new value is greater
 					rsi_publication_latency[this_rsi][this_soa]["last"] = rsi_publication_latency[this_rsi][this_soa][this_pair]
 			# Fill in the "latency" entry by comparing the "last" to the SOA datetime; it is stored as seconds
-			#   rsi_publication_latency[this_rsi][this_soa]["last"] might still be None for SOAs issued at the very end of the month; skip them
-			if rsi_publication_latency[this_rsi][this_soa]["last"]:
-				rsi_publication_latency[this_rsi][this_soa]["latency"] = (rsi_publication_latency[this_rsi][this_soa]["last"] - soa_first_seen[this_soa]).total_seconds() # [jtz]
+			#   rsi_publication_latency[this_rsi][this_soa]["last"] might still be None for SOAs issued at the very end of the month;
+			#   in those cases it should be set to the publication date of the first SOA issued after this one
+			#   or set to the end date/time for the report in case no next SOA was issued after this one before the end of the month.
+			if not rsi_publication_latency[this_rsi][this_soa]["last"]:
+				rsi_publication_latency[this_rsi][this_soa]["last"] = first_next_date
+			else:
+				first_next_date = rsi_publication_latency[this_rsi][this_soa]["last"]
+
+			rsi_publication_latency[this_rsi][this_soa]["latency"] = (rsi_publication_latency[this_rsi][this_soa]["last"] - soa_first_seen[this_soa]).total_seconds() # [jtz]
 				
 	##############################################################
 
