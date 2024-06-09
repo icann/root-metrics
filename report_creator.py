@@ -264,7 +264,7 @@ if __name__ == "__main__":
 			# Fill in the "latency" entry by comparing the "last" to the SOA datetime; it is stored as seconds
 			#   rsi_publication_latency[this_rsi][this_soa]["last"] might still be None for SOAs issued at the very end of the month; skip them
 			if rsi_publication_latency[this_rsi][this_soa]["last"]:
-				rsi_publication_latency[this_rsi][this_soa]["latency"] = (rsi_publication_latency[this_rsi][this_soa]["last"] - soa_first_seen[this_soa]).seconds  # [jtz]
+				rsi_publication_latency[this_rsi][this_soa]["latency"] = (rsi_publication_latency[this_rsi][this_soa]["last"] - soa_first_seen[this_soa]).total_seconds() # [jtz]
 				
 	##############################################################
 
