@@ -93,7 +93,7 @@ def do_one_query(target, internet, ip_addr, transport, query, test_type):
 		r_dict["flags"] = dns.flags.to_text(r.flags)
 		r_dict["edns"] = {}
 		for this_option in r.options:
-			r_dict["edns"][this_option.otype.value] = this_option.data
+			r_dict["edns"][this_option.otype.value] = this_option.to_text()
 		if test_type == "C":
 			get_sections = ("question", "answer", "authority", "additional")
 		else:

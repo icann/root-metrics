@@ -86,7 +86,7 @@ if __name__ == "__main__":
 		r_dict["flags"] = dns.flags.to_text(r.flags)
 		r_dict["edns"] = {}
 		for this_option in r.options:
-			r_dict["edns"][this_option.otype.value] = this_option.data.decode("ascii")
+			r_dict["edns"][this_option.otype.value] = this_option.to_text()
 		get_sections = ("question", "answer", "authority", "additional")
 		for (this_section_number, this_section_name) in enumerate(get_sections):
 			r_dict[this_section_name] = []
