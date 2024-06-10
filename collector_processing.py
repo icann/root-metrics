@@ -654,7 +654,7 @@ def process_one_correctness_tuple(in_tuple):
 							nsec_with_owner_dot = True
 							break;
 				if not 	nsec_with_owner_dot:
-					failure_reasons.append("Authority section did not contain a signed NSEC record with owner name '.' [jzh]")
+					failure_reasons.append("Authority section did not contain a signed NSEC record with owner name '.' [jhz]")
 			# The Additional section is empty. [trw]
 			if resp.get("additional"):
 				failure_reasons.append("Additional section was not empty [trw]")
