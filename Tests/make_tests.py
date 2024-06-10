@@ -220,15 +220,15 @@ if __name__ == "__main__":
 	# Change the RDATA
 	id = "uuc"
 	compare_name = "p-tld-ds"
-	to_replace = "0c67e6"
 	desc = "Start with p-tld-ds, change the DS RData in the Answer; causes validation failure"
 	this_dict = copy.deepcopy(p_dicts[compare_name])
 	made_change = False
 	for this_r in this_dict["answer"]:
 		if this_r["name"] == "us." and this_r["rdtype"] == "DS":
-			if not to_replace in this_r["rdata"][0]:
-				exit(f"In uuc, didn't find {to_replace} in {this_r['rdata'][0]}. Exiting.")
-			this_r["rdata"][0] = this_r["rdata"][0].replace(to_replace, "abcdef")
+			us_ds_rdata_l = this_r["rdata"][0].rsplit(maxsplit=1)
+			if len(us_ds_rdata_l) != 2 or len(us_ds_rdata_l[1]) < 6:
+				exit(f"In uuc, malformed us. DS rdata {this_r['rdata'][0]}. Exiting.")
+			this_r["rdata"][0] = us_ds_rdata_l[0] + ' abcdef' + us_ds_rdata_l[1][6:]
 			made_change = True
 	if not made_change:
 		exit(f"Did not make a change when processing {id} -- {desc}. Exiting.")
