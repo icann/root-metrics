@@ -1,6 +1,8 @@
 - name: Set up the machine as root
   hosts: c07
   remote_user: "{{ superuser }}"
+  become_user: root
+  become: yes
   tasks:
   - name: Initialize apt
     apt:
@@ -12,7 +14,7 @@
   - name: Install all the needed packages
     apt:
       pkg: [acl, build-essential, curl, git, libcap-dev, libgetdns-dev, libidn11-dev, libldns-dev, libssl-dev, libtool, libtool-bin, libunbound-dev, libuv1-dev,
-        man, pkg-config, postgresql, pyflakes3, python-ply, python3-psycopg2, python3-paramiko, python3-pip, rsync, unzip]
+        man, pkg-config, postgresql, pyflakes3, python3-psycopg2, python3-paramiko, python3-pip, rsync, unzip]
   - name: Put .bashrc for root
     copy:
       src: ../bashrc-for-metrics-and-root
@@ -104,8 +106,8 @@
       version: main     # no-transfer-user
   - name: get dnspython
     shell:
-      cmd: "pip3 install --user dnspython"
-      creates: /home/metrics/.local/lib/python3.7/site-packages/dns
+      cmd: "pip3 install --user dnspython || pip3 install --break-system-packages --user dnspython"
+      creates: /home/metrics/.local/lib/python3.9/site-packages/dns
   - name: crontab entry for get_root_zone.py
     cron:   # [mba] [wca]
       disabled: yes
