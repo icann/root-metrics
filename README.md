@@ -11,7 +11,6 @@ The repo has a Markdown version of excerpts of [RSSAC047v2](rssac-047.md) as the
 	- In `Ansible` directory in the repo
 	- Files that are not part of the distribution are on `Local` directory in the repo
 	- Create VPs first with vps_building.yml, then create collector with collector_building.yml
-	- Creates users on collector with names transfer-xxx to receive files from the VPs
 
 ## Logging and alerts
 
