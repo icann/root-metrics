@@ -612,6 +612,6 @@ if __name__ == "__main__":
 					diff_cmd = f"diff {pos_file_name} {neg_file_name}"
 					p = subprocess.run(diff_cmd, shell=True, capture_output=True, text=True)
 					this_diff = p.stdout
-					this_diff = this_diff.replace("\ No newline at end of file\n", "")
+					this_diff = this_diff.replace("\\ No newline at end of file\n", "")
 					f.write(f"###{this_neg}###{ret}{this_diff}{ret}")
 	exit(f"Saved diffs in {out_diff_name}. Exiting.")

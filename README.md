@@ -25,15 +25,13 @@ The repo has a Markdown version of excerpts of [RSSAC047v2](rssac-047.md) as the
 - All are running latest Debian or similar
 	- Thus automatically running NTP  `[ugt]`
 - All programs run as "metrics" user
-- Also has "transfer" user for for the collector to copy data
 
 - `vantage_point_metrics.py`
 	- Is run from cron job every 5 minutes on 0, 5, ... `[wyn]` `[mba]` `[wca]`
 	- All systems use UTC `[nms]`
-	- Use `dig + yaml` from BIND 9.16.3
-	- Checks for new root zone every 12 hours
-	- Run `scamper` after queries to each source for both IPv4 and IPv6
-	- Results of each run are saved as .pickle.gz to /sftp/transfer/Output for later pulling
+	- Checks for new root zone every 15 minutes
+	- Run `scamper` after queries to each source for both IPv4 and IPv6 and stores the output in ~/Routing
+	- Results of each run are saved as .pickle.gz to ~/Output for later pulling
 	- Logs to ~/Logs/nnn-log.txt
 
 ## Collector
@@ -42,19 +40,23 @@ The repo has a Markdown version of excerpts of [RSSAC047v2](rssac-047.md) as the
 - Running latest Debian or similar
 	- Thus automatically running NTP  `[ugt]`
 - All programs run as "metrics" user
-- Also has "transfer" user for others to copy data
 
 - `get_root_zone.py`
 	- Run from cron job every 15 minutes
 	- Stores zones in ~/Output/RootZones for every SOA seen
 
+- `copy_files_from_vps.py`
+	- Run from cron job every 15 minutes, 1 minute after `get_root_zone.py`
+	- Uses `rsync` to copy new files in the Output, Routing and Logs directories on the vantage points to ~/Incoming/vvv directory on the collector machine
+
 - `collector_processing.py`
-	- Run from cron job twice every hour
-	- Use sftp to pull from all VPs to ~/Incoming
-	- For each .gz file in ~/Incoming
-		- Open file, store results in the database
-		- Move file to ~/Originals/yyyymm/
-	- Find records in the correctness table that have not been checked, and check them
+	- Run from cron job every hour
+	- For each vantage point directory vvv in ~/Incoming
+		- For each pickle.gz file in ~/Incoming/vvv/Output
+			- Open file, store results in the database
+			- Store all correctness responses in ~/Output/Responses/\<soa-serial\>-nnn.pickle
+	- TODO:
+		- Find records in the correctness table that have not been checked, and check them
 	- Reports why any failure happens
 
 - `report_creator.py`
@@ -62,6 +64,7 @@ The repo has a Markdown version of excerpts of [RSSAC047v2](rssac-047.md) as the
 	- `--debug` to add debugging info to the report
 	- `--force` to recreate a report that already exists
 	- `--test_date` to pretend that it is a different date in order to make earlier reports
+	- Performs aggregation with results from the database to come to the metrics to report
 
 ## Correctness testing
 
