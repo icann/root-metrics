@@ -308,17 +308,23 @@ if __name__ == "__main__":
 		this_query_elapsed = this_rec["query_elapsed"]
 		rss_latency_intervals.add(this_date_time)
 		if not rss_response_latency_in.get(this_date_time):
-			rss_response_latency_in[this_date_time] = { "v4udp": [], "v4tcp": [], "v6udp": [], "v6tcp": [] }
+			rss_response_latency_in[this_date_time] = { "v4udp": {}, "v4tcp": {}, "v6udp": {}, "v6tcp": {} }
 		int_trans_pair = f"{this_rec['internet']}{this_rec['transport']}"
+		if not rss_response_latency_in[this_date_time][int_trans_pair].get(this_vp):
+			rss_response_latency_in[this_date_time][int_trans_pair][this_vp] = []
 		if this_query_elapsed > 0.001:
-			rss_response_latency_in[this_date_time][int_trans_pair].append(this_query_elapsed)  # [bom]
-	# Reduce each list of latencies to the median of the lowest k latencies in that last
+			rss_response_latency_in[this_date_time][int_trans_pair][this_vp].append(this_query_elapsed)  # [bom]
+
+	# Reduce each list of latencies to the median of the lowest k latencies in that list
 	rss_response_latency_aggregates = {}
-	for this_interval in rss_latency_intervals:
+	for this_interval, rss_response_latency_in_by_pair in rss_response_latency_in.items():
 		rss_response_latency_aggregates[this_interval] = {}
-		for this_pair in report_pairs:
-			this_lowest_k = rss_response_latency_in[this_interval][this_pair][0:rss_k-1]  # [jbr]
-			this_count = len(rss_response_latency_in[this_interval][this_pair])
+		for this_pair, rss_response_latency_in_by_vp in rss_response_latency_in_by_pair.items():
+			this_lowest_k = []
+			this_count = 0
+			for this_vp, rss_response_latencies in rss_response_latency_in_by_vp.items():
+				this_count += len(rss_response_latencies)
+				this_lowest_k.extend(sorted(rss_response_latencies)[0:rss_k-1]) # [jbr]
 			rss_response_latency_aggregates[this_interval][this_pair] = [ this_lowest_k, this_count ]
 			
 	##############################################################
